@@ -8,7 +8,7 @@ from zipfile import ZipFile, ZIP_DEFLATED, ZIP_STORED
 import requests
 from timeit import default_timer as timer
 import time
-from ..common import get_dict_value
+from ..common import get_dict_value, set_dict_value
 from ..constants import DEFAULT_DELAY
 
 
@@ -125,20 +125,26 @@ class ProjectBuilder:
             total = get_dict_value(start_page_data, total_number_key)
             nr = 1 if total % page_limit > 0 else 0
             num_pages = (total / page_limit) + nr
+            logging.info('Total pages %d, records %d' % (num_pages, total))
         elif len(pages_number_key) > 0:
             num_pages = get_dict_value(start_page_data, pages_number_key)
             total = num_pages * page_limit
+            logging.info('Total pages %d, records %d' % (num_pages, total))
         else:
             num_pages = None
             total = None
-        logging.info('Total pages %d, records %d' % (num_pages, total))
+            logging.info('Total pages and number of records unknown')
         num_pages = int(num_pages)
         page_number_param = conf.get('params', 'page_number_param')
         page_size_param = conf.get('params', 'page_size_param')
-        for page in range(1, num_pages + 1):
+        try:
+            page_start_number = conf.getint('params', 'page_start_number')
+        except configparser.NoOptionError:
+            page_start_number = 1
+        for page in range(page_start_number, num_pages + 1):
             if len(page_size_param) > 0:
-                params[page_size_param] = page_limit
-                params[page_number_param] = page
+                params = set_dict_value(params, page_size_param, page_limit)
+                params = set_dict_value(params, page_number_param, page)
             if http_mode == 'GET':
                 response = self.http.get(start_url, params=params)
             else:
