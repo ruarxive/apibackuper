@@ -6,10 +6,11 @@ from pprint import pprint
 
 from .cmds.project import ProjectBuilder
 
-#logging.getLogger().addHandler(logging.StreamHandler())
+# logging.getLogger().addHandler(logging.StreamHandler())
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.DEBUG)
+
 
 def enableVerbose():
     logging.basicConfig(
@@ -21,16 +22,19 @@ def enableVerbose():
 def cli1():
     pass
 
+
 @cli1.command()
 @click.option('--config', '-c', default=None, help="Configuration file name")
 @click.option('--pagekey', '-k', default=None, help="Page/iteration key for API")
 @click.option('--pagesize', '-p', default=None, help="Page size for iteration")
 @click.option('--datakey', '-d', default=None, help="Data field with object items in API responses")
-@click.option('--itemkey', '-i', default=None, help="Item unique key to identify unique items. Multiple keys separated with comma could be used too.")
+@click.option('--itemkey', '-i', default=None,
+              help="Item unique key to identify unique items. Multiple keys separated with comma could be used too.")
 @click.option('--changekey', '-e', default=None, help="Field to identify data change")
 @click.option('--iterateby', '-b', default='page', help="Way to iterate API. By 'page' or 'number'")
 @click.option('--http-mode', '-m', default='GET', help="API mode: 'GET' or 'POST'")
-@click.option('--work-modes', '-u', default="full", help="Download modes supported by this API, could be 'full', 'incremental' or 'update'. Multiple modes could be used")
+@click.option('--work-modes', '-u', default="full",
+              help="Download modes supported by this API, could be 'full', 'incremental' or 'update'. Multiple modes could be used")
 @click.option('--verbose', '-v', count=False, help='Verbose output. Print additional info')
 def init(url, pagekey, pagesize, datakey, itemkey, changekey, http_mode, iterateby, work_modes, verbose):
     """Initializes project with required parameters"""
@@ -40,9 +44,11 @@ def init(url, pagekey, pagesize, datakey, itemkey, changekey, http_mode, iterate
     acmd.init(url, pagekey, pagesize, datakey, itemkey, changekey, iterateby, http_mode, work_modes)
     pass
 
+
 @click.group()
 def cli2():
     pass
+
 
 @cli2.command()
 @click.argument('name')
@@ -55,6 +61,7 @@ def create(name):
 @click.group()
 def cli3():
     pass
+
 
 @cli3.command()
 @click.argument('mode', default="full")
@@ -76,6 +83,7 @@ def run(mode, projectpath, verbose):
 def cli4():
     pass
 
+
 @cli4.command()
 @click.argument('mode', default='full')
 @click.option('--projectpath', '-p', default=None, help='Project path')
@@ -92,6 +100,7 @@ def estimate(mode, projectpath):
 @click.group()
 def cli5():
     pass
+
 
 @cli5.command()
 @click.argument('format', default='jsonl')
@@ -114,6 +123,7 @@ def export(format, filename, projectpath, verbose):
 def cli6():
     pass
 
+
 @cli6.command()
 @click.option('--projectpath', '-p', default=None, help='Project path')
 def info(projectpath):
@@ -126,10 +136,41 @@ def info(projectpath):
     pprint(report)
     pass
 
+@click.group()
+def cli7():
+    pass
 
 
-cli = click.CommandCollection(sources=[ cli2, cli3, cli4, cli5, cli6])
+@cli7.command()
+@click.argument('mode', default='full')
+@click.option('--projectpath', '-p', default=None, help='Project path')
+def follow(mode, projectpath):
+    """Follow already extracted data to collect details"""
+    if projectpath:
+        acmd = ProjectBuilder(projectpath)
+    else:
+        acmd = ProjectBuilder(projectpath)
+    acmd.follow(mode)
+    pass
 
-#if __name__ == '__main__':
+@click.group()
+def cli8():
+    pass
+
+
+@cli8.command()
+@click.option('--projectpath', '-p', default=None, help='Project path')
+def getfiles(projectpath):
+    """Download files associated with records"""
+    if projectpath:
+        acmd = ProjectBuilder(projectpath)
+    else:
+        acmd = ProjectBuilder(projectpath)
+    acmd.getfiles()
+    pass
+
+
+cli = click.CommandCollection(sources=[cli2, cli3, cli4, cli5, cli6, cli7, cli8])
+
+# if __name__ == '__main__':
 #    cli()
-

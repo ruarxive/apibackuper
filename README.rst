@@ -173,24 +173,41 @@ Example config file
     [settings]
     initialized = True
     name = <name>
+    splitter = .
 
     [project]
     description = <description>
     url = <url>
-    http_mode = GET
-    work_modes = full,incremental,update
-    iterate_by = page
+    http_mode = <GET or POST>
+    work_modes = <combination of full,incremental,update>
+    iterate_by = <page or skip>
 
     [params]
     page_size_param = <page size param>
     page_size_limit = <page size limit>
     page_number_param = <page number>
+    count_skip_param = <key to iterate in skip mode>
+
 
     [data]
     total_number_key = <total number key>
     data_key = <data key>
     item_key = <item key>
     change_key = <change key>
+
+    [follow]
+    follow_mode = <type of follow mode>
+    follow_pattern = <url prefix to follow links>
+    follow_data_key = <follow data item key>
+    follow_param = <follow param>
+    follow_item_key = <follow item key>
+
+    [files]
+    fetch_mode = <file fetch mode>
+    root_url = <file root url>
+    keys = <keys with file data>
+    storage_mode = <file storage mode>
+
 
     [storage]
     storage_type = zip
@@ -200,6 +217,7 @@ Example config file
 settings
 --------
 * name - short name of the project
+* splitter - value of field splitter. Needed for rare cases when '.' is part of field name. For example for OData requests and '@odata.count' field
 
 project
 -------
@@ -207,7 +225,7 @@ project
 * url - API endpoint url
 * http_mode - one of HTTP modes: GET or POST
 * work_modes - type of operations: full - archive everything, incremental - add new records only, update - collect changed data only
-* iterate_by - type of iteration of records. By 'page' - default, page by page or by 'range' if skip value provided
+* iterate_by - type of iteration of records. By 'page' - default, page by page or by 'skip' if skip value provided
 
 params
 ------
@@ -215,6 +233,7 @@ params
 * page_size_param - parameter with page size
 * page_size_limit - limit of records provided by API
 * page_number_param = parameter with page number
+* count_skip_param - parameter for 'skip' type of iteration
 
 data
 ----
@@ -222,6 +241,22 @@ data
 * data_key - key in data with list of records
 * item_key - key in data with unique identifier of the record. Could be group of keys separated with comma
 * change_key - key in data that indicates that record changed. Could be group of keys separated with comma
+
+follow
+------
+* follow_mode - mode to follow objects. Could be 'url' or 'item'. If mode is 'url' than follow_pattern not used
+* follow_pattern - url pattern / url prefix for followed objects. Only for mode 'item''
+* follow_data_key - if object/objects are inside array, key of this array
+* follow_param - parameter used in 'item' mode
+* follow_item_key - item key
+
+
+files
+-----
+* fetch_mode - file fetch mode. Could be 'prefix' or 'id'. Prefix
+* root_url - root url / prefix  for files
+* keys - list of keys with urls/file id's to search for files to save
+* storage_mode - a way how files stored in storage/files.zip. By default 'filepath' and files storaged same way as they presented in url
 
 storage
 -------
@@ -282,6 +317,16 @@ Export data from project. Should be called in project dir or project dir provide
 
     $ apibackuper export jsonl hhemployers.jsonl -p hhemployers
 
+
+Follows each object of downloaded data and does requests for each objects
+.. code-block:: bash
+
+    $ apibackuper follow continue
+
+Downloads all files associated with API objects
+.. code-block:: bash
+
+    $ apibackuper getfiles
 
 
 
