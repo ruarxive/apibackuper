@@ -216,7 +216,10 @@ class ProjectBuilder:
 
 #        print(json.dumps(start_page_data, ensure_ascii=False))
         end = timer()
-        total_number_key = conf.get('data', 'total_number_key')
+        try:
+            total_number_key = conf.get('data', 'total_number_key')
+        except:
+            total_number_key = None
         try:
             pages_number_key = conf.get('data', 'pages_number_key')
         except:

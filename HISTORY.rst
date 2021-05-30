@@ -3,6 +3,11 @@
 History
 =======
 
+1.0.4 (2021-05-31)
+* Added "start_page" in case if start_page is not 1 (could be 0 sometimes)
+* Added support of data returned as JSON array, not JSON dict and data_key not provided
+* Added initial code to implement Frictionless Data packaging
+
 1.0.3 (2020-10-28)
 ------------------
 * Added several new options
