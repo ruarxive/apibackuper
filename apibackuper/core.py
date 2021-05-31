@@ -169,8 +169,23 @@ def getfiles(projectpath):
     acmd.getfiles()
     pass
 
+@click.group()
+def cli9():
+    pass
 
-cli = click.CommandCollection(sources=[cli2, cli3, cli4, cli5, cli6, cli7, cli8])
+@cli9.command()
+@click.argument('filename', default=None)
+@click.option('--projectpath', '-p', default=None, help='Project path')
+def package(filename, projectpath):
+    """Create frictionless package"""
+    if projectpath:
+        acmd = ProjectBuilder(projectpath)
+    else:
+        acmd = ProjectBuilder(projectpath)
+    acmd.to_package(filename)
+    pass
+
+cli = click.CommandCollection(sources=[cli2, cli3, cli4, cli5, cli6, cli7, cli8, cli9])
 
 # if __name__ == '__main__':
 #    cli()
