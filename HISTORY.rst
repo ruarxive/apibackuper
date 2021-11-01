@@ -3,7 +3,17 @@
 History
 =======
 
+1.0.6 (2021-11-1)
+-----------------
+* Added "default_delay", 'retry_delay' and "retry_count" to manage error handling
+* If get HTTP status 500 or 503 starts retrying latest request till HTTP status 200 or retry_count ends
+
+1.0.5 (2021-05-31)
+------------------
+* Minor fixes
+
 1.0.4 (2021-05-31)
+------------------
 * Added "start_page" in case if start_page is not 1 (could be 0 sometimes)
 * Added support of data returned as JSON array, not JSON dict and data_key not provided
 * Added initial code to implement Frictionless Data packaging

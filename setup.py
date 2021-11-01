@@ -34,7 +34,7 @@ tests_require = [
 
 
 install_requires = [
-    'bson',
+    'bson', 'click', 'lxml',
 ]
 
 

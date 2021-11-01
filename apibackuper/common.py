@@ -1,7 +1,6 @@
 # coding: utf-8
 import lxml.etree as etree
 from collections import defaultdict
-import logging
 
 def etree_to_dict(t, prefix_strip=True):
     tag = t.tag if not prefix_strip else t.tag.rsplit('}', 1)[-1]
@@ -10,7 +9,6 @@ def etree_to_dict(t, prefix_strip=True):
     if children:
         dd = defaultdict(list)
         for dc in map(etree_to_dict, children):
-#            print(dir(dc))
             for k, v in dc.items():
                 if prefix_strip:
                     k = k.rsplit('}', 1)[-1]

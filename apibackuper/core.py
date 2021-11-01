@@ -3,6 +3,8 @@
 import click
 import logging
 from pprint import pprint
+import urllib3
+urllib3.disable_warnings()
 
 from .cmds.project import ProjectBuilder
 

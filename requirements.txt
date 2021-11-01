@@ -1,1 +1,4 @@
+pymongo
+lxml
 click
+
