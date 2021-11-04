@@ -1,4 +1,6 @@
 pymongo
 lxml
 click
-
+urllib3
+requests
+xmltodict

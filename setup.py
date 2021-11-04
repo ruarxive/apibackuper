@@ -34,7 +34,7 @@ tests_require = [
 
 
 install_requires = [
-    'bson', 'click', 'lxml',
+    'pymongo', 'click', 'lxml', 'urllib3', 'requests', 'xmltodict'
 ]
 
 
