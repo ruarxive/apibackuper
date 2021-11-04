@@ -3,6 +3,7 @@ import lxml.etree as etree
 from collections import defaultdict
 
 def etree_to_dict(t, prefix_strip=True):
+    """Converts XML (etree) object to the python dictionary. XML prefixes stripped"""
     tag = t.tag if not prefix_strip else t.tag.rsplit('}', 1)[-1]
     d = {tag: {} if t.attrib else None}
     children = list(t)

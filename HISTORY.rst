@@ -3,6 +3,10 @@
 History
 =======
 
+1.0.7 (2021-11-4)
+-----------------
+* Fixed "continue" mode. Now supports continue not only for "follow" command but for "run" command too. Use "apibackuper run continue" if it was stopped by error or user input.
+
 1.0.6 (2021-11-1)
 -----------------
 * Added "default_delay", 'retry_delay' and "retry_count" to manage error handling

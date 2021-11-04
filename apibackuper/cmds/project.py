@@ -52,7 +52,15 @@ def _url_replacer(url, params, query_mode=False):
         finalparams.append('%s=%s' % (str(k), str(v)))
     return parsed.geturl() + query_char + splitter.join(finalparams)
 
-
+def load_json_file(filename, default={}):
+    """Loads JSON file and return it as dict"""
+    if os.path.exists(filename):
+        f = open(filename, 'r', encoding='utf8')
+        data = json.load(f)
+        f.close()
+    else:
+        data = default
+    return data
 
 class ProjectBuilder:
     """Project builder"""
@@ -144,6 +152,32 @@ class ProjectBuilder:
                 self.file_storage_type = conf.get('files', 'file_storage_type') if conf.has_option('files', 'file_storage_type') else 'zip'
                 self.use_aria2 = conf.get('files', 'use_aria2') if conf.has_option('files', 'use_aria2') else 'False'
 
+    def _single_request(self, url, headers, params, flatten=None):
+        """Single http/https request"""
+        if self.http_mode == 'GET':
+            if self.flat_params and len(params.keys()) > 0:
+                s = []
+                for k, v in flatten.items():
+                    s.append('%s=%s' % (k, v.replace("'", '"').replace('True', 'true')))
+                logging.info('url: %s' % (url + '?' + '&'.join(s)))
+                if headers:
+                    response = self.http.get(url + '?' + '&'.join(s), headers=headers, verify=False)
+                else:
+                    response = self.http.get(url + '?' + '&'.join(s), verify=False)
+            else:
+                logging.info('url: %s, params: %s' % (url, str(params)))
+                if headers:
+                    response = self.http.get(url, params=params, headers=headers, verify=False)
+                else:
+                    response = self.http.get(url, params=params, verify=False)
+        else:
+            logging.debug('Request %s, params %s, headers %s' % (url, str(params), str(headers)))
+            if headers:
+                response = self.http.post(url, json=params, headers=headers, verify=False)
+            else:
+                response = self.http.post(url, json=params, verify=False)
+        return response
+
 
     @staticmethod
     def create(name):
@@ -171,7 +205,7 @@ class ProjectBuilder:
         pass
 
     def export(self, format, filename):
-        """Exports data"""
+        """Exports data as JSON lines, BSON and other formats"""
         if self.config is None:
             print('Config file not found. Please run in project directory')
             return
@@ -230,32 +264,9 @@ class ProjectBuilder:
         logging.info('Data exported to %s' % (filename))
 
 
-    def _single_request(self, url, headers, params, flatten=None):
-        if self.http_mode == 'GET':
-            if self.flat_params and len(params.keys()) > 0:
-                s = []
-                for k, v in flatten.items():
-                    s.append('%s=%s' % (k, v.replace("'", '"').replace('True', 'true')))
-                logging.info('url: %s' % (url + '?' + '&'.join(s)))
-                if headers:
-                    response = self.http.get(url + '?' + '&'.join(s), headers=headers)
-                else:
-                    response = self.http.get(url + '?' + '&'.join(s))
-            else:
-                logging.info('url: %s, params: %s' % (url, str(params)))
-                if headers:
-                    response = self.http.get(url, params=params, headers=headers)
-                else:
-                    response = self.http.get(url, params=params)
-        else:
-            logging.debug('Request %s, params %s, headers %s' % (url, str(params), str(headers)))
-            if headers:
-                response = self.http.post(url, json=params, headers=headers)
-            else:
-                response = self.http.post(url, json=params)
-        return response
 
     def run(self, mode):
+        """Run data collection"""
         if self.config is None:
             print('Config file not found. Please run in project directory')
             return
@@ -270,25 +281,11 @@ class ProjectBuilder:
         else:
             mzip = ZipFile(storage_file, mode='a', compression=ZIP_DEFLATED)
 
-
         start = timer()
+        headers= load_json_file(os.path.join(self.project_path, 'headers.json'), default={})
 
-        headers_file = os.path.join(self.project_path, 'headers.json')
-        if os.path.exists(headers_file):
-            f = open(headers_file, 'r', encoding='utf8')
-            headers = json.load(f)
-            f.close()
-        else:
-            headers = {}
+        params = load_json_file(os.path.join(self.project_path, 'params.json'), default={})
 
-        params = None
-        params_file = os.path.join(self.project_path, 'params.json')
-        if os.path.exists(params_file):
-            f = open(params_file, 'r', encoding='utf8')
-            params = json.load(f)
-            f.close()
-        else:
-            params = {}
         if self.flat_params:
             flatten = {}
             for k, v in params.items():
@@ -296,49 +293,18 @@ class ProjectBuilder:
         else:
             flatten = None
 
-        url_params = None
-        params_file = os.path.join(self.project_path, 'url_params.json')
-        if os.path.exists(params_file):
-            f = open(params_file, 'r', encoding='utf8')
-            url_params = json.load(f)
-            f.close()
+        url_params = load_json_file(os.path.join(self.project_path, 'url_params.json'), default=None)
         if self.query_mode == 'params':
             url = _url_replacer(self.start_url, url_params)
         elif self.query_mode == 'mixed':
             url = _url_replacer(self.start_url, url_params, query_mode=True)
         else:
             url = self.start_url
-        if self.http_mode == 'GET':
-            if self.flat_params and len(params.keys()) > 0:
-                s = []
-                for k, v in flatten.items():
-                    s.append('%s=%s' % (k, v.replace("'", '"').replace('True', 'true')))
-                if headers:
-                    response = self.http.get(url + '?' + '&'.join(s), headers=headers)
-                else:
-                    response = self.http.get(url + '?' + '&'.join(s))
-            else:
-                if headers:
-                    response = self.http.get(url, params=params, headers=headers, verify=False)
-                else:
-                    response = self.http.get(url, params=params, verify=False)
-            if self.resp_type == 'json':
-                start_page_data = response.json()
-            else:
-                start_page_data = xmltodict.parse(response.content)
+        response = self._single_request(url, headers, params, flatten)
+        if self.resp_type == 'json':
+            start_page_data = response.json()
         else:
-#            if flat_params and len(params.keys()) > 0:
-#                response = self.http.post(url, json=flatten)
-#            else:
-            logging.debug('Request %s, params %s, headers %s' % (url, str(params), str(headers)))
-            if headers:
-                response = self.http.post(url, json=params, headers=headers, verify=False)
-            else:
-                response = self.http.post(url, json=params, verify=False)
-            if self.resp_type == 'json':
-                start_page_data = response.json()
-            else:
-                start_page_data = xmltodict.parse(response.content)
+            start_page_data = xmltodict.parse(response.content)
 
 #        print(json.dumps(start_page_data, ensure_ascii=False))
         end = timer()
@@ -357,7 +323,24 @@ class ProjectBuilder:
         num_pages = int(num_pages)
 
         change_params = {}
-        for page in range(self.start_page, num_pages + self.start_page):
+
+        # By default it's "full" mode with start_page and end_page as full list of pages
+        start_page = self.start_page
+        end_page = num_pages + self.start_page
+
+        # if "continue" mode is set, shift start_page to last page saved. Force rewriting last page and continue
+        if mode == 'continue':
+            logging.debug('Continue mode enabled, looking for last saved page')
+            pagenames = mzip.namelist()
+            for page in range(self.start_page, num_pages):
+                if 'page_%d.json' % (page) not in pagenames:
+                    if page > self.start_page:
+                        start_page = page
+                    else:
+                        start_page = page
+                    break
+            logging.debug('Start page number %d' % (start_page))
+        for page in range(start_page, end_page):
             if self.page_size_param and len(self.page_size_param) > 0:
                 change_params[self.page_size_param] = self.page_limit
             if self.iterate_by == 'page':
