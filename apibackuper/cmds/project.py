@@ -692,7 +692,7 @@ class ProjectBuilder:
 #            if url in processed_files:
 #                continue
             if be_careful:
-                r = self.http.head(url, timeout=DEFAULT_TIMEOUT)
+                r = self.http.head(url, timeout=DEFAULT_TIMEOUT, verify=False)
                 if 'content-disposition' in r.headers.keys() and self.storage_mode == 'filepath':
                     filename = r.headers['content-disposition'].rsplit('filename=', 1)[-1].strip('"')
                 elif self.default_ext is not None:
@@ -723,7 +723,7 @@ class ProjectBuilder:
                 logging.info('File %s already stored' % (filename))
                 continue
             if not use_aria2:
-                response = self.http.get(url, timeout=DEFAULT_TIMEOUT)
+                response = self.http.get(url, timeout=DEFAULT_TIMEOUT, verify=False)
                 fstorage.store(filename, response.content)
                 list_file.write(url + '\n')
             else:
@@ -790,14 +790,14 @@ class ProjectBuilder:
                     logging.debug('Start request params: %s headers: %s' %(str(params), str(headers)))
                     if headers and len(headers.keys()) > 0:
                         if params and len(params.keys()) > 0:
-                            response = self.http.get(url, params=params, headers=headers)
+                            response = self.http.get(url, params=params, headers=headers, verify=False)
                         else:
-                            response = self.http.get(url, headers=headers)
+                            response = self.http.get(url, headers=headers, verify=False)
                     else:
                         if params and len(params.keys()) > 0:
-                            response = self.http.get(url, params=params)
+                            response = self.http.get(url, params=params, verify=False)
                         else:
-                            response = self.http.get(url)
+                            response = self.http.get(url, verify=False)
 
                     start_page_data = response.json()
             else:
