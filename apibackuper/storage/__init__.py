@@ -1,16 +1,18 @@
 from zipfile import ZipFile, ZIP_DEFLATED
 import os
 
+
 class FileStorage:
     """Base file storage class"""
+
     def __init__(self):
         pass
 
     def exists(self, name):
-        raise NotImplemented
+        raise NotImplementedError
 
     def store(self, filename, content):
-        raise NotImplemented
+        raise NotImplementedError
 
     def close(self):
         """Default implementation. Don't do anything"""
@@ -18,7 +20,8 @@ class FileStorage:
 
 
 class ZipFileStorage(FileStorage):
-    def __init__(self, filename, mode='a', compression=ZIP_DEFLATED):
+
+    def __init__(self, filename, mode="a", compression=ZIP_DEFLATED):
         FileStorage.__init__(self)
         self.mzip = ZipFile(filename, mode=mode, compression=compression)
         self.allfiles = self.mzip.namelist()
@@ -36,8 +39,10 @@ class ZipFileStorage(FileStorage):
     def close(self):
         self.mzip.close()
 
+
 class FilesystemStorage(FileStorage):
-    def __init__(self, dirpath=os.path.join('storage', 'files')):
+
+    def __init__(self, dirpath=os.path.join("storage", "files")):
         FileStorage.__init__(self)
         self.dirpath = dirpath
         pass
@@ -48,6 +53,6 @@ class FilesystemStorage(FileStorage):
 
     def store(self, filename, content):
         fullname = os.path.join(self.dirpath, filename)
-        f = open(fullname, 'wb')
+        f = open(fullname, "wb")
         f.write(content)
         f.close()
