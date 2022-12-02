@@ -10,7 +10,8 @@ from zipfile import ZipFile, ZIP_DEFLATED
 import gzip
 from urllib.parse import urlparse
 import requests
-import Path
+from pathlib import Path
+from contextlib import suppress
 
 import xmltodict
 
@@ -81,7 +82,7 @@ class ProjectBuilder:
 
     def __init__(self, project_path=None):
         self.http = requests.Session()
-        self.project_path = Path.cwd() if project_path is None else project_path
+        self.project_path = os.getcwd() if project_path is None else project_path
         self.config_filename = os.path.join(self.project_path,
                                             "apibackuper.cfg")
         self.__read_config(self.config_filename)
