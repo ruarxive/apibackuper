@@ -7,3 +7,4 @@
 * fpreceivers - receivers of subsidies and contracts for national projects from spending.gov.ru
 * hhemployers - Russian companies employers from hh.ru
 * subsidies - registry of government subsidies from budget.gov.ru
+* sozd - Russian state Duma (parliament) bills extractor using custom Python code

@@ -48,11 +48,13 @@ class FilesystemStorage(FileStorage):
         pass
 
     def exists(self, filename):
-        fullname = os.path.join(self.dirpath, filename)
+        fullname = os.path.join(self.dirpath, filename.lstrip('/').lstrip('\\'))
         return os.path.exists(fullname)
 
     def store(self, filename, content):
+        filename = filename.lstrip('/').lstrip('\\')
         fullname = os.path.join(self.dirpath, filename)
+        os.makedirs(os.path.dirname(fullname), exist_ok=True)
         f = open(fullname, "wb")
         f.write(content)
         f.close()

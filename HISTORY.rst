@@ -3,6 +3,10 @@
 History
 =======
 
+1.0.8 (2023-03-13)
+-----------------
+* Added Python scripts support to extract data from HTML web pages and 'sozd' example with scripts usage.
+
 1.0.7 (2021-11-4)
 -----------------
 * Fixed "continue" mode. Now supports continue not only for "follow" command but for "run" command too. Use "apibackuper run continue" if it was stopped by error or user input.

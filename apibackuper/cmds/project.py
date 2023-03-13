@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 import requests
 from pathlib import Path
 from contextlib import suppress
+from runpy import run_path
 
 import xmltodict
 
@@ -180,6 +181,10 @@ class ProjectBuilder:
             self.storage_file = os.path.join(self.storagedir, "storage.zip")
             self.details_storage_file = os.path.join(self.storagedir,
                                                      "details.zip")
+
+            self.code_postfetch = conf.get('code', 'postfetch') if conf.has_option('code', 'postfetch') else None
+            self.code_follow = conf.get('code', 'follow') if conf.has_option('code', 'follow') else None
+
 
             if conf.has_section("follow"):
                 self.follow_data_key = (conf.get(
@@ -371,6 +376,12 @@ class ProjectBuilder:
             return
         if not os.path.exists(self.storagedir):
             os.mkdir(self.storagedir)
+
+        process_func = None
+        if self.code_postfetch is not None:
+            script = run_path(self.code_postfetch)
+            process_func = script['process']
+
         if self.storage_type != "zip":
             print("Only zip storage supported right now")
             return
@@ -407,8 +418,10 @@ class ProjectBuilder:
         response = self._single_request(url, headers, params, flatten)
         if self.resp_type == "json":
             start_page_data = response.json()
-        else:
+        elif self.resp_type == 'xml':
             start_page_data = xmltodict.parse(response.content)
+        elif self.resp_type == 'html' and process_func is not None:
+            start_page_data = process_func(response.content)
 
         #        print(json.dumps(start_page_data, ensure_ascii=False))
         end = timer()
@@ -503,7 +516,9 @@ class ProjectBuilder:
                 if self.resp_type == "json":
                     outdata = response.content
                 elif self.resp_type == "xml":
-                    outdata = json.dumps(xmltodict.parse(response.content))
+                    outdata = json.dumps(xmltodict.parse(response.content), ensure_ascii=False)
+                elif self.resp_type == "html":
+                    outdata = json.dumps(process_func(response.content), ensure_ascii=False)
                 mzip.writestr("page_%d.json" % (page), outdata)
             else:
                 logging.info("Errors persist on page %d. Stopped" % (page))
@@ -527,6 +542,12 @@ class ProjectBuilder:
         if not os.path.exists(self.storage_file):
             print("Storage file not found")
             return
+
+        process_func = None
+        if self.code_postfetch is not None:
+            script = run_path(self.code_follow)
+            process_func = script['process']
+
 
         params = None
         params_file = os.path.join(self.project_path, "follow_params.json")
@@ -608,8 +629,11 @@ class ProjectBuilder:
                         response = self.http.post(self.follow_pattern,
                                                   params=params)
                 logging.info("Saving object with id %s. %d of %d" %
-                             (key, n, total))
-                mzip.writestr("%s.json" % (key), response.content)
+                             (key, n, total))                
+                if self.resp_type == 'json':
+                    mzip.writestr('%s.json' % (key), response.content)
+                elif self.resp_type == 'html':
+                    mzip.writestr('%s.json' % (key), json.dumps(process_func(response.content), ensure_ascii=False))
                 time.sleep(DEFAULT_DELAY)
             mzip.close()
         elif self.follow_mode == "url":
@@ -662,7 +686,10 @@ class ProjectBuilder:
                 #                    response = self.http.post(start_url, json=params)
                 logging.info("Saving object with id %s. %d of %d" %
                              (key, n, total))
-                mzip.writestr("%s.json" % (key), response.content)
+                if self.resp_type == 'json':
+                    mzip.writestr('%s.json' % (key), response.content)
+                elif self.resp_type == 'html':
+                    mzip.writestr('%s.json' % (key), json.dumps(process_func(response.content), ensure_ascii=False))
                 time.sleep(DEFAULT_DELAY)
             mzip.close()
         elif self.follow_mode == "drilldown":
@@ -705,7 +732,10 @@ class ProjectBuilder:
                 response = self.http.get(url)
                 logging.info("Saving object with id %s. %d of %d" %
                              (key, n, total))
-                mzip.writestr("%s.json" % (key), response.content)
+                if self.resp_type == 'json':
+                    mzip.writestr('%s.json' % (key), response.content)
+                elif self.resp_type == 'html':
+                    mzip.writestr('%s.json' % (key), json.dumps(process_func(response.content), ensure_ascii=False))
                 time.sleep(DEFAULT_DELAY)
             mzip.close()
         else:
@@ -948,6 +978,11 @@ class ProjectBuilder:
         params = {}
         data_size = 0
 
+        process_func = None
+        if self.code_postfetch is not None:
+            script = run_path(self.code_postfetch)
+            process_func = script['process']        
+
         headers = None
         headers_file = os.path.join(self.project_path, "headers.json")
         if os.path.exists(headers_file):
@@ -1018,7 +1053,10 @@ class ProjectBuilder:
                         else:
                             response = self.http.get(url, verify=False)
 
-                    start_page_data = response.json()
+                    if self.resp_type == 'json':
+                        start_page_data = response.json()
+                    elif self.resp_type == 'html':
+                        start_page_data = process_func(response.content)
             else:
                 logging.info(url)
                 if headers:
@@ -1028,7 +1066,12 @@ class ProjectBuilder:
                                               headers=headers)
                 else:
                     response = self.http.post(url, json=params, verify=False)
-                start_page_data = response.json()
+
+                if self.resp_type == 'json':
+                    start_page_data = response.json()
+                elif self.resp_type == 'html':
+                    start_page_data = process_func(response.content)
+
             total = get_dict_value(start_page_data,
                                    self.total_number_key,
                                    splitter=self.field_splitter)

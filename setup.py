@@ -1,13 +1,16 @@
 # This is purely the result of trial and error.
 
 import sys
+import io
 import codecs
+import re
 
 from setuptools import setup, find_packages
 from setuptools.command.test import test as TestCommand
 
 import apibackuper
 
+open_as_utf = lambda x: io.open(x, encoding='utf-8')
 
 class PyTest(TestCommand):
     # `$ python setup.py test' simply installs minimal requirements
@@ -56,17 +59,26 @@ extras_require = {
 }
 
 
-def long_description():
-    with codecs.open('README.rst', encoding='utf8') as f:
-        return f.read()
+
+readme = re.sub(r':members:.+|..\sautomodule::.+|:class:|:func:', '', open_as_utf('README.rst').read())
+readme = re.sub(r'`Settings`_', '`Settings`', readme)
+readme = re.sub(r'`Contributing`_', '`Contributing`', readme)
+history = re.sub(r':mod:|:class:|:func:', '', open_as_utf('HISTORY.rst').read())
+
+
+#def long_description():
+#    with codecs.open('README.rst', encoding='utf8') as f:
+#        return f.read()
 
 
 setup(
     name='apibackuper',
     version=apibackuper.__version__,
     description=apibackuper.__doc__.strip(),
-    long_description=long_description(),
-#    long_description_content_type='text/rst',
+#    long_description=readme,
+    long_description=readme + '\n\n' + history,
+#    long_description=long_description(),
+    long_description_content_type='text/x-rst',
     url='https://github.com/datacoon/apibackuper/',
     download_url='https://github.com/datacoon/apibackuper/',
     packages=find_packages(exclude=('tests', 'tests.*')),
