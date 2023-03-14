@@ -6,6 +6,7 @@ import sys
 
 
 def main():
+    """Main function"""
     try:
         from .core import cli
 

@@ -1,3 +1,4 @@
+"""Constants"""
 DEFAULT_OPTIONS = {"initialized": False}
 DEFAULT_DELAY = 0.5
 RETRY_DELAY = 5

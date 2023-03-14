@@ -36,19 +36,19 @@ from ..storage import FilesystemStorage, ZipFileStorage
 def load_file_list(filename, encoding="utf8"):
     """Reads file and returns list of strings as list"""
     flist = []
-    with open(filename, "r", encoding=encoding) as f:
-        for l in f:
-            flist.append(l.rstrip())
+    with open(filename, "r", encoding=encoding) as fobj:
+        for line in fobj:
+            flist.append(line.rstrip())
     return flist
 
 
 def load_csv_data(filename, key, encoding="utf8", delimiter=";"):
     """Reads CSV file and returns list records as array of dicts"""
     flist = {}
-    with open(filename, "r", encoding=encoding) as f:
-        reader = csv.DictReader(f, delimiter=delimiter)
-        for r in reader:
-            flist[r[key]] = r
+    with open(filename, "r", encoding=encoding) as fobj:
+        reader = csv.DictReader(fobj, delimiter=delimiter)
+        for row in reader:
+            flist[row[key]] = row
     return flist
 
 
@@ -62,17 +62,17 @@ def _url_replacer(url, params, query_mode=False):
         query_char = PARAM_SPLITTER
     parsed = urlparse(url)
     finalparams = []
-    for k, v in params.items():
-        finalparams.append("%s=%s" % (str(k), str(v)))
+    for key, value in params.items():
+        finalparams.append("%s=%s" % (str(key), str(value)))
     return parsed.geturl() + query_char + splitter.join(finalparams)
 
 
 def load_json_file(filename, default={}):
     """Loads JSON file and return it as dict"""
     if os.path.exists(filename):
-        f = open(filename, "r", encoding="utf8")
-        data = json.load(f)
-        f.close()
+        fobj = open(filename, "r", encoding="utf8")
+        data = json.load(fobj)
+        fobj.close()
     else:
         data = default
     return data
@@ -230,9 +230,9 @@ class ProjectBuilder:
         if self.http_mode == "GET":
             if self.flat_params and len(params.keys()) > 0:
                 s = []
-                for k, v in flatten.items():
+                for key, value in flatten.items():
                     s.append("%s=%s" %
-                             (k, v.replace("'", '"').replace("True", "true")))
+                             (key, value.replace("'", '"').replace("True", "true")))
                 logging.info("url: %s" % (url + "?" + "&".join(s)))
                 if headers:
                     response = self.http.get(url + "?" + "&".join(s),
@@ -296,7 +296,6 @@ class ProjectBuilder:
         if self.config is None:
             print("Config file not found. Please run in project directory")
             return
-        pass
 
     def export(self, format, filename):
         """Exports data as JSON lines, BSON and other formats"""
@@ -307,7 +306,6 @@ class ProjectBuilder:
             outfile = open(filename, "w", encoding="utf8")
         elif format == "gzip":
             outfile = gzip.open(filename, mode="wt", encoding="utf8")
-            pass
         else:
             print("Only 'jsonl' format supported for now.")
             return

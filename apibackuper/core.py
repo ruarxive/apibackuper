@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf8 -*-
-from .cmds.project import ProjectBuilder
-import click
-import logging
 from pprint import pprint
+import logging
 import urllib3
+import click
+
+from .cmds.project import ProjectBuilder
 
 urllib3.disable_warnings()
 
@@ -14,7 +15,7 @@ logging.basicConfig(
     level=logging.DEBUG)
 
 
-def enableVerbose():
+def enable_verbose():
     logging.basicConfig(
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         level=logging.DEBUG,
@@ -85,7 +86,7 @@ def init(
 ):
     """Initializes project with required parameters"""
     if verbose:
-        enableVerbose()
+        enable_verbose()
     acmd = ProjectBuilder()
     acmd.init(
         url,
@@ -98,7 +99,6 @@ def init(
         http_mode,
         work_modes,
     )
-    pass
 
 
 @click.group()
@@ -129,13 +129,12 @@ def cli3():
 def run(mode, projectpath, verbose):
     """Executes project, collects data from API"""
     if verbose:
-        enableVerbose()
+        enable_verbose()
     if projectpath:
         acmd = ProjectBuilder(projectpath)
     else:
         acmd = ProjectBuilder(projectpath)
     acmd.run(mode)
-    pass
 
 
 @click.group()
@@ -153,7 +152,6 @@ def estimate(mode, projectpath):
     else:
         acmd = ProjectBuilder(projectpath)
     acmd.estimate(mode)
-    pass
 
 
 @click.group()
@@ -172,7 +170,7 @@ def cli5():
 def export(format, filename, projectpath, verbose):
     """Exports data as jsonl, json, bson or csv file"""
     if verbose:
-        enableVerbose()
+        enable_verbose()
     if projectpath:
         acmd = ProjectBuilder(projectpath)
     else:
@@ -196,7 +194,6 @@ def info(projectpath):
         acmd = ProjectBuilder(projectpath)
     report = acmd.info(stats=True)
     pprint(report)
-    pass
 
 
 @click.group()
@@ -214,7 +211,6 @@ def follow(mode, projectpath):
     else:
         acmd = ProjectBuilder(projectpath)
     acmd.follow(mode)
-    pass
 
 
 @click.group()
@@ -249,7 +245,6 @@ def package(filename, projectpath):
     else:
         acmd = ProjectBuilder(projectpath)
     acmd.to_package(filename)
-    pass
 
 
 cli = click.CommandCollection(

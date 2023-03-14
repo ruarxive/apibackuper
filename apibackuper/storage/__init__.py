@@ -25,7 +25,6 @@ class ZipFileStorage(FileStorage):
         FileStorage.__init__(self)
         self.mzip = ZipFile(filename, mode=mode, compression=compression)
         self.allfiles = self.mzip.namelist()
-        pass
 
     def store(self, filename, content):
         self.mzip.writestr(filename, content)
@@ -55,6 +54,6 @@ class FilesystemStorage(FileStorage):
         filename = filename.lstrip('/').lstrip('\\')
         fullname = os.path.join(self.dirpath, filename)
         os.makedirs(os.path.dirname(fullname), exist_ok=True)
-        f = open(fullname, "wb")
-        f.write(content)
-        f.close()
+        fobj = open(fullname, "wb")
+        fobj.write(content)
+        fobj.close()

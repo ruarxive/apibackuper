@@ -1,6 +1,7 @@
 # coding: utf-8
-import lxml.etree as etree
+"""Common functions"""
 from collections import defaultdict
+import lxml.etree as etree
 
 
 def etree_to_dict(t, prefix_strip=True):
@@ -105,12 +106,12 @@ def set_dict_value(adict, key, value, prefix=None, splitter="."):
                 if res:
                     result.extend(res)
                 return result
-            else:
-                adict[prefix[0]] = set_dict_value(adict[0][prefix[0]],
+        else:
+            adict[prefix[0]] = set_dict_value(adict[0][prefix[0]],
                                                   key,
                                                   value,
                                                   prefix=prefix[1:])
-                return adict
+            return adict
         return None
 
 
@@ -119,22 +120,3 @@ def update_dict_values(left_dict, params_dict):
     for k, v in params_dict.items():
         left_dict = set_dict_value(left_dict, k, v)
     return left_dict
-
-
-def xml_to_dict(source,
-                output,
-                tagname,
-                prefix_strip=True,
-                dolog=True,
-                encoding="utf8"):
-    n = 0
-
-    for event, elem in etree.iterparse(source, recover=True):
-        shorttag = elem.tag.rsplit("}", 1)[-1]
-        if shorttag == tagname:
-            n += 1
-            if prefix_strip:
-                j = etree_to_dict(elem, prefix_strip)
-            else:
-                j = etree_to_dict(elem)
-            elem.clear()
