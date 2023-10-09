@@ -29,6 +29,7 @@ from ..constants import (
     FILE_SIZE_DOWNLOAD_LIMIT,
     DEFAULT_ERROR_STATUS_CODES,
     RETRY_DELAY,
+    DEFAULT_NUMBER_OF_PAGES
 )
 from ..storage import FilesystemStorage, ZipFileStorage
 
@@ -428,6 +429,7 @@ class ProjectBuilder:
             total = get_dict_value(start_page_data,
                                    self.total_number_key,
                                    splitter=self.field_splitter)
+            total = int(total)
             nr = 1 if total % self.page_limit > 0 else 0
             num_pages = (total / self.page_limit) + nr
         elif len(self.pages_number_key) > 0:
@@ -439,8 +441,11 @@ class ProjectBuilder:
         else:
             num_pages = None
             total = None
-        logging.info("Total pages %d, records %d" % (num_pages, total))
-        num_pages = int(num_pages)
+        if total is not None and num_pages is not None:
+             logging.info("Total pages %d, records %d" % (num_pages, total))
+             num_pages = int(num_pages)
+        else: 
+             num_pages = DEFAULT_NUMBER_OF_PAGES
 
         change_params = {}
 
@@ -614,18 +619,18 @@ class ProjectBuilder:
                     if headers:
                         response = self.http.get(self.follow_pattern,
                                                  params=params,
-                                                 headers=headers)
+                                                 headers=headers, verify=False)
                     else:
                         response = self.http.get(self.follow_pattern,
-                                                 params=params)
+                                                 params=params, verify=False)
                 else:
                     if headers:
                         response = self.http.post(self.follow_pattern,
                                                   params=params,
-                                                  headers=headers)
+                                                  headers=headers, verify=False)
                     else:
                         response = self.http.post(self.follow_pattern,
-                                                  params=params)
+                                                  params=params, verify=False)
                 logging.info("Saving object with id %s. %d of %d" %
                              (key, n, total))                
                 if self.resp_type == 'json':
@@ -676,9 +681,9 @@ class ProjectBuilder:
                 if headers:
                     response = self.http.get(url,
                                              params=params,
-                                             headers=headers)
+                                             headers=headers, verify=False)
                 else:
-                    response = self.http.get(url, params=params)
+                    response = self.http.get(url, params=params, verify=False)
                 #                else:
                 #                if http_mode == 'GET':
                 #                    response = self.http.post(start_url, json=params)
@@ -727,7 +732,7 @@ class ProjectBuilder:
                 n += 1
                 url = self.follow_pattern + str(key)
                 #                print(url)
-                response = self.http.get(url)
+                response = self.http.get(url, verify=False)
                 logging.info("Saving object with id %s. %d of %d" %
                              (key, n, total))
                 if self.resp_type == 'json':
@@ -833,8 +838,8 @@ class ProjectBuilder:
                             if urls is not None:
                                 for uniq_id in urls:
                                     if uniq_id is not None and len(
-                                            uniq_id.strip()) > 0:
-                                        uniq_ids.add(uniq_id)
+                                            str(uniq_id).strip()) > 0:
+                                        uniq_ids.add(str(uniq_id))
             mzip.close()
 
             logging.info("Storing all filenames")
@@ -1026,10 +1031,10 @@ class ProjectBuilder:
                             (k, v.replace("'", '"').replace("True", "true")))
                     if headers:
                         start_page_data = self.http.get(
-                            url + "?" + "&".join(s), headers=headers).json()
+                            url + "?" + "&".join(s), headers=headers, verify=False).json()
                     else:
                         start_page_data = self.http.get(url + "?" +
-                                                        "&".join(s)).json()
+                                                        "&".join(s), verify=False).json()
                 else:
                     logging.debug("Start request params: %s headers: %s" %
                                   (str(params), str(headers)))
