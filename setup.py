@@ -60,25 +60,17 @@ extras_require = {
 
 
 
-readme = re.sub(r':members:.+|..\sautomodule::.+|:class:|:func:', '', open_as_utf('README.rst').read())
-readme = re.sub(r'`Settings`_', '`Settings`', readme)
-readme = re.sub(r'`Contributing`_', '`Contributing`', readme)
-history = re.sub(r':mod:|:class:|:func:', '', open_as_utf('HISTORY.rst').read())
-
-
-#def long_description():
-#    with codecs.open('README.rst', encoding='utf8') as f:
-#        return f.read()
+def long_description():
+    with codecs.open('README.md', encoding='utf8') as f:
+        return f.read()
 
 
 setup(
     name='apibackuper',
     version=apibackuper.__version__,
     description=apibackuper.__doc__.strip(),
-#    long_description=readme,
-    long_description=readme + '\n\n' + history,
-#    long_description=long_description(),
-    long_description_content_type='text/x-rst',
+    long_description=long_description(),
+    long_description_content_type='text/markdown',
     url='https://github.com/datacoon/apibackuper/',
     download_url='https://github.com/datacoon/apibackuper/',
     packages=find_packages(exclude=('tests', 'tests.*')),
