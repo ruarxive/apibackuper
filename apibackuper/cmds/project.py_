@@ -546,7 +546,8 @@ class ProjectBuilder:
                 tf.close()
 #                logging.info(str(data))
                 try:
-                    for item in get_dict_value(data, self.data_key, splitter=self.field_splitter):
+                    repeatable_data = get_dict_value(data, self.data_key, splitter=self.field_splitter) if self.data_key else data
+                    for item in repeatable_data:
                         id = item[self.follow_item_key]
                         allkeys[id] = get_dict_value(item, self.follow_url_key, splitter=self.field_splitter)
                 except KeyError:
@@ -591,8 +592,12 @@ class ProjectBuilder:
                 data = json.load(tf)
                 tf.close()
                 try:
-                    for item in get_dict_value(data, self.data_key, splitter=self.field_splitter):
-                        allkeys.append(item[self.follow_item_key])
+                    if self.data_key:
+                        for item in get_dict_value(data, self.data_key, splitter=self.field_splitter):
+                            allkeys.append(item[self.follow_item_key])
+                    else:
+                        for item in data:
+                            allkeys.append(item[self.follow_item_key])
                 except KeyboardInterrupt:
                     logging.info('Data key: %s not found' % (self.data_key))
             if mode == 'full':
@@ -708,13 +713,12 @@ class ProjectBuilder:
                     data = json.load(tf)
                     tf.close()
                     try:
-                        if self.data_key:
-                            iterate_data = get_dict_value(data, self.data_key, splitter=self.field_splitter)
-                        else:
-                            iterate_data = data
+                        
+                        iterate_data = get_dict_value(data, self.data_key, splitter=self.field_splitter) if self.data_key else data
                         for item in iterate_data:
                             if item:
                                 for key in self.files_keys:
+                                    logging.info(f'Extracting key {key}')
                                     file_data = get_dict_value(item, key, as_array=True, splitter=self.field_splitter)
                                     if file_data:
                                         for uniq_id in file_data:

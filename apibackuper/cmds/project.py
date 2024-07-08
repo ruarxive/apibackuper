@@ -123,7 +123,7 @@ class ProjectBuilder:
             self.name = conf.get("settings", "name")
             self.logfile = (conf.get("settings", "logfile") if conf.has_option(
                 "settings", "logfile") else "apibackuper.log")
-            self.data_key = conf.get("data", "data_key")
+            self.data_key = conf.get("data", "data_key") if conf.has_option('data', 'data_key') else None
             self.storage_type = conf.get("storage", "storage_type")
             self.http_mode = conf.get("project", "http_mode")
             self.description = (conf.get(
@@ -186,8 +186,9 @@ class ProjectBuilder:
             self.code_postfetch = conf.get('code', 'postfetch') if conf.has_option('code', 'postfetch') else None
             self.code_follow = conf.get('code', 'follow') if conf.has_option('code', 'follow') else None
 
-
+            self.follow_enabled = False
             if conf.has_section("follow"):
+                self.follow_enabled = True
                 self.follow_data_key = (conf.get(
                     "follow", "follow_data_key") if conf.has_option(
                         "follow", "follow_data_key") else None)
@@ -522,7 +523,14 @@ class ProjectBuilder:
                     outdata = json.dumps(xmltodict.parse(response.content), ensure_ascii=False)
                 elif self.resp_type == "html":
                     outdata = json.dumps(process_func(response.content), ensure_ascii=False)
+                if len(outdata) == 0:
+                    logging.info("Empty results on page %d. Stopped" % (page))
+                    break             
                 mzip.writestr("page_%d.json" % (page), outdata)
+                if self.page_limit:                    
+                    if len(outdata) < int(self.page_limit):
+                        logging.info("Page %d size is %d, less than expected page size %s. Stopped" % (page, len(outdata), str(self.page_limit)))
+                        break             
             else:
                 logging.info("Errors persist on page %d. Stopped" % (page))
                 break
@@ -532,10 +540,13 @@ class ProjectBuilder:
 
     def follow(self, mode="full"):
         """Collects data about each data using additional requests"""
-
+ 
         if self.config is None:
             print("Config file not found. Please run in project directory")
             return
+        if not self.follow_enabled:
+            print("Follow mode not enabled")
+            return           
         if not os.path.exists(self.storagedir):
             os.mkdir(self.storagedir)
         if self.storage_type != "zip":
@@ -705,9 +716,12 @@ class ProjectBuilder:
                 data = json.load(tf)
                 tf.close()
                 try:
-                    for item in get_dict_value(data,
+                    repeatable_data = get_dict_value(data,
                                                self.data_key,
-                                               splitter=self.field_splitter):
+                                               splitter=self.field_splitter) if self.data_key else data
+                    if isinstance(repeatable_data, dict):
+                        continue
+                    for item in repeatable_data:
                         allkeys.append(item[self.follow_item_key])
                 except KeyboardInterrupt:
                     logging.info("Data key: %s not found" % (self.data_key))
@@ -758,6 +772,11 @@ class ProjectBuilder:
         if not os.path.exists(storage_file):
             print("Storage file not found")
             return
+
+        headers = load_json_file(os.path.join(self.project_path,
+                                              "headers.json"),
+                                 default={})
+
         uniq_ids = set()
 
         allfiles_name = os.path.join(self.storagedir, "allfiles.csv")
@@ -951,7 +970,7 @@ class ProjectBuilder:
                 logging.info("File %s already stored" % (filename))
                 continue
             if not use_aria2:
-                response = self.http.get(url,
+                response = self.http.get(url, headers=headers,
                                          timeout=DEFAULT_TIMEOUT,
                                          verify=False)
                 fstorage.store(filename, response.content)
