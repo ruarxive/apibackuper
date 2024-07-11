@@ -7,3 +7,4 @@ Requests>=2.31.0
 setuptools>=65.5.0
 urllib3>=2.0.6
 xmltodict>=0.13.0
+zipp>=3.19.1 # not directly required, pinned by Snyk to avoid a vulnerability
