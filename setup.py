@@ -4,13 +4,33 @@ import sys
 import io
 import codecs
 import re
+import os
 
 from setuptools import setup, find_packages
 from setuptools.command.test import test as TestCommand
 
-import apibackuper
-
 open_as_utf = lambda x: io.open(x, encoding='utf-8')
+
+# Read version and metadata from __init__.py without importing
+def get_version_and_metadata():
+    """Read version and metadata from apibackuper/__init__.py"""
+    init_path = os.path.join(os.path.dirname(__file__), 'apibackuper', '__init__.py')
+    with open(init_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    version_match = re.search(r"__version__\s*=\s*['\"]([^'\"]+)['\"]", content)
+    author_match = re.search(r"__author__\s*=\s*['\"]([^'\"]+)['\"]", content)
+    licence_match = re.search(r"__licence__\s*=\s*['\"]([^'\"]+)['\"]", content)
+    doc_match = re.search(r'"""(.*?)"""', content, re.DOTALL)
+    
+    version = version_match.group(1) if version_match else '0.0.0'
+    author = author_match.group(1) if author_match else 'Unknown'
+    licence = licence_match.group(1) if licence_match else 'MIT'
+    doc = doc_match.group(1).strip() if doc_match else 'apibackuper'
+    
+    return version, author, licence, doc
+
+__version__, __author__, __licence__, __doc__ = get_version_and_metadata()
 
 class PyTest(TestCommand):
     # `$ python setup.py test' simply installs minimal requirements
@@ -67,17 +87,17 @@ def long_description():
 
 setup(
     name='apibackuper',
-    version=apibackuper.__version__,
-    description=apibackuper.__doc__.strip(),
+    version=__version__,
+    description=__doc__.strip(),
     long_description=long_description(),
     long_description_content_type='text/markdown',
     url='https://github.com/datacoon/apibackuper/',
     download_url='https://github.com/datacoon/apibackuper/',
     packages=find_packages(exclude=('tests', 'tests.*')),
     include_package_data=True,
-    author=apibackuper.__author__,
+    author=__author__,
     author_email='ivan@begtin.tech',
-    license=apibackuper.__licence__,
+    license=__licence__,
     entry_points={
         'console_scripts': [
             'apibackuper = apibackuper.__main__:main',
