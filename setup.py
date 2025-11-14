@@ -37,7 +37,7 @@ tests_require = [
 
 
 install_requires = [
-    'pymongo', 'click', 'lxml', 'urllib3', 'requests', 'xmltodict'
+    'typer', 'lxml', 'urllib3', 'requests', 'xmltodict', 'PyYAML', 'jsonschema>=4.0.0', 'tqdm>=4.66.0'
 ]
 
 

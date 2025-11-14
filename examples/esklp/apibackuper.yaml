@@ -1,0 +1,29 @@
+settings:
+  initialized: true
+  name: esklp-numreg
+
+project:
+  description: ESKLP registration
+  url: https://esklp.egisz.rosminzdrav.ru/rest/search_smnn
+  http_mode: GET
+  work_modes: full,incremental,update
+  iterate_by: page
+
+params:
+  page_size_param: per_page
+  page_size_limit: 100
+  page_number_param: page
+
+data:
+  total_number_key: count_total
+  data_key: results
+  item_key: num_reg_version
+  change_key: 
+
+storage:
+  storage_type: zip
+  compression: true
+
+request:
+  verify_ssl: false
+

@@ -1,0 +1,44 @@
+settings:
+  initialized: true
+  name: sozddumagovru
+
+project:
+  description: SOZD Duma.gov.ru
+  url: https://sozd.duma.gov.ru/oz?b[ExistsEvents][]=1.1&date_period_from_ExistsEventsDate=01.01.2020&b[ExistsEventsDate]=01.01.2020%%20-%%20&date_period_from_MaxDate=12.03.2023&b[MaxDate]=12.03.2023%%20-%%20&b[FormOfTheObjectLawmaking][]=0C2E8786-6447-4F74-986D-372965233FF7|3DEF47A6-7F6C-402D-A04A-4706155D8344|3D0CC562-AAC1-402C-986A-A2960109661E&b[ClassOfTheObjectLawmakingId]=1&
+  http_mode: GET
+  work_modes: full,incremental,update
+  iterate_by: page
+  resp_type: html
+
+params:
+  page_size_param: ""
+  page_size_limit: 10
+  page_number_param: page_34F6AE40-BDF0-408A-A56E-E48511C6B618
+
+data:
+  total_number_key: total
+  data_key: data
+  item_key: num
+  change_key: ""
+
+follow:
+  follow_item_key: num
+  follow_mode: prefix
+  follow_pattern: https://sozd.duma.gov.ru/bill/
+  follow_url_key: num
+
+files:
+  fetch_mode: prefix
+  root_url: https://sozd.duma.gov.ru
+  keys: documents.url
+  storage_mode: filepath
+  file_storage_type: filesystem
+
+code:
+  postfetch: scripts/listtodata.py
+  follow: scripts/pagetodata.py
+
+storage:
+  storage_type: zip
+  compression: true
+

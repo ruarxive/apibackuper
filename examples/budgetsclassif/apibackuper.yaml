@@ -1,0 +1,27 @@
+settings:
+  initialized: true
+  name: budgetclassif
+
+project:
+  description: Federal budgets registry
+  url: http://budget.gov.ru/epbs/registry/7710568760-BUDGETS/data
+  http_mode: GET
+  work_modes: full,incremental,update
+  iterate_by: page
+
+params:
+  page_size_param: pageSize
+  page_number_param: pageNum
+  page_size_limit: 500
+
+data:
+  pages_number_key: pageCount
+  total_number_key: recordCount
+  data_key: data
+  item_key: guid
+  change_key: loaddate
+
+storage:
+  storage_type: zip
+  compression: true
+

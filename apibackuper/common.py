@@ -36,7 +36,7 @@ def get_dict_value(adict, key, prefix=None, as_array=False, splitter="."):
     if prefix is None:
         prefix = key.split(splitter)
     if len(prefix) == 1:
-        if type(adict) == type({}):
+        if isinstance(adict, dict):
             if not prefix[0] in adict.keys():
                 return None
             if as_array:
@@ -44,40 +44,42 @@ def get_dict_value(adict, key, prefix=None, as_array=False, splitter="."):
                     adict[prefix[0]],
                 ]
             return adict[prefix[0]]
-        elif type(adict) == type([]):
+        elif isinstance(adict, list):
             if as_array:
                 result = []
                 for v in adict:
-                    if prefix[0] in v.keys():
+                    if isinstance(v, dict) and prefix[0] in v.keys():
                         result.append(v[prefix[0]])
                 return result
             else:
-                if len(adict) > 0 and prefix[0] in adict[0].keys():
+                if len(adict) > 0 and isinstance(adict[0], dict) and prefix[0] in adict[0].keys():
                     return adict[0][prefix[0]]
         return None
     else:
-        if type(adict) == type({}):
+        if isinstance(adict, dict):
             if prefix[0] in adict.keys():
                 return get_dict_value(adict[prefix[0]],
                                       key,
                                       prefix=prefix[1:],
                                       as_array=as_array)
-        elif type(adict) == type([]):
+        elif isinstance(adict, list):
             if as_array:
                 result = []
                 for v in adict:
-                    res = get_dict_value(v[prefix[0]],
-                                         key,
-                                         prefix=prefix[1:],
-                                         as_array=as_array)
-                    if res:
-                        result.extend(res)
+                    if isinstance(v, dict) and prefix[0] in v.keys():
+                        res = get_dict_value(v[prefix[0]],
+                                             key,
+                                             prefix=prefix[1:],
+                                             as_array=as_array)
+                        if res:
+                            result.extend(res if isinstance(res, list) else [res])
                 return result
             else:
-                return get_dict_value(adict[0][prefix[0]],
-                                      key,
-                                      prefix=prefix[1:],
-                                      as_array=as_array)
+                if len(adict) > 0 and isinstance(adict[0], dict) and prefix[0] in adict[0].keys():
+                    return get_dict_value(adict[0][prefix[0]],
+                                          key,
+                                          prefix=prefix[1:],
+                                          as_array=as_array)
         return None
 
 
@@ -86,32 +88,29 @@ def set_dict_value(adict, key, value, prefix=None, splitter="."):
     if prefix is None:
         prefix = key.split(splitter)
     if len(prefix) == 1:
-        if type(adict) == type({}):
+        if isinstance(adict, dict):
             adict[prefix[0]] = value
         return adict
     else:
-        if type(adict) == type({}):
+        if isinstance(adict, dict):
+            if prefix[0] not in adict:
+                adict[prefix[0]] = {}
             adict[prefix[0]] = set_dict_value(adict[prefix[0]],
                                               key,
                                               value,
                                               prefix=prefix[1:])
             return adict
-        elif type(adict) == type([]):
+        elif isinstance(adict, list):
             result = []
             for v in adict:
-                res = set_dict_value(v[prefix[0]],
-                                     key,
-                                     value,
-                                     prefix=prefix[1:])
-                if res:
-                    result.extend(res)
-                return result
-        else:
-            adict[prefix[0]] = set_dict_value(adict[0][prefix[0]],
-                                                  key,
-                                                  value,
-                                                  prefix=prefix[1:])
-            return adict
+                if isinstance(v, dict) and prefix[0] in v:
+                    res = set_dict_value(v[prefix[0]],
+                                         key,
+                                         value,
+                                         prefix=prefix[1:])
+                    if res:
+                        result.append(res)
+            return result
         return None
 
 

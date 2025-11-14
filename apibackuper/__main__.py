@@ -5,15 +5,15 @@
 import sys
 
 
-def main():
+def main() -> None:
     """Main function"""
     try:
         from .core import cli
 
-        exit_status = cli()
+        cli()
     except KeyboardInterrupt:
         print("Ctrl-C pressed. Aborting")
-    sys.exit(0)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

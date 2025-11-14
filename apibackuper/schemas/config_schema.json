@@ -1,0 +1,455 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "apibackuper YAML Configuration Schema",
+  "description": "Schema for validating apibackuper.yaml configuration files",
+  "type": "object",
+  "required": ["settings", "project", "params", "data", "storage"],
+  "properties": {
+    "settings": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "initialized": {
+          "type": "boolean",
+          "description": "Whether the project has been initialized"
+        },
+        "name": {
+          "type": "string",
+          "description": "Project name"
+        },
+        "id": {
+          "type": "string",
+          "description": "Project ID"
+        },
+        "splitter": {
+          "type": "string",
+          "description": "Field splitter character",
+          "default": "."
+        },
+        "logfile": {
+          "type": "string",
+          "description": "Log file name",
+          "default": "apibackuper.log"
+        }
+      },
+      "additionalProperties": false
+    },
+    "project": {
+      "type": "object",
+      "required": ["url", "http_mode"],
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Project description"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "API base URL"
+        },
+        "http_mode": {
+          "type": "string",
+          "enum": ["GET", "POST"],
+          "description": "HTTP method to use"
+        },
+        "work_modes": {
+          "type": "string",
+          "description": "Comma-separated list of work modes: full, incremental, update"
+        },
+        "iterate_by": {
+          "type": "string",
+          "enum": ["page", "skip", "range"],
+          "description": "How to iterate through pages",
+          "default": "page"
+        },
+        "resp_type": {
+          "type": "string",
+          "enum": ["json", "xml", "html"],
+          "description": "Response type",
+          "default": "json"
+        },
+        "default_delay": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Default delay between requests in seconds"
+        },
+        "retry_delay": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Delay between retries in seconds"
+        },
+        "retry_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of retry attempts"
+        },
+        "force_retry": {
+          "type": "boolean",
+          "description": "Force retry on errors"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params": {
+      "type": "object",
+      "required": ["page_size_limit"],
+      "properties": {
+        "page_size_limit": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum number of records per page"
+        },
+        "start_page": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Starting page number",
+          "default": 1
+        },
+        "page_number_param": {
+          "type": "string",
+          "description": "Parameter name for page number"
+        },
+        "page_size_param": {
+          "type": "string",
+          "description": "Parameter name for page size"
+        },
+        "count_skip_param": {
+          "type": "string",
+          "description": "Parameter name for skip count"
+        },
+        "count_from_param": {
+          "type": "string",
+          "description": "Parameter name for range start"
+        },
+        "count_to_param": {
+          "type": "string",
+          "description": "Parameter name for range end"
+        },
+        "query_mode": {
+          "type": "string",
+          "enum": ["query", "params", "mixed"],
+          "description": "Query parameter mode",
+          "default": "query"
+        },
+        "force_flat_params": {
+          "type": "boolean",
+          "description": "Force flat parameter format"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "data_key": {
+          "type": "string",
+          "description": "Key path to data array in response"
+        },
+        "total_number_key": {
+          "type": "string",
+          "description": "Key path to total number of records"
+        },
+        "pages_number_key": {
+          "type": "string",
+          "description": "Key path to total number of pages"
+        },
+        "item_key": {
+          "type": "string",
+          "description": "Key path to unique item identifier"
+        },
+        "change_key": {
+          "type": "string",
+          "description": "Key path to change detection field"
+        }
+      },
+      "additionalProperties": false
+    },
+    "storage": {
+      "type": "object",
+      "required": ["storage_type"],
+      "properties": {
+        "storage_type": {
+          "type": "string",
+          "enum": ["zip", "filesystem"],
+          "description": "Storage type"
+        },
+        "storage_path": {
+          "type": "string",
+          "description": "Storage directory path",
+          "default": "storage"
+        },
+        "compression": {
+          "type": "boolean",
+          "description": "Enable compression"
+        },
+        "compression_level": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9,
+          "description": "Compression level (0-9)"
+        },
+        "max_file_size": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum file size in bytes"
+        },
+        "split_files": {
+          "type": "boolean",
+          "description": "Split files when size limit reached"
+        }
+      },
+      "additionalProperties": false
+    },
+    "follow": {
+      "type": "object",
+      "properties": {
+        "follow_mode": {
+          "type": "string",
+          "enum": ["item", "url", "drilldown", "prefix"],
+          "description": "Follow mode type"
+        },
+        "follow_http_mode": {
+          "type": "string",
+          "enum": ["GET", "POST"],
+          "description": "HTTP method for follow requests",
+          "default": "GET"
+        },
+        "follow_data_key": {
+          "type": "string",
+          "description": "Key path to follow data in response"
+        },
+        "follow_item_key": {
+          "type": "string",
+          "description": "Key path to item identifier for following"
+        },
+        "follow_param": {
+          "type": "string",
+          "description": "Parameter name for follow requests"
+        },
+        "follow_pattern": {
+          "type": "string",
+          "description": "URL pattern for follow requests"
+        },
+        "follow_url_key": {
+          "type": "string",
+          "description": "Key path to URL in item data"
+        }
+      },
+      "additionalProperties": false
+    },
+    "files": {
+      "type": "object",
+      "required": ["fetch_mode", "root_url", "keys"],
+      "properties": {
+        "fetch_mode": {
+          "type": "string",
+          "enum": ["prefix", "pattern"],
+          "description": "File fetch mode"
+        },
+        "root_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Root URL for file downloads"
+        },
+        "keys": {
+          "type": "string",
+          "description": "Comma-separated list of keys containing file URLs"
+        },
+        "default_ext": {
+          "type": "string",
+          "description": "Default file extension"
+        },
+        "storage_mode": {
+          "type": "string",
+          "enum": ["filepath", "id"],
+          "description": "File storage mode",
+          "default": "filepath"
+        },
+        "file_storage_type": {
+          "type": "string",
+          "enum": ["zip", "filesystem"],
+          "description": "File storage type",
+          "default": "zip"
+        },
+        "use_aria2": {
+          "type": ["string", "boolean"],
+          "description": "Use aria2 for downloads"
+        }
+      },
+      "additionalProperties": false
+    },
+    "code": {
+      "type": "object",
+      "properties": {
+        "postfetch": {
+          "type": "string",
+          "description": "Path to postfetch script"
+        },
+        "follow": {
+          "type": "string",
+          "description": "Path to follow script"
+        }
+      },
+      "additionalProperties": false
+    },
+    "auth": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["basic", "bearer", "apikey", "oauth2"],
+          "description": "Authentication type"
+        },
+        "username": {
+          "type": "string",
+          "description": "Username for basic auth"
+        },
+        "password": {
+          "type": "string",
+          "description": "Password for basic auth"
+        },
+        "password_file": {
+          "type": "string",
+          "description": "Path to file containing password"
+        },
+        "token": {
+          "type": "string",
+          "description": "Bearer or OAuth2 token"
+        },
+        "token_file": {
+          "type": "string",
+          "description": "Path to file containing token"
+        },
+        "api_key": {
+          "type": "string",
+          "description": "API key value"
+        },
+        "api_key_header": {
+          "type": "string",
+          "description": "Header name for API key",
+          "default": "X-API-Key"
+        },
+        "auth_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "OAuth2 token endpoint URL"
+        },
+        "refresh_token": {
+          "type": "string",
+          "description": "OAuth2 refresh token"
+        }
+      },
+      "additionalProperties": false
+    },
+    "rate_limit": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable rate limiting",
+          "default": true
+        },
+        "requests_per_second": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Maximum requests per second"
+        },
+        "requests_per_minute": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum requests per minute"
+        },
+        "requests_per_hour": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum requests per hour"
+        },
+        "burst_size": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Burst capacity for token bucket",
+          "default": 5
+        }
+      },
+      "additionalProperties": false
+    },
+    "request": {
+      "type": "object",
+      "properties": {
+        "timeout": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Request timeout in seconds"
+        },
+        "connect_timeout": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Connection timeout in seconds"
+        },
+        "read_timeout": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Read timeout in seconds"
+        },
+        "verify_ssl": {
+          "type": "boolean",
+          "description": "Verify SSL certificates",
+          "default": true
+        },
+        "user_agent": {
+          "type": "string",
+          "description": "User agent string"
+        },
+        "max_redirects": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum number of redirects"
+        },
+        "allow_redirects": {
+          "type": "boolean",
+          "description": "Allow redirects",
+          "default": true
+        },
+        "proxies": {
+          "type": ["object", "string"],
+          "description": "Proxy configuration (object for YAML, string for INI)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "error_handling": {
+      "type": "object",
+      "properties": {
+        "retry_on_errors": {
+          "type": ["string", "array"],
+          "description": "HTTP status codes to retry on (comma-separated string or array)"
+        },
+        "max_consecutive_errors": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum consecutive errors before stopping"
+        },
+        "continue_on_error": {
+          "type": "boolean",
+          "description": "Continue processing on errors",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "logging": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["DEBUG", "INFO", "WARNING", "ERROR"],
+          "description": "Logging level",
+          "default": "INFO"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
+

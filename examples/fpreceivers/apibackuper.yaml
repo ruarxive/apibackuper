@@ -1,0 +1,26 @@
+settings:
+  initialized: true
+  name: fpreceivers
+
+project:
+  description: Receivers of funding of National projects (Spending.gov.ru)
+  url: https://api.spending.gov.ru/v1/natprojects/fpreceivers
+  http_mode: GET
+  work_modes: full,incremental,update
+  iterate_by: page
+
+params:
+  page_size_param: page_size
+  page_size_limit: 45
+  page_number_param: page
+
+data:
+  total_number_key: total
+  data_key: items
+  item_key: inn
+  change_key: ""
+
+storage:
+  storage_type: zip
+  compression: true
+

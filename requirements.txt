@@ -1,9 +1,24 @@
-aria2p>=0.11.3
-beautifulsoup4>=4.12.2
-click>=8.1.6
+# apibackuper - Core Dependencies
+# Python 3.6+ required
+#
+# Install with: pip install -r requirements.txt
+# For development: pip install -r requirements-dev.txt
+
+# Core required dependencies
+# These are the minimum dependencies needed to run apibackuper
+typer>=0.9.0
 lxml>=4.9.3
-pytest>=7.4.2
-Requests>=2.31.0
-setuptools>=65.5.0
 urllib3>=2.0.6
+requests>=2.31.0
 xmltodict>=0.13.0
+PyYAML>=6.0
+jsonschema>=4.0.0
+tqdm>=4.66.0
+
+# Optional but recommended dependencies
+# These enhance functionality but are not strictly required
+# aria2p: Faster file downloads using aria2
+aria2p>=0.11.3
+# pandas & pyarrow: Required for Parquet export format
+pandas>=2.0.0
+pyarrow>=12.0.0
