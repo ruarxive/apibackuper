@@ -1,6 +1,7 @@
 # -* coding: utf-8 -*-
 import configparser
 import csv
+import io
 import json
 import logging
 import os
@@ -14,7 +15,7 @@ from urllib.parse import urlparse
 import requests
 from contextlib import suppress
 from runpy import run_path
-from typing import Optional, Dict, List, Any, Union, Tuple
+from typing import Optional, Dict, Any
 
 # Suppress deprecation warnings
 warnings.filterwarnings('ignore', category=DeprecationWarning)
@@ -31,7 +32,7 @@ except ImportError:
 with suppress(ImportError):
     import aria2p
 
-from ..common import get_dict_value, set_dict_value, update_dict_values
+from ..common import get_dict_value, update_dict_values
 from ..constants import (
     DEFAULT_DELAY,
     FIELD_SPLITTER,
@@ -54,16 +55,51 @@ try:
 except ImportError:
     PARQUET_AVAILABLE = False
 
+try:
+    import zstandard as zstd
+    ZSTD_AVAILABLE = True
+except ImportError:
+    ZSTD_AVAILABLE = False
+
+# Helper class for Zstandard text file writing
+if ZSTD_AVAILABLE:
+    class ZstdTextWriter:
+        """Wrapper for writing text to Zstandard-compressed files"""
+        def __init__(self, filename, level=22, encoding="utf8"):
+            self.f = open(filename, "wb")
+            cctx = zstd.ZstdCompressor(level=level)
+            self.compressor = cctx.stream_writer(self.f)
+            self.text_wrapper = io.TextIOWrapper(self.compressor, encoding=encoding)
+
+        def write(self, data):
+            return self.text_wrapper.write(data)
+
+        def close(self):
+            if self.text_wrapper:
+                self.text_wrapper.flush()
+                self.text_wrapper.close()
+            if self.compressor:
+                self.compressor.close()
+            if self.f:
+                self.f.close()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            self.close()
+            return False
+
 # Import from refactored modules
-from .utils import load_file_list, load_csv_data, _url_replacer
 from .config_loader import (
     load_json_file,
-    load_schema,
     validate_yaml_config,
     YAMLConfigParser,
     JSONSCHEMA_AVAILABLE
 )
-from .http_client import HTTPClient
+
+from .utils import load_file_list, load_csv_data, _url_replacer
+
 
 
 class ProjectBuilder:
@@ -72,13 +108,15 @@ class ProjectBuilder:
     def __init__(self, project_path: Optional[str] = None) -> None:
         self.http = requests.Session()
         self.project_path = os.getcwd() if project_path is None else project_path
+        # Initialize logfile with default value early to ensure it's always available
+        self.logfile = "apibackuper.log"
         # Store YAML_AVAILABLE for later use
         self._yaml_available = YAML_AVAILABLE
         # Check for YAML config files first (priority), then fall back to INI
         yaml_config_yml = os.path.join(self.project_path, "apibackuper.yml")
         yaml_config_yaml = os.path.join(self.project_path, "apibackuper.yaml")
         ini_config = os.path.join(self.project_path, "apibackuper.cfg")
-        
+
         if self._yaml_available and os.path.exists(yaml_config_yaml):
             self.config_filename = yaml_config_yaml
             self.config_format = 'yaml'
@@ -92,7 +130,7 @@ class ProjectBuilder:
             # Default to INI format for backward compatibility
             self.config_filename = ini_config
             self.config_format = 'ini'
-        
+
         self.__read_config(self.config_filename)
         self.enable_logging()
 
@@ -114,7 +152,7 @@ class ProjectBuilder:
         self.config = None
         if not os.path.exists(filename):
             return
-        
+
         if self.config_format == 'yaml':
             if not self._yaml_available:
                 logging.warning("YAML config file found but PyYAML is not installed. Falling back to INI.")
@@ -127,11 +165,11 @@ class ProjectBuilder:
                     return
                 else:
                     return
-            
+
             try:
                 with open(filename, "r", encoding="utf8") as fobj:
                     yaml_data = yaml.safe_load(fobj)
-                
+
                 # Validate YAML config against schema
                 if yaml_data:
                     is_valid, validation_errors = validate_yaml_config(yaml_data)
@@ -146,18 +184,18 @@ class ProjectBuilder:
                         # Don't fail completely, but log the errors
                         # This allows the app to continue with potentially invalid config
                         # The validate_config command can be used to check configs explicitly
-                
+
                 conf = YAMLConfigParser(yaml_data)
                 self.config = conf
-            except Exception as e:
-                logging.error("Error reading YAML config file: %s" % str(e))
+            except (IOError, OSError, ValueError, yaml.YAMLError) as e:
+                logging.error("Error reading YAML config file: %s", str(e))
                 return
         else:
             # INI format
             conf = configparser.ConfigParser()
             conf.read(filename, encoding="utf8")
             self.config = conf
-        
+
         if self.config is not None:
             storagedir = (self.config.get(
                 "storage", "storage_path") if self.config.has_option(
@@ -274,13 +312,13 @@ class ProjectBuilder:
                 self.use_aria2 = (self.config.get(
                     "files", "use_aria2") if self.config.has_option(
                         "files", "use_aria2") else "False")
-            
+
             # Parse new config sections
             # Authentication
             self.auth_handler = None
             if self.config.has_section("auth"):
                 self.auth_handler = AuthHandler(self.config)
-            
+
             # Rate limiting
             self.rate_limiter = None
             if self.config.has_section("rate_limit"):
@@ -299,7 +337,7 @@ class ProjectBuilder:
                     if self.config.has_option("rate_limit", "burst_size"):
                         burst = self.config.getint("rate_limit", "burst_size")
                     self.rate_limiter = RateLimiter(rps, rpm, rph, burst)
-            
+
             # Request configuration
             self.request_timeout = DEFAULT_TIMEOUT
             self.connect_timeout = 30
@@ -309,7 +347,7 @@ class ProjectBuilder:
             self.max_redirects = 5
             self.allow_redirects = True
             self.proxies = None
-            
+
             if self.config.has_section("request"):
                 if self.config.has_option("request", "timeout"):
                     self.request_timeout = self.config.getint("request", "timeout")
@@ -335,12 +373,12 @@ class ProjectBuilder:
                             if "=" in p:
                                 k, v = p.split("=", 1)
                                 self.proxies[k.strip()] = v.strip()
-            
+
             # Enhanced error handling
             self.error_retry_codes = DEFAULT_ERROR_STATUS_CODES
             self.max_consecutive_errors = 10
             self.continue_on_error = True
-            
+
             if self.config.has_section("error_handling"):
                 if self.config.has_option("error_handling", "retry_on_errors"):
                     codes_str = self.config.get("error_handling", "retry_on_errors")
@@ -349,7 +387,7 @@ class ProjectBuilder:
                     self.max_consecutive_errors = self.config.getint("error_handling", "max_consecutive_errors")
                 if self.config.has_option("error_handling", "continue_on_error"):
                     self.continue_on_error = self.config.getboolean("error_handling", "continue_on_error")
-            
+
             # Logging configuration
             if self.config.has_section("logging"):
                 log_level = self.config.get("logging", "level") if self.config.has_option("logging", "level") else "INFO"
@@ -360,12 +398,12 @@ class ProjectBuilder:
                     "ERROR": logging.ERROR
                 }
                 logging.getLogger().setLevel(log_level_map.get(log_level.upper(), logging.INFO))
-            
+
             # Storage enhancements
             self.compression_level = 6
             self.max_file_size = None
             self.split_files = False
-            
+
             if self.config.has_section("storage"):
                 if self.config.has_option("storage", "compression_level"):
                     self.compression_level = self.config.getint("storage", "compression_level")
@@ -373,17 +411,18 @@ class ProjectBuilder:
                     self.max_file_size = self.config.getint("storage", "max_file_size")
                 if self.config.has_option("storage", "split_files"):
                     self.split_files = self.config.getboolean("storage", "split_files")
-            
+
             # Initialize HTTP session with new settings
             self.http.headers.update({"User-Agent": self.user_agent})
+            self.http.verify = self.verify_ssl  # Set verify at session level for all requests
             if self.proxies:
                 self.http.proxies.update(self.proxies)
 
     def _single_request(
-        self, 
-        url: str, 
-        headers: Optional[Dict[str, str]], 
-        params: Dict[str, Any], 
+        self,
+        url: str,
+        headers: Optional[Dict[str, str]],
+        params: Dict[str, Any],
         flatten: Optional[Dict[str, str]] = None
     ) -> requests.Response:
         """Single http/https request with authentication and rate limiting"""
@@ -391,7 +430,7 @@ class ProjectBuilder:
             # Apply rate limiting
             if self.rate_limiter:
                 self.rate_limiter.wait_if_needed()
-            
+
             # Merge auth headers
             if self.auth_handler:
                 auth_headers = self.auth_handler.get_headers()
@@ -399,40 +438,40 @@ class ProjectBuilder:
                     headers.update(auth_headers)
                 else:
                     headers = auth_headers
-            
+
             # Prepare request kwargs
             request_kwargs = {
                 "verify": self.verify_ssl,
                 "timeout": (self.connect_timeout, self.read_timeout),
                 "allow_redirects": self.allow_redirects
             }
-            
+
             if self.http_mode == "GET":
                 if self.flat_params and len(params.keys()) > 0:
                     s = []
                     for key, value in flatten.items():
                         s.append("%s=%s" %
                                  (key, value.replace("'", '"').replace("True", "true")))
-                    logging.info("url: %s" % (url + "?" + "&".join(s)))
+                    logging.info("url: %s", url + "?" + "&".join(s))
                     if headers:
                         request_kwargs["headers"] = headers
                         response = self.http.get(url + "?" + "&".join(s), **request_kwargs)
                     else:
                         response = self.http.get(url + "?" + "&".join(s), **request_kwargs)
                 else:
-                    logging.info("url: %s, params: %s" % (url, str(params)))
+                    logging.info("url: %s, params: %s", url, str(params))
                     if headers:
                         request_kwargs["headers"] = headers
                     request_kwargs["params"] = params
                     response = self.http.get(url, **request_kwargs)
             else:
-                logging.debug("Request %s, params %s, headers %s" %
-                              (url, str(params), str(headers)))
+                logging.debug("Request %s, params %s, headers %s",
+                              url, str(params), str(headers))
                 if headers:
                     request_kwargs["headers"] = headers
                 request_kwargs["json"] = params
                 response = self.http.post(url, **request_kwargs)
-            
+
             # Handle OAuth2 token refresh if needed
             if response.status_code == 401 and self.auth_handler and self.auth_handler.auth_type == "oauth2":
                 if self.auth_handler.refresh_token_if_needed(self.http):
@@ -447,7 +486,7 @@ class ProjectBuilder:
                         response = self.http.get(url, params=params, **request_kwargs)
                     else:
                         response = self.http.post(url, json=params, **request_kwargs)
-            
+
             return response
         except requests.exceptions.Timeout as e:
             timeout_info = f"Connect timeout: {self.connect_timeout}s, Read timeout: {self.read_timeout}s"
@@ -455,41 +494,41 @@ class ProjectBuilder:
                 f"Request timeout while connecting to {url}\n"
                 f"  Current timeout settings: {timeout_info}\n"
                 f"  Error details: {str(e)}\n"
-                f"  Suggestions:\n"
+                "  Suggestions:\n"
                 f"    - Increase timeout values in [request] section:\n"
                 f"      connect_timeout = {self.connect_timeout * 2}\n"
                 f"      read_timeout = {self.read_timeout * 2}\n"
-                f"    - Check network connectivity and API server status\n"
-                f"    - Verify the URL is correct and accessible"
+                "    - Check network connectivity and API server status\n"
+                "    - Verify the URL is correct and accessible"
             )
-            logging.error(f"Request timeout for URL {url}: {e}")
+            logging.error("Request timeout for URL %s: %s", url, e)
             raise RuntimeError(error_msg) from e
         except requests.exceptions.SSLError as e:
             error_msg = (
                 f"SSL certificate verification failed for {url}\n"
                 f"  Error details: {str(e)}\n"
-                f"  Suggestions:\n"
-                f"    - If this is a trusted server, disable SSL verification in [request] section:\n"
-                f"      verify_ssl = False\n"
-                f"    - Or provide a path to a trusted certificate bundle:\n"
-                f"      verify_ssl = /path/to/certificate.pem\n"
-                f"    - Update your system's certificate store\n"
-                f"    - Check if the server's certificate has expired"
+                "  Suggestions:\n"
+                "    - If this is a trusted server, disable SSL verification in [request] section:\n"
+                "      verify_ssl = False\n"
+                "    - Or provide a path to a trusted certificate bundle:\n"
+                "      verify_ssl = /path/to/certificate.pem\n"
+                "    - Update your system's certificate store\n"
+                "    - Check if the server's certificate has expired"
             )
-            logging.error(f"SSL error for URL {url}: {e}")
+            logging.error("SSL error for URL %s: %s", url, e)
             raise RuntimeError(error_msg) from e
         except requests.exceptions.ConnectionError as e:
             error_msg = (
                 f"Failed to connect to {url}\n"
                 f"  Error details: {str(e)}\n"
-                f"  Suggestions:\n"
-                f"    - Check your internet connection\n"
+                "  Suggestions:\n"
+                "    - Check your internet connection\n"
                 f"    - Verify the URL is correct: {url}\n"
-                f"    - Check if the API server is running and accessible\n"
-                f"    - If using a proxy, verify proxy settings in [request] section\n"
-                f"    - Check firewall settings"
+                "    - Check if the API server is running and accessible\n"
+                "    - If using a proxy, verify proxy settings in [request] section\n"
+                "    - Check firewall settings"
             )
-            logging.error(f"Connection error for URL {url}: {e}")
+            logging.error("Connection error for URL %s: %s", url, e)
             raise RuntimeError(error_msg) from e
         except requests.exceptions.HTTPError as e:
             status_code = e.response.status_code if hasattr(e, 'response') and e.response else "unknown"
@@ -501,42 +540,42 @@ class ProjectBuilder:
                 error_msg += f"  Response status: {e.response.status_code}\n"
                 if e.response.status_code == 401:
                     error_msg += (
-                        f"  Suggestions:\n"
-                        f"    - Check authentication credentials in [auth] section\n"
-                        f"    - Verify API key or token is valid and not expired\n"
-                        f"    - Check if authentication type matches API requirements"
+                        "  Suggestions:\n"
+                        "    - Check authentication credentials in [auth] section\n"
+                        "    - Verify API key or token is valid and not expired\n"
+                        "    - Check if authentication type matches API requirements"
                     )
                 elif e.response.status_code == 403:
                     error_msg += (
-                        f"  Suggestions:\n"
-                        f"    - Check if your account has permission to access this resource\n"
-                        f"    - Verify API key has required permissions\n"
-                        f"    - Check rate limiting or quota restrictions"
+                        "  Suggestions:\n"
+                        "    - Check if your account has permission to access this resource\n"
+                        "    - Verify API key has required permissions\n"
+                        "    - Check rate limiting or quota restrictions"
                     )
                 elif e.response.status_code == 404:
                     error_msg += (
                         f"  Suggestions:\n"
                         f"    - Verify the URL is correct: {url}\n"
-                        f"    - Check if the API endpoint exists\n"
-                        f"    - Review API documentation for correct endpoint path"
+                        "    - Check if the API endpoint exists\n"
+                        "    - Review API documentation for correct endpoint path"
                     )
                 elif e.response.status_code == 429:
                     error_msg += (
-                        f"  Suggestions:\n"
-                        f"    - You are being rate limited. Wait before retrying\n"
-                        f"    - Configure rate limiting in [rate_limit] section\n"
+                        "  Suggestions:\n"
+                        "    - You are being rate limited. Wait before retrying\n"
+                        "    - Configure rate limiting in [rate_limit] section\n"
                         f"    - Increase delays between requests in [project] section:\n"
                         f"      default_delay = {self.default_delay * 2}"
                     )
                 elif e.response.status_code >= 500:
                     error_msg += (
-                        f"  Suggestions:\n"
-                        f"    - This is a server error. The API may be temporarily unavailable\n"
-                        f"    - Wait a few minutes and try again\n"
-                        f"    - Check API status page if available\n"
-                        f"    - Increase retry settings in [project] section"
+                        "  Suggestions:\n"
+                        "    - This is a server error. The API may be temporarily unavailable\n"
+                        "    - Wait a few minutes and try again\n"
+                        "    - Check API status page if available\n"
+                        "    - Increase retry settings in [project] section"
                     )
-            logging.error(f"HTTP error for URL {url}: {e}")
+            logging.error("HTTP error for URL %s: %s", url, e)
             raise RuntimeError(error_msg) from e
         except requests.exceptions.RequestException as e:
             error_msg = (
@@ -548,9 +587,9 @@ class ProjectBuilder:
                 f"    - Review configuration settings\n"
                 f"    - Check logs for more details: {self.logfile if hasattr(self, 'logfile') else 'apibackuper.log'}"
             )
-            logging.error(f"Request error for URL {url}: {e}")
+            logging.error("Request error for URL %s: %s", url, e)
             raise RuntimeError(error_msg) from e
-        except Exception as e:
+        except (ValueError, RuntimeError, IOError) as e:
             error_msg = (
                 f"Unexpected error while requesting {url}\n"
                 f"  Error details: {str(e)}\n"
@@ -560,7 +599,8 @@ class ProjectBuilder:
                 f"    - Verify configuration is correct\n"
                 f"    - Try running with --verbose flag for more information"
             )
-            logging.error(f"Unexpected error in request to {url}: {e}", exc_info=True)
+            logging.error("Unexpected error in request to %s: %s", url, e,
+                          exc_info=True)
             raise RuntimeError(error_msg) from e
 
     @staticmethod
@@ -577,9 +617,8 @@ class ProjectBuilder:
                 config = configparser.ConfigParser()
                 config["settings"] = {"initialized": False, "name": name}
                 try:
-                    f = open(config_path, "w", encoding="utf8")
-                    config.write(f)
-                    f.close()
+                    with open(config_path, "w", encoding="utf8") as f:
+                        config.write(f)
                     print("Projects %s created" % (name))
                 except (IOError, OSError) as e:
                     error_msg = (
@@ -590,7 +629,8 @@ class ProjectBuilder:
                         f"    - Verify disk space is available\n"
                         f"    - Check if the file is locked by another process"
                     )
-                    logging.error(f"Error writing config file {config_path}: {e}")
+                    logging.error("Error writing config file %s: %s",
+                                  config_path, e)
                     raise RuntimeError(error_msg) from e
         except PermissionError as e:
             error_msg = (
@@ -601,7 +641,8 @@ class ProjectBuilder:
                 f"    - Try running with appropriate permissions\n"
                 f"    - Choose a different location for the project"
             )
-            logging.error(f"Permission denied creating project directory {name}: {e}")
+            logging.error("Permission denied creating project directory %s: %s",
+                          name, e)
             raise RuntimeError(error_msg) from e
         except OSError as e:
             error_msg = (
@@ -613,20 +654,20 @@ class ProjectBuilder:
                 f"    - Verify disk space is available\n"
                 f"    - Check filesystem permissions"
             )
-            logging.error(f"OS error creating project {name}: {e}")
+            logging.error("OS error creating project %s: %s", name, e)
             raise RuntimeError(error_msg) from e
 
     def init(
         self,
-        url: str,
-        pagekey: str,
-        pagesize: str,
-        datakey: str,
-        itemkey: str,
-        changekey: str,
-        iterateby: str,
-        http_mode: str,
-        work_modes: str,
+        url: str,  # noqa: ARG002
+        pagekey: str,  # noqa: ARG002
+        pagesize: str,  # noqa: ARG002
+        datakey: str,  # noqa: ARG002
+        itemkey: str,  # noqa: ARG002
+        changekey: str,  # noqa: ARG002
+        iterateby: str,  # noqa: ARG002
+        http_mode: str,  # noqa: ARG002
+        work_modes: str,  # noqa: ARG002
     ) -> None:
         """[TBD] Unfinished method. Don't use it please"""
         self.__read_config(self.config_filename)
@@ -644,16 +685,16 @@ class ProjectBuilder:
             if found_files:
                 error_msg += f"  Found files: {', '.join(os.path.basename(f) for f in found_files)}\n"
             error_msg += (
-                f"  Suggestions:\n"
-                f"    - Run 'apibackuper create <name>' to create a new project\n"
-                f"    - Navigate to the project directory first\n"
+                "  Suggestions:\n"
+                "    - Run 'apibackuper create <name>' to create a new project\n"
+                "    - Navigate to the project directory first\n"
                 f"    - Use --projectpath option to specify project location"
             )
             print(f"Error: {error_msg}")
             return
 
-    def export(self, format: str, filename: str) -> None:
-        """Exports data as JSON lines, gzip, or parquet formats"""
+    def export(self, format: str, filename: str) -> None:  # noqa: A002, W0622
+        """Exports data as JSON lines, gzip, zstd, or parquet formats"""
         if self.config is None:
             config_files = [
                 os.path.join(self.project_path, "apibackuper.yaml"),
@@ -668,18 +709,18 @@ class ProjectBuilder:
             if found_files:
                 error_msg += f"  Found files: {', '.join(os.path.basename(f) for f in found_files)}\n"
             error_msg += (
-                f"  Suggestions:\n"
-                f"    - Run 'apibackuper create <name>' to create a new project\n"
-                f"    - Navigate to the project directory first\n"
+                "  Suggestions:\n"
+                "    - Run 'apibackuper create <name>' to create a new project\n"
+                "    - Navigate to the project directory first\n"
                 f"    - Use --projectpath option to specify project location"
             )
             print(f"Error: {error_msg}")
             return
-        
+
         if not filename:
             print("Error: Output filename is required")
             return
-        
+
         try:
             # Check if parquet format is requested
             if format == "parquet":
@@ -690,7 +731,7 @@ class ProjectBuilder:
                 all_records = []
             elif format == "jsonl":
                 try:
-                    outfile = open(filename, "w", encoding="utf8")
+                    outfile = open(filename, "w", encoding="utf8")  # noqa: SIM117
                 except (IOError, PermissionError) as e:
                     error_msg = (
                         f"Cannot write to output file: {filename}\n"
@@ -701,12 +742,13 @@ class ProjectBuilder:
                         f"    - Check if the file is locked by another process\n"
                         f"    - Ensure you have sufficient disk space"
                     )
-                    logging.error(f"Error opening output file {filename}: {e}")
+                    logging.error("Error opening output file %s: %s",
+                                  filename, e)
                     print(f"Error: {error_msg}")
                     return
             elif format == "gzip":
                 try:
-                    outfile = gzip.open(filename, mode="wt", encoding="utf8")
+                    outfile = gzip.open(filename, mode="wt", encoding="utf8")  # noqa: SIM117
                 except (IOError, PermissionError) as e:
                     error_msg = (
                         f"Cannot write to gzip file: {filename}\n"
@@ -717,17 +759,38 @@ class ProjectBuilder:
                         f"    - Check if the file is locked by another process\n"
                         f"    - Ensure you have sufficient disk space"
                     )
-                    logging.error(f"Error opening gzip file {filename}: {e}")
+                    logging.error("Error opening gzip file %s: %s", filename, e)
+                    print(f"Error: {error_msg}")
+                    return
+            elif format == "zstd":
+                if not ZSTD_AVAILABLE:
+                    print("Zstandard format requires zstandard library. "
+                          "Please install it: pip install zstandard")
+                    return
+                try:
+                    # Create Zstandard compressor with maximum compression level (22)
+                    outfile = ZstdTextWriter(filename, level=22, encoding="utf8")  # noqa: SIM117
+                except (IOError, PermissionError) as e:
+                    error_msg = (
+                        f"Cannot write to zstd file: {filename}\n"
+                        f"  Error: {str(e)}\n"
+                        f"  Suggestions:\n"
+                        f"    - Check if you have write permissions for the file/directory\n"
+                        f"    - Verify the directory exists and is accessible\n"
+                        f"    - Check if the file is locked by another process\n"
+                        f"    - Ensure you have sufficient disk space"
+                    )
+                    logging.error("Error opening zstd file %s: %s", filename, e)
                     print(f"Error: {error_msg}")
                     return
             else:
-                print("Supported formats: 'jsonl', 'gzip', 'parquet'")
+                print("Supported formats: 'jsonl', 'gzip', 'zstd', 'parquet'")
                 return
-        except Exception as e:
-            logging.error(f"Error setting up export: {e}")
+        except (IOError, OSError, ValueError) as e:
+            logging.error("Error setting up export: %s", e)
             print(f"Error: Failed to set up export: {e}")
             return
-        
+
         progress_bar = None
         try:
             details_file = os.path.join(self.storagedir, "details.zip")
@@ -735,7 +798,7 @@ class ProjectBuilder:
                 try:
                     mzip = ZipFile(details_file, mode="r", compression=ZIP_DEFLATED)
                 except (IOError, OSError, zipfile.BadZipFile) as e:
-                    logging.error(f"Error opening details zip file: {e}")
+                    logging.error("Error opening details zip file: %s", e)
                     print(f"Error: Cannot read details file: {e}")
                     if format != "parquet":
                         outfile.close()
@@ -745,11 +808,11 @@ class ProjectBuilder:
                     total_files = len(file_list)
                     if total_files > 0:
                         progress_bar = tqdm(total=total_files, desc="Exporting files", unit="file")
-                    
+
                     for fname in file_list:
                         try:
                             tf = mzip.open(fname, "r")
-                            logging.info("Loading %s" % (fname))
+                            logging.info("Loading %s", fname)
                             try:
                                 data = json.load(tf)
                             except (json.JSONDecodeError, ValueError) as e:
@@ -785,9 +848,10 @@ class ProjectBuilder:
                                         outfile.write(
                                             json.dumps(data, ensure_ascii=False) + "\n")
                             except KeyError:
-                                logging.info("Data key: %s not found" % (self.data_key))
-                        except Exception as e:
-                            logging.warning(f"Error processing file {fname}: {e}")
+                                logging.info("Data key: %s not found", self.data_key)
+                        except (IOError, OSError, ValueError) as e:
+                            logging.warning("Error processing file %s: %s",
+                                            fname, e)
                         finally:
                             if progress_bar:
                                 progress_bar.update(1)
@@ -814,7 +878,8 @@ class ProjectBuilder:
                         f"    - The file may be corrupted - try running the backup again\n"
                         f"    - Check if the file is locked by another process"
                     )
-                    logging.error(f"Error opening storage zip file {details_file}: {e}")
+                    logging.error("Error opening storage zip file %s: %s",
+                                  details_file, e)
                     print(f"Error: {error_msg}")
                     if format != "parquet":
                         outfile.close()
@@ -824,7 +889,7 @@ class ProjectBuilder:
                     total_files = len(file_list)
                     if total_files > 0:
                         progress_bar = tqdm(total=total_files, desc="Exporting files", unit="file")
-                    
+
                     for fname in file_list:
                         try:
                             tf = mzip.open(fname, "r")
@@ -853,9 +918,10 @@ class ProjectBuilder:
                                             outfile.write(
                                                 json.dumps(item, ensure_ascii=False) + "\n")
                             except KeyError:
-                                logging.info("Data key: %s not found" % (self.data_key))
-                        except Exception as e:
-                            logging.warning(f"Error processing file {fname}: {e}")
+                                logging.info("Data key: %s not found", self.data_key)
+                        except (IOError, OSError, ValueError) as e:
+                            logging.warning("Error processing file %s: %s",
+                                            fname, e)
                         finally:
                             if progress_bar:
                                 progress_bar.update(1)
@@ -863,7 +929,7 @@ class ProjectBuilder:
                     if progress_bar:
                         progress_bar.close()
                     mzip.close()
-            
+
             # Handle parquet export
             if format == "parquet":
                 if len(all_records) == 0:
@@ -872,28 +938,28 @@ class ProjectBuilder:
                 try:
                     df = pd.DataFrame(all_records)
                     df.to_parquet(filename, engine='pyarrow', index=False)
-                    logging.info("Data exported to %s (%d records)" % (filename, len(all_records)))
-                except Exception as e:
-                    logging.error("Error exporting to parquet: %s" % str(e))
+                    logging.info("Data exported to %s (%d records)", filename, len(all_records))
+                except (IOError, OSError, ValueError, ImportError) as e:
+                    logging.error("Error exporting to parquet: %s", str(e))
                     print("Error exporting to parquet: %s" % str(e))
             else:
                 try:
                     outfile.close()
-                    logging.info("Data exported to %s" % (filename))
-                except Exception as e:
-                    logging.error(f"Error closing output file: {e}")
-        except Exception as e:
-            logging.error(f"Error during export: {e}")
+                    logging.info("Data exported to %s", filename)
+                except (IOError, OSError) as e:
+                    logging.error("Error closing output file: %s", e)
+        except (IOError, OSError, ValueError) as e:
+            logging.error("Error during export: %s", e)
             print(f"Error: Export failed: {e}")
             if progress_bar:
                 try:
                     progress_bar.close()
-                except:
+                except Exception:
                     pass
             if format != "parquet" and 'outfile' in locals():
                 try:
                     outfile.close()
-                except:
+                except Exception:
                     pass
 
     def run(self, mode: str) -> None:
@@ -912,14 +978,14 @@ class ProjectBuilder:
             if found_files:
                 error_msg += f"  Found files: {', '.join(os.path.basename(f) for f in found_files)}\n"
             error_msg += (
-                f"  Suggestions:\n"
-                f"    - Run 'apibackuper create <name>' to create a new project\n"
-                f"    - Navigate to the project directory first\n"
+                "  Suggestions:\n"
+                "    - Run 'apibackuper create <name>' to create a new project\n"
+                "    - Navigate to the project directory first\n"
                 f"    - Use --projectpath option to specify project location"
             )
             print(f"Error: {error_msg}")
             return
-        
+
         mzip = None
         progress_bar = None
         try:
@@ -927,7 +993,7 @@ class ProjectBuilder:
                 try:
                     os.mkdir(self.storagedir)
                 except (OSError, PermissionError) as e:
-                    logging.error(f"Error creating storage directory: {e}")
+                    logging.error("Error creating storage directory: %s", e)
                     print(f"Error: Cannot create storage directory: {e}")
                     return
 
@@ -938,14 +1004,14 @@ class ProjectBuilder:
                     process_func = script.get('process')
                     if process_func is None:
                         logging.warning("No 'process' function found in postfetch script")
-                except Exception as e:
-                    logging.error(f"Error loading postfetch script: {e}")
+                except (IOError, OSError, ValueError) as e:
+                    logging.error("Error loading postfetch script: %s", e)
                     print(f"Warning: Error loading postfetch script: {e}")
 
             if self.storage_type != "zip":
                 print("Only zip storage supported right now")
                 return
-            
+
             storage_file = os.path.join(self.storagedir, "storage.zip")
             try:
                 if mode == "full":
@@ -953,7 +1019,7 @@ class ProjectBuilder:
                 else:
                     mzip = ZipFile(storage_file, mode="a", compression=ZIP_DEFLATED)
             except (IOError, OSError, zipfile.BadZipFile, PermissionError) as e:
-                logging.error(f"Error opening storage file: {e}")
+                logging.error("Error opening storage file: %s", e)
                 print(f"Error: Cannot open storage file: {e}")
                 return
 
@@ -962,15 +1028,15 @@ class ProjectBuilder:
                 headers = load_json_file(os.path.join(self.project_path,
                                                       "headers.json"),
                                          default={})
-            except Exception as e:
-                logging.warning(f"Error loading headers.json: {e}")
+            except (IOError, OSError, ValueError) as e:
+                logging.warning("Error loading headers.json: %s", e)
                 headers = {}
 
             try:
                 params = load_json_file(os.path.join(self.project_path, "params.json"),
                                         default={})
-            except Exception as e:
-                logging.warning(f"Error loading params.json: {e}")
+            except (IOError, OSError, ValueError) as e:
+                logging.warning("Error loading params.json: %s", e)
                 params = {}
 
             if self.flat_params:
@@ -984,10 +1050,10 @@ class ProjectBuilder:
                 url_params = load_json_file(os.path.join(self.project_path,
                                                          "url_params.json"),
                                             default=None)
-            except Exception as e:
-                logging.warning(f"Error loading url_params.json: {e}")
+            except (IOError, OSError, ValueError) as e:
+                logging.warning("Error loading url_params.json: %s", e)
                 url_params = None
-            
+
             try:
                 if self.query_mode == "params":
                     url = _url_replacer(self.start_url, url_params or {})
@@ -1006,23 +1072,24 @@ class ProjectBuilder:
                         f"  Error: {str(e)}\n"
                         f"  Check your configuration and network connection"
                     )
-                logging.error(f"Error making initial request to {url}: {e}")
+                logging.error("Error making initial request to %s: %s", url, e)
                 print(f"Error: {error_msg}")
                 mzip.close()
                 return
-            except Exception as e:
+            except (ValueError, RuntimeError, IOError) as e:
                 error_msg = (
                     f"Unexpected error during initial request\n"
                     f"  URL: {url}\n"
                     f"  Error: {str(e)}\n"
                     f"  Error type: {type(e).__name__}\n"
-                    f"  Check logs for details: {self.logfile}"
+                    f"  Check logs for details: {self.logfile if hasattr(self, 'logfile') else 'apibackuper.log'}"
                 )
-                logging.error(f"Unexpected error in initial request to {url}: {e}", exc_info=True)
+                logging.error("Unexpected error in initial request to %s: %s",
+                              url, e, exc_info=True)
                 print(f"Error: {error_msg}")
                 mzip.close()
                 return
-            
+
             try:
                 if self.resp_type == "json":
                     start_page_data = response.json()
@@ -1037,7 +1104,8 @@ class ProjectBuilder:
                         f"  For HTML responses, you must configure a postfetch script in [code] section\n"
                         f"  Update resp_type in [project] section of your config file"
                     )
-                    logging.error(f"Unsupported response type: {self.resp_type}")
+                    logging.error("Unsupported response type: %s",
+                                  self.resp_type)
                     print(f"Error: {error_msg}")
                     mzip.close()
                     return
@@ -1052,19 +1120,20 @@ class ProjectBuilder:
                     f"    - Review response in logs (if verbose mode enabled)\n"
                     f"    - If using HTML response, ensure postfetch script is configured correctly"
                 )
-                logging.error(f"Error parsing response from {url}: {e}")
+                logging.error("Error parsing response from %s: %s", url, e)
                 print(f"Error: {error_msg}")
                 mzip.close()
                 return
-            except Exception as e:
+            except (IOError, OSError, RuntimeError) as e:
                 error_msg = (
                     f"Failed to process API response\n"
                     f"  Error: {str(e)}\n"
                     f"  Response type: {self.resp_type}\n"
                     f"  Error type: {type(e).__name__}\n"
-                    f"  Check logs for more details: {self.logfile}"
+                    f"  Check logs for more details: {self.logfile if hasattr(self, 'logfile') else 'apibackuper.log'}"
                 )
-                logging.error(f"Error processing response from {url}: {e}", exc_info=True)
+                logging.error("Error processing response from %s: %s", url, e,
+                              exc_info=True)
                 print(f"Error: {error_msg}")
                 mzip.close()
                 return
@@ -1098,12 +1167,13 @@ class ProjectBuilder:
                     num_pages = None
                     total = None
                 if total is not None and num_pages is not None:
-                     logging.info("Total pages %d, records %d" % (num_pages, total))
+                     logging.info("Total pages %d, records %d", num_pages, total)
                      num_pages = int(num_pages)
-                else: 
+                else:
                      num_pages = DEFAULT_NUMBER_OF_PAGES
             except (ValueError, TypeError, KeyError) as e:
-                logging.warning(f"Error extracting page count: {e}, using default")
+                logging.warning("Error extracting page count: %s, using default",
+                                e)
                 num_pages = DEFAULT_NUMBER_OF_PAGES
                 total = None
 
@@ -1125,14 +1195,14 @@ class ProjectBuilder:
                         else:
                             start_page = page
                         break
-                logging.debug("Start page number %d" % (start_page))
-            
+                logging.debug("Start page number %d", start_page)
+
             # Initialize progress tracking
             total_pages = end_page - start_page
             progress_bar = None
             if total_pages > 0:
                 progress_bar = tqdm(total=total_pages, desc="Downloading pages", unit="page")
-            
+
             consecutive_errors = 0
             for page in range(start_page, end_page):
                 try:
@@ -1170,10 +1240,10 @@ class ProjectBuilder:
                     try:
                         response = self._single_request(url, headers, params, flatten)
                     except requests.exceptions.RequestException as e:
-                        logging.error(f"Request error on page {page}: {e}")
+                        logging.error("Request error on page %d: %s", page, e)
                         consecutive_errors += 1
                         if consecutive_errors >= self.max_consecutive_errors:
-                            logging.error("Too many consecutive errors (%d). Stopping." % consecutive_errors)
+                            logging.error("Too many consecutive errors (%d). Stopping.", consecutive_errors)
                             if progress_bar:
                                 progress_bar.close()
                             mzip.close()
@@ -1186,11 +1256,11 @@ class ProjectBuilder:
                         if progress_bar:
                             progress_bar.update(1)
                         continue
-                    except Exception as e:
-                        logging.error(f"Unexpected error on page {page}: {e}")
+                    except (ValueError, RuntimeError, IOError) as e:
+                        logging.error("Unexpected error on page %d: %s", page, e)
                         consecutive_errors += 1
                         if consecutive_errors >= self.max_consecutive_errors:
-                            logging.error("Too many consecutive errors (%d). Stopping." % consecutive_errors)
+                            logging.error("Too many consecutive errors (%d). Stopping.", consecutive_errors)
                             if progress_bar:
                                 progress_bar.close()
                             mzip.close()
@@ -1203,37 +1273,37 @@ class ProjectBuilder:
                         if progress_bar:
                             progress_bar.update(1)
                         continue
-                    
+
                     time.sleep(self.default_delay)
-                    
+
                     if response.status_code in self.error_retry_codes:
                         rc = 0
                         for rc in range(1, self.retry_count, 1):
-                            logging.info("Retry attempt %d of %d, delay %d" %
-                                         (rc, self.retry_count, self.retry_delay))
+                            logging.info("Retry attempt %d of %d, delay %d",
+                                         rc, self.retry_count, self.retry_delay)
                             time.sleep(self.retry_delay)
                             try:
                                 response = self._single_request(url, headers, params,
                                                                 flatten)
                             except requests.exceptions.RequestException as e:
-                                logging.warning(f"Retry request failed: {e}")
+                                logging.warning("Retry request failed: %s", e)
                                 continue
                             if response.status_code not in self.error_retry_codes:
                                 logging.info(
-                                    "Looks like finally we have proper response on %d attempt"
-                                    % (rc))
+                                    "Looks like finally we have proper response on %d attempt",
+                                    rc)
                                 consecutive_errors = 0
                                 break
                         if response.status_code in self.error_retry_codes:
                             consecutive_errors += 1
                             if consecutive_errors >= self.max_consecutive_errors:
-                                logging.error("Too many consecutive errors (%d). Stopping." % consecutive_errors)
+                                logging.error("Too many consecutive errors (%d). Stopping.", consecutive_errors)
                                 if progress_bar:
                                     progress_bar.close()
                                 mzip.close()
                                 return
                             if not self.continue_on_error:
-                                logging.error("Error on page %d and continue_on_error is False. Stopping." % page)
+                                logging.error("Error on page %d and continue_on_error is False. Stopping.", page)
                                 if progress_bar:
                                     progress_bar.close()
                                 mzip.close()
@@ -1241,14 +1311,14 @@ class ProjectBuilder:
                             if progress_bar:
                                 progress_bar.update(1)
                             continue
-                    
+
                     if response.status_code not in self.error_retry_codes:
                         consecutive_errors = 0
                         try:
                             if num_pages is not None:
-                                logging.info("Saving page %d of %d" % (page, num_pages))
+                                logging.info("Saving page %d of %d", page, num_pages)
                             else:
-                                logging.info("Saving page %d" % (page))
+                                logging.info("Saving page %d", page)
                             if self.resp_type == "json":
                                 outdata = response.content
                             elif self.resp_type == "xml":
@@ -1259,16 +1329,18 @@ class ProjectBuilder:
                                     continue
                                 outdata = json.dumps(process_func(response.content), ensure_ascii=False)
                             else:
-                                logging.warning(f"Unknown response type: {self.resp_type}")
+                                logging.warning("Unknown response type: %s",
+                                                self.resp_type)
                                 continue
-                            
+
                             if len(outdata) == 0:
-                                logging.info("Empty results on page %d. Stopped" % (page))
-                                break             
+                                logging.info("Empty results on page %d. Stopped", page)
+                                break
                             mzip.writestr("page_%d.json" % (page), outdata)
-                            if self.page_limit:                    
+                            if self.page_limit:
                                 if len(outdata) < int(self.page_limit):
-                                    logging.info("Page %d size is %d, less than expected page size %s. Stopped" % (page, len(outdata), str(self.page_limit)))
+                                    logging.info("Page %d size is %d, less than expected page size %s. Stopped",
+                                                 page, len(outdata), str(self.page_limit))
                                     if progress_bar:
                                         progress_bar.update(1)
                                         progress_bar.close()
@@ -1276,7 +1348,8 @@ class ProjectBuilder:
                             if progress_bar:
                                 progress_bar.update(1)
                         except (json.JSONDecodeError, ValueError) as e:
-                            logging.error(f"Error processing response for page {page}: {e}")
+                            logging.error("Error processing response for page %d: %s",
+                                          page, e)
                             consecutive_errors += 1
                             if consecutive_errors >= self.max_consecutive_errors:
                                 if progress_bar:
@@ -1290,8 +1363,8 @@ class ProjectBuilder:
                                 return
                             if progress_bar:
                                 progress_bar.update(1)
-                        except Exception as e:
-                            logging.error(f"Error saving page {page}: {e}")
+                        except (IOError, OSError, ValueError) as e:
+                            logging.error("Error saving page %d: %s", page, e)
                             consecutive_errors += 1
                             if consecutive_errors >= self.max_consecutive_errors:
                                 if progress_bar:
@@ -1306,16 +1379,16 @@ class ProjectBuilder:
                             if progress_bar:
                                 progress_bar.update(1)
                     else:
-                        logging.info("Errors persist on page %d. Stopped" % (page))
+                        logging.info("Errors persist on page %d. Stopped", page)
                         if progress_bar:
                             progress_bar.update(1)
                         if not self.continue_on_error:
                             break
-                except Exception as e:
-                    logging.error(f"Unexpected error processing page {page}: {e}")
+                except (ValueError, RuntimeError, IOError) as e:
+                    logging.error("Unexpected error processing page %d: %s", page, e)
                     consecutive_errors += 1
                     if consecutive_errors >= self.max_consecutive_errors:
-                        logging.error("Too many consecutive errors (%d). Stopping." % consecutive_errors)
+                        logging.error("Too many consecutive errors (%d). Stopping.", consecutive_errors)
                         if progress_bar:
                             progress_bar.close()
                         mzip.close()
@@ -1327,33 +1400,33 @@ class ProjectBuilder:
                         return
                     if progress_bar:
                         progress_bar.update(1)
-            
+
             if progress_bar:
                 progress_bar.close()
             if mzip:
                 try:
                     mzip.close()
-                except Exception as e:
-                    logging.error(f"Error closing zip file: {e}")
-        except Exception as e:
-            logging.error(f"Fatal error in run method: {e}")
+                except (IOError, OSError) as e:
+                    logging.error("Error closing zip file: %s", e)
+        except (ValueError, RuntimeError, IOError) as e:
+            logging.error("Fatal error in run method: %s", e)
             print(f"Error: Fatal error occurred: {e}")
             if mzip:
                 try:
                     mzip.close()
-                except:
+                except Exception:
                     pass
             if progress_bar:
                 try:
                     progress_bar.close()
-                except:
+                except Exception:
                     pass
 
         # pass
 
     def follow(self, mode: str = "full") -> None:
         """Collects data about each data using additional requests"""
- 
+
         if self.config is None:
             config_files = [
                 os.path.join(self.project_path, "apibackuper.yaml"),
@@ -1368,16 +1441,16 @@ class ProjectBuilder:
             if found_files:
                 error_msg += f"  Found files: {', '.join(os.path.basename(f) for f in found_files)}\n"
             error_msg += (
-                f"  Suggestions:\n"
-                f"    - Run 'apibackuper create <name>' to create a new project\n"
-                f"    - Navigate to the project directory first\n"
+                "  Suggestions:\n"
+                "    - Run 'apibackuper create <name>' to create a new project\n"
+                "    - Navigate to the project directory first\n"
                 f"    - Use --projectpath option to specify project location"
             )
             print(f"Error: {error_msg}")
             return
         if not self.follow_enabled:
             print("Follow mode not enabled")
-            return           
+            return
         if not os.path.exists(self.storagedir):
             os.mkdir(self.storagedir)
         if self.storage_type != "zip":
@@ -1397,9 +1470,8 @@ class ProjectBuilder:
         params = None
         params_file = os.path.join(self.project_path, "follow_params.json")
         if os.path.exists(params_file):
-            f = open(params_file, "r", encoding="utf8")
-            params = json.load(f)
-            f.close()
+            with open(params_file, "r", encoding="utf8") as f:
+                params = json.load(f)
         else:
             params = {}
         if self.flat_params:
@@ -1439,7 +1511,7 @@ class ProjectBuilder:
                     extract_progress.update(1)
             if extract_progress:
                 extract_progress.close()
-            logging.info("%d allkeys to process" % (len(allkeys)))
+            logging.info("%d allkeys to process", len(allkeys))
             if mode == "full":
                 mzip = ZipFile(self.details_storage_file,
                                mode="w",
@@ -1453,9 +1525,9 @@ class ProjectBuilder:
                 filenames = mzip.namelist()
                 for name in filenames:
                     keys.append(int(name.rsplit(".", 1)[0]))
-                logging.info("%d filenames in zip file" % (len(keys)))
+                logging.info("%d filenames in zip file", len(keys))
                 finallist = list(set(allkeys) - set(keys))
-            logging.info("%d keys in final list" % (len(finallist)))
+            logging.info("%d keys in final list", len(finallist))
 
             n = 0
             total = len(finallist)
@@ -1484,7 +1556,7 @@ class ProjectBuilder:
                         response = self.http.post(self.follow_pattern,
                                                   params=params, verify=False)
                 logging.info("Saving object with id %s. %d of %d" %
-                             (key, n, total))                
+                             (key, n, total))
                 if self.resp_type == 'json':
                     mzip.writestr('%s.json' % (key), response.content)
                 elif self.resp_type == 'html':
@@ -1511,8 +1583,8 @@ class ProjectBuilder:
                     for item in get_dict_value(data,
                                                self.data_key,
                                                splitter=self.field_splitter):
-                        id = item[self.follow_item_key]
-                        allkeys[id] = get_dict_value(
+                        item_id = item[self.follow_item_key]  # noqa: W0622
+                        allkeys[item_id] = get_dict_value(
                             item,
                             self.follow_url_key,
                             splitter=self.field_splitter)
@@ -1651,9 +1723,9 @@ class ProjectBuilder:
             if found_files:
                 error_msg += f"  Found files: {', '.join(os.path.basename(f) for f in found_files)}\n"
             error_msg += (
-                f"  Suggestions:\n"
-                f"    - Run 'apibackuper create <name>' to create a new project\n"
-                f"    - Navigate to the project directory first\n"
+                "  Suggestions:\n"
+                "    - Run 'apibackuper create <name>' to create a new project\n"
+                "    - Navigate to the project directory first\n"
                 f"    - Use --projectpath option to specify project location"
             )
             print(f"Error: {error_msg}")
@@ -1741,7 +1813,7 @@ class ProjectBuilder:
                 for fname in file_list:
                     n += 1
                     if n % 1000 == 0:
-                        logging.info("Processed %d records" % (n))
+                        logging.info("Processed %d records", n)
                     tf = mzip.open(fname, "r")
                     data = json.load(tf)
                     tf.close()
@@ -1774,10 +1846,9 @@ class ProjectBuilder:
             mzip.close()
 
             logging.info("Storing all filenames")
-            f = open(allfiles_name, "w", encoding="utf8")
-            for u in uniq_ids:
-                f.write(str(u) + "\n")
-            f.close()
+            with open(allfiles_name, "w", encoding="utf8") as f:
+                for u in uniq_ids:
+                    f.write(str(u) + "\n")
         else:
             logging.info("Load all filenames")
             uniq_ids = load_file_list(allfiles_name)
@@ -1835,7 +1906,7 @@ class ProjectBuilder:
                 url = self.root_url.format(uniq_id)
             n += 1
             if n % 50 == 0:
-                logging.info("Downloaded %d files" % (n))
+                logging.info("Downloaded %d files", n)
             #            if url in processed_files:
             #                continue
             if be_careful:
@@ -1878,9 +1949,9 @@ class ProjectBuilder:
                     filename = str(uniq_id)
             if self.storage_mode == "filepath":
                 filename = urlparse(url).path
-            logging.info("Processing %s as %s" % (url, filename))
+            logging.info("Processing %s as %s", url, filename)
             if fstorage.exists(filename):
-                logging.info("File %s already stored" % (filename))
+                logging.info("File %s already stored", filename)
                 if download_progress:
                     download_progress.update(1)
                 continue
@@ -1910,7 +1981,7 @@ class ProjectBuilder:
         list_file.close()
         skipped_file.close()
 
-    def estimate(self, mode: str) -> None:
+    def estimate(self, mode: str) -> None:  # noqa: ARG002
         """Measures time, size and count of records"""
         if self.config is None:
             config_files = [
@@ -1926,9 +1997,9 @@ class ProjectBuilder:
             if found_files:
                 error_msg += f"  Found files: {', '.join(os.path.basename(f) for f in found_files)}\n"
             error_msg += (
-                f"  Suggestions:\n"
-                f"    - Run 'apibackuper create <name>' to create a new project\n"
-                f"    - Navigate to the project directory first\n"
+                "  Suggestions:\n"
+                "    - Run 'apibackuper create <name>' to create a new project\n"
+                "    - Navigate to the project directory first\n"
                 f"    - Use --projectpath option to specify project location"
             )
             print(f"Error: {error_msg}")
@@ -1940,22 +2011,20 @@ class ProjectBuilder:
         process_func = None
         if self.code_postfetch is not None:
             script = run_path(self.code_postfetch)
-            process_func = script['process']        
+            process_func = script['process']
 
         headers = None
         headers_file = os.path.join(self.project_path, "headers.json")
         if os.path.exists(headers_file):
-            f = open(headers_file, "r", encoding="utf8")
-            headers = json.load(f)
-            f.close()
+            with open(headers_file, "r", encoding="utf8") as f:
+                headers = json.load(f)
         else:
             headers = {}
 
         params_file = os.path.join(self.project_path, "params.json")
         if os.path.exists(params_file):
-            f = open(params_file, "r", encoding="utf8")
-            params = json.load(f)
-            f.close()
+            with open(params_file, "r", encoding="utf8") as f:
+                params = json.load(f)
         if self.flat_params:
             flatten = {}
             for k, v in params.items():
@@ -1965,9 +2034,8 @@ class ProjectBuilder:
         url_params = None
         params_file = os.path.join(self.project_path, "url_params.json")
         if os.path.exists(params_file):
-            f = open(params_file, "r", encoding="utf8")
-            url_params = json.load(f)
-            f.close()
+            with open(params_file, "r", encoding="utf8") as f:
+                url_params = json.load(f)
         if len(self.total_number_key) > 0:
             start = timer()
             if self.query_mode == "params":
@@ -2079,15 +2147,15 @@ class ProjectBuilder:
             if found_files:
                 error_msg += f"  Found files: {', '.join(os.path.basename(f) for f in found_files)}\n"
             error_msg += (
-                f"  Suggestions:\n"
-                f"    - Run 'apibackuper create <name>' to create a new project\n"
-                f"    - Navigate to the project directory first\n"
+                "  Suggestions:\n"
+                "    - Run 'apibackuper create <name>' to create a new project\n"
+                "    - Navigate to the project directory first\n"
                 f"    - Use --projectpath option to specify project location\n"
                 f"    - Check if config file exists and has correct name"
             )
             print(f"Error: {error_msg}")
             return None
-        
+
         report = {
             "project": {
                 "name": self.name,
@@ -2097,7 +2165,7 @@ class ProjectBuilder:
                 "response_type": self.resp_type,
                 "storage_type": self.storage_type,
                 "storage_path": self.storagedir,
-                "log_file": self.logfile
+                "log_file": self.logfile if hasattr(self, 'logfile') else 'apibackuper.log'
             },
             "configuration": {
                 "page_limit": self.page_limit,
@@ -2123,7 +2191,7 @@ class ProjectBuilder:
                 "flat_params": self.flat_params
             }
         }
-        
+
         # Add request configuration
         report["request"] = {
             "timeout": self.request_timeout,
@@ -2135,27 +2203,27 @@ class ProjectBuilder:
             "allow_redirects": self.allow_redirects,
             "proxies_configured": self.proxies is not None and len(self.proxies) > 0
         }
-        
+
         # Add error handling configuration
         report["error_handling"] = {
             "retry_on_codes": self.error_retry_codes,
             "max_consecutive_errors": self.max_consecutive_errors,
             "continue_on_error": self.continue_on_error
         }
-        
+
         # Add storage configuration
         report["storage_config"] = {
             "compression_level": self.compression_level,
             "max_file_size": self.max_file_size,
             "split_files": self.split_files
         }
-        
+
         # Add authentication info if configured
         if self.auth_handler:
             report["authentication"] = {
                 "type": self.auth_handler.auth_type
             }
-        
+
         # Add rate limiting info if configured
         if self.rate_limiter:
             report["rate_limiting"] = {
@@ -2168,7 +2236,7 @@ class ProjectBuilder:
             report["rate_limiting"] = {
                 "enabled": False
             }
-        
+
         # Add follow configuration if enabled
         if self.follow_enabled:
             report["follow"] = {
@@ -2185,7 +2253,7 @@ class ProjectBuilder:
             report["follow"] = {
                 "enabled": False
             }
-        
+
         # Add files configuration if enabled
         if self.config.has_section("files"):
             report["files"] = {
@@ -2202,7 +2270,7 @@ class ProjectBuilder:
             report["files"] = {
                 "enabled": False
             }
-        
+
         # Add code configuration if present
         if self.code_postfetch or self.code_follow:
             report["code"] = {}
@@ -2210,11 +2278,11 @@ class ProjectBuilder:
                 report["code"]["postfetch"] = self.code_postfetch
             if self.code_follow:
                 report["code"]["follow"] = self.code_follow
-        
+
         # Add statistics if requested and storage exists
         if stats:
             stats_data = {}
-            
+
             # Storage statistics
             storage_file = os.path.join(self.storagedir, "storage.zip")
             if os.path.exists(storage_file):
@@ -2222,24 +2290,24 @@ class ProjectBuilder:
                     mzip = ZipFile(storage_file, mode="r", compression=ZIP_DEFLATED)
                     file_list = mzip.namelist()
                     total_size = sum(mzip.getinfo(f).file_size for f in file_list)
-                    
+
                     # Count all records accurately
                     total_records = 0
                     sample_count = 0
                     sample_records = 0
-                    
+
                     # Use progress bar for large files
                     if len(file_list) > 0:
                         progress_bar = None
                         if len(file_list) > 100:
                             progress_bar = tqdm(total=len(file_list), desc="Counting records", unit="file", leave=False)
-                        
+
                         for fname in file_list:
                             try:
                                 tf = mzip.open(fname, "r")
                                 data = json.load(tf)
                                 tf.close()
-                                    
+
                                 if self.data_key:
                                     items = get_dict_value(data, self.data_key, splitter=self.field_splitter)
                                     if isinstance(items, list):
@@ -2251,7 +2319,7 @@ class ProjectBuilder:
                                         total_records += len(data)
                                     elif data is not None:
                                         total_records += 1
-                                
+
                                 # Track sample for average calculation
                                 if sample_count < 10:
                                     if self.data_key:
@@ -2263,15 +2331,15 @@ class ProjectBuilder:
                                             sample_records += len(data)
                                     sample_count += 1
                             except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
-                                logging.debug(f"Error counting records in {fname}: {e}")
-                                pass
-                            
+                                logging.debug("Error counting records in %s: %s",
+                                             fname, e)
+
                             if progress_bar:
                                 progress_bar.update(1)
-                        
+
                         if progress_bar:
                             progress_bar.close()
-                    
+
                     stats_data["storage"] = {
                         "file_exists": True,
                         "total_files": len(file_list),
@@ -2281,10 +2349,10 @@ class ProjectBuilder:
                         "total_records": total_records,
                         "avg_records_per_file": round(total_records / len(file_list), 2) if len(file_list) > 0 else 0
                     }
-                    
+
                     mzip.close()
-                except Exception as e:
-                    logging.error(f"Error reading storage file: {e}")
+                except (IOError, OSError, zipfile.BadZipFile) as e:
+                    logging.error("Error reading storage file: %s", e)
                     stats_data["storage"] = {
                         "file_exists": True,
                         "error": str(e)
@@ -2293,7 +2361,7 @@ class ProjectBuilder:
                 stats_data["storage"] = {
                     "file_exists": False
                 }
-            
+
             # Details storage statistics
             details_file = os.path.join(self.storagedir, "details.zip")
             if os.path.exists(details_file):
@@ -2301,7 +2369,7 @@ class ProjectBuilder:
                     mzip = ZipFile(details_file, mode="r", compression=ZIP_DEFLATED)
                     file_list = mzip.namelist()
                     total_size = sum(mzip.getinfo(f).file_size for f in file_list)
-                    
+
                     stats_data["details"] = {
                         "file_exists": True,
                         "total_files": len(file_list),
@@ -2309,10 +2377,10 @@ class ProjectBuilder:
                         "total_size_mb": round(total_size / (1024 * 1024), 2),
                         "total_size_gb": round(total_size / (1024 * 1024 * 1024), 3)
                     }
-                    
+
                     mzip.close()
-                except Exception as e:
-                    logging.error(f"Error reading details file: {e}")
+                except (IOError, OSError, zipfile.BadZipFile) as e:
+                    logging.error("Error reading details file: %s", e)
                     stats_data["details"] = {
                         "file_exists": True,
                         "error": str(e)
@@ -2321,7 +2389,7 @@ class ProjectBuilder:
                 stats_data["details"] = {
                     "file_exists": False
                 }
-            
+
             # Files storage statistics
             files_storage_file = os.path.join(self.storagedir, "files.zip")
             if os.path.exists(files_storage_file):
@@ -2329,7 +2397,7 @@ class ProjectBuilder:
                     mzip = ZipFile(files_storage_file, mode="r", compression=ZIP_DEFLATED)
                     file_list = mzip.namelist()
                     total_size = sum(mzip.getinfo(f).file_size for f in file_list)
-                    
+
                     stats_data["files"] = {
                         "file_exists": True,
                         "total_files": len(file_list),
@@ -2337,10 +2405,10 @@ class ProjectBuilder:
                         "total_size_mb": round(total_size / (1024 * 1024), 2),
                         "total_size_gb": round(total_size / (1024 * 1024 * 1024), 3)
                     }
-                    
+
                     mzip.close()
-                except Exception as e:
-                    logging.error(f"Error reading files storage: {e}")
+                except (IOError, OSError, zipfile.BadZipFile) as e:
+                    logging.error("Error reading files storage: %s", e)
                     stats_data["files"] = {
                         "file_exists": True,
                         "error": str(e)
@@ -2349,20 +2417,20 @@ class ProjectBuilder:
                 stats_data["files"] = {
                     "file_exists": False
                 }
-            
+
             report["statistics"] = stats_data
-        
+
         return report
 
     def validate_config(self, verbose: bool = False) -> bool:
         """Validate project configuration"""
         errors = []
         warnings = []
-        
+
         if self.config is None:
             errors.append("Configuration file not found")
             return False
-        
+
         # For YAML configs, use schema validation first
         if self.config_format == 'yaml' and JSONSCHEMA_AVAILABLE:
             try:
@@ -2370,7 +2438,7 @@ class ProjectBuilder:
                 if os.path.exists(self.config_filename):
                     with open(self.config_filename, "r", encoding="utf8") as fobj:
                         yaml_data = yaml.safe_load(fobj)
-                    
+
                     if yaml_data:
                         is_valid, validation_errors = validate_yaml_config(yaml_data)
                         if not is_valid:
@@ -2378,21 +2446,21 @@ class ProjectBuilder:
                                 path = error.get("path", "root")
                                 msg = error.get("message", "Unknown error")
                                 errors.append(f"Schema validation error at {path}: {msg}")
-            except Exception as e:
+            except (IOError, OSError, ValueError) as e:
                 if verbose:
                     warnings.append(f"Could not perform schema validation: {e}")
-        
+
         # Check required sections
         required_sections = ["settings", "project", "params", "data", "storage"]
         for section in required_sections:
             if not self.config.has_section(section):
                 errors.append(f"Missing required section: {section}")
-        
+
         # Validate settings section
         if self.config.has_section("settings"):
             if not self.config.has_option("settings", "name"):
                 errors.append("Missing required option: settings.name")
-        
+
         # Validate project section
         if self.config.has_section("project"):
             if not self.config.has_option("project", "url"):
@@ -2401,14 +2469,14 @@ class ProjectBuilder:
                 url = self.config.get("project", "url")
                 if not url.startswith(("http://", "https://")):
                     errors.append(f"Invalid URL format: {url}")
-            
+
             if not self.config.has_option("project", "http_mode"):
                 errors.append("Missing required option: project.http_mode")
             else:
                 http_mode = self.config.get("project", "http_mode")
                 if http_mode not in ["GET", "POST"]:
                     errors.append(f"Invalid http_mode: {http_mode} (must be GET or POST)")
-        
+
         # Validate params section
         if self.config.has_section("params"):
             if not self.config.has_option("params", "page_size_limit"):
@@ -2420,12 +2488,12 @@ class ProjectBuilder:
                         errors.append("page_size_limit must be greater than 0")
                 except ValueError:
                     errors.append("page_size_limit must be an integer")
-        
+
         # Validate data section
         if self.config.has_section("data"):
             if not self.config.has_option("data", "data_key") and not self.config.has_option("data", "total_number_key"):
                 warnings.append("Neither data_key nor total_number_key specified - may cause issues")
-        
+
         # Validate storage section
         if self.config.has_section("storage"):
             if not self.config.has_option("storage", "storage_type"):
@@ -2434,7 +2502,7 @@ class ProjectBuilder:
                 storage_type = self.config.get("storage", "storage_type")
                 if storage_type not in ["zip", "filesystem"]:
                     warnings.append(f"Storage type '{storage_type}' may not be fully supported")
-        
+
         # Validate authentication if configured
         if self.config.has_section("auth"):
             auth_type = self.config.get("auth", "type") if self.config.has_option("auth", "type") else None
@@ -2451,7 +2519,7 @@ class ProjectBuilder:
             elif auth_type == "apikey":
                 if not self.config.has_option("auth", "api_key"):
                     errors.append("auth.api_key is required for apikey authentication")
-        
+
         # Validate rate limiting if configured
         if self.config.has_section("rate_limit"):
             if self.config.has_option("rate_limit", "requests_per_second"):
@@ -2461,7 +2529,7 @@ class ProjectBuilder:
                         errors.append("rate_limit.requests_per_second must be greater than 0")
                 except ValueError:
                     errors.append("rate_limit.requests_per_second must be a number")
-        
+
         # Print results
         if verbose or errors or warnings:
             if errors:
@@ -2472,10 +2540,10 @@ class ProjectBuilder:
                 print("Warnings:")
                 for warning in warnings:
                     print(f"  WARNING: {warning}")
-        
+
         return len(errors) == 0
 
-    def to_package(self, filename: Optional[str] = None) -> None:
+    def to_package(self, filename: Optional[str] = None) -> None:  # noqa: ARG002
         if self.config is None:
             config_files = [
                 os.path.join(self.project_path, "apibackuper.yaml"),
@@ -2490,9 +2558,9 @@ class ProjectBuilder:
             if found_files:
                 error_msg += f"  Found files: {', '.join(os.path.basename(f) for f in found_files)}\n"
             error_msg += (
-                f"  Suggestions:\n"
-                f"    - Run 'apibackuper create <name>' to create a new project\n"
-                f"    - Navigate to the project directory first\n"
+                "  Suggestions:\n"
+                "    - Run 'apibackuper create <name>' to create a new project\n"
+                "    - Navigate to the project directory first\n"
                 f"    - Use --projectpath option to specify project location"
             )
             print(f"Error: {error_msg}")
@@ -2501,4 +2569,3 @@ class ProjectBuilder:
         #        if not filename:
         #            filename = 'package.zip'
         #        print('Package saved as %s' % filename)
-        pass

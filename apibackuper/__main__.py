@@ -3,13 +3,12 @@
 
 """
 import sys
+from .core import cli
 
 
 def main() -> None:
     """Main function"""
     try:
-        from .core import cli
-
         cli()
     except KeyboardInterrupt:
         print("Ctrl-C pressed. Aborting")

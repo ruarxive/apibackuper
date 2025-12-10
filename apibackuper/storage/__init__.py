@@ -6,7 +6,7 @@ class FileStorage:
     """Base file storage class"""
 
     def __init__(self):
-        pass
+        """Initialize base file storage"""
 
     def exists(self, name):
         raise NotImplementedError
@@ -44,7 +44,6 @@ class FilesystemStorage(FileStorage):
     def __init__(self, dirpath=os.path.join("storage", "files")):
         FileStorage.__init__(self)
         self.dirpath = dirpath
-        pass
 
     def exists(self, filename):
         fullname = os.path.join(self.dirpath, filename.lstrip('/').lstrip('\\'))

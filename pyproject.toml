@@ -44,6 +44,7 @@ dependencies = [
     "PyYAML>=6.0",
     "jsonschema>=4.0.0",
     "tqdm>=4.66.0",
+    "zstandard>=0.22.0",
 ]
 
 [project.optional-dependencies]
@@ -83,7 +84,7 @@ Download = "https://github.com/datacoon/apibackuper/"
 apibackuper = "apibackuper.__main__:main"
 
 [tool.setuptools]
-packages = ["apibackuper"]
+packages = {find = {}}
 include-package-data = true
 zip-safe = false
 

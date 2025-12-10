@@ -1,0 +1,929 @@
+************* Module apibackuper.auth
+apibackuper/auth.py:17:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/auth.py:24:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/auth.py:29:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/auth.py:30:0: C0301: Line too long (108/100) (line-too-long)
+apibackuper/auth.py:31:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/auth.py:33:0: C0301: Line too long (114/100) (line-too-long)
+apibackuper/auth.py:42:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/auth.py:45:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/auth.py:55:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/auth.py:58:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/auth.py:60:0: C0301: Line too long (111/100) (line-too-long)
+apibackuper/auth.py:61:0: C0301: Line too long (139/100) (line-too-long)
+apibackuper/auth.py:62:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/auth.py:65:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/auth.py:75:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/auth.py:76:0: C0301: Line too long (114/100) (line-too-long)
+apibackuper/auth.py:77:0: C0301: Line too long (129/100) (line-too-long)
+apibackuper/auth.py:78:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/auth.py:84:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/auth.py:88:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/auth.py:89:0: C0301: Line too long (103/100) (line-too-long)
+apibackuper/auth.py:93:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/auth.py:96:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/auth.py:100:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/auth.py:103:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/auth.py:105:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/auth.py:108:0: C0301: Line too long (113/100) (line-too-long)
+apibackuper/auth.py:112:0: C0301: Line too long (106/100) (line-too-long)
+apibackuper/auth.py:123:0: C0305: Trailing newlines (trailing-newlines)
+apibackuper/auth.py:40:25: W1514: Using open without explicitly specifying an encoding (unspecified-encoding)
+apibackuper/auth.py:53:25: W1514: Using open without explicitly specifying an encoding (unspecified-encoding)
+apibackuper/auth.py:73:25: W1514: Using open without explicitly specifying an encoding (unspecified-encoding)
+apibackuper/auth.py:25:4: R0912: Too many branches (17/12) (too-many-branches)
+apibackuper/auth.py:120:19: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/auth.py:121:16: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/auth.py:7:0: W0611: Unused Optional imported from typing (unused-import)
+apibackuper/auth.py:10:4: W0611: Unused import requests (unused-import)
+************* Module apibackuper.constants
+apibackuper/constants.py:14:0: C0304: Final newline missing (missing-final-newline)
+************* Module apibackuper.rate_limiter
+apibackuper/rate_limiter.py:12:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/rate_limiter.py:30:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/rate_limiter.py:35:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/rate_limiter.py:39:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/rate_limiter.py:41:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/rate_limiter.py:46:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/rate_limiter.py:48:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/rate_limiter.py:55:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/rate_limiter.py:66:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/rate_limiter.py:72:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/rate_limiter.py:81:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/rate_limiter.py:83:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/rate_limiter.py:89:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/rate_limiter.py:98:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/rate_limiter.py:100:0: C0305: Trailing newlines (trailing-newlines)
+apibackuper/rate_limiter.py:10:0: R0902: Too many instance attributes (10/7) (too-many-instance-attributes)
+apibackuper/rate_limiter.py:59:20: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/rate_limiter.py:76:20: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/rate_limiter.py:93:20: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/rate_limiter.py:42:4: R0912: Too many branches (16/12) (too-many-branches)
+apibackuper/rate_limiter.py:10:0: R0903: Too few public methods (1/2) (too-few-public-methods)
+************* Module apibackuper.core
+apibackuper/core.py:48:0: C0301: Line too long (112/100) (line-too-long)
+apibackuper/core.py:250:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/core.py:269:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/core.py:293:0: C0301: Line too long (106/100) (line-too-long)
+apibackuper/core.py:295:0: C0301: Line too long (102/100) (line-too-long)
+apibackuper/core.py:296:0: C0301: Line too long (101/100) (line-too-long)
+apibackuper/core.py:297:0: C0301: Line too long (121/100) (line-too-long)
+apibackuper/core.py:298:0: C0301: Line too long (171/100) (line-too-long)
+apibackuper/core.py:299:0: C0301: Line too long (109/100) (line-too-long)
+apibackuper/core.py:300:0: C0301: Line too long (113/100) (line-too-long)
+apibackuper/core.py:302:0: C0301: Line too long (184/100) (line-too-long)
+apibackuper/core.py:303:0: C0301: Line too long (105/100) (line-too-long)
+apibackuper/core.py:305:0: C0301: Line too long (101/100) (line-too-long)
+apibackuper/core.py:309:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/core.py:312:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/core.py:319:0: C0301: Line too long (125/100) (line-too-long)
+apibackuper/core.py:320:0: C0301: Line too long (104/100) (line-too-long)
+apibackuper/core.py:321:0: C0301: Line too long (118/100) (line-too-long)
+apibackuper/core.py:325:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/core.py:373:0: C0301: Line too long (105/100) (line-too-long)
+apibackuper/core.py:468:0: C0301: Line too long (174/100) (line-too-long)
+apibackuper/core.py:470:0: C0301: Line too long (105/100) (line-too-long)
+apibackuper/core.py:476:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/core.py:492:0: C0301: Line too long (119/100) (line-too-long)
+apibackuper/core.py:493:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/core.py:725:0: C0301: Line too long (113/100) (line-too-long)
+apibackuper/core.py:1:0: C0114: Missing module docstring (missing-module-docstring)
+apibackuper/core.py:30:4: C0103: Variable name "rootLogger" doesn't conform to snake_case naming style (invalid-name)
+apibackuper/core.py:33:8: C0103: Variable name "consoleHandler" doesn't conform to snake_case naming style (invalid-name)
+apibackuper/core.py:45:0: R0914: Too many local variables (21/15) (too-many-locals)
+apibackuper/core.py:72:4: W0621: Redefining name 'follow' from outer scope (line 599) (redefined-outer-name)
+apibackuper/core.py:45:0: R0912: Too many branches (18/12) (too-many-branches)
+apibackuper/core.py:45:0: R0915: Too many statements (74/50) (too-many-statements)
+apibackuper/core.py:291:0: R0913: Too many arguments (12/5) (too-many-arguments)
+apibackuper/core.py:291:0: R0917: Too many positional arguments (12/5) (too-many-positional-arguments)
+apibackuper/core.py:354:11: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/core.py:319:16: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:338:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:351:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:364:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:294:4: W0613: Unused argument 'config' (unused-argument)
+apibackuper/core.py:295:4: W0613: Unused argument 'pagekey' (unused-argument)
+apibackuper/core.py:296:4: W0613: Unused argument 'pagesize' (unused-argument)
+apibackuper/core.py:297:4: W0613: Unused argument 'datakey' (unused-argument)
+apibackuper/core.py:298:4: W0613: Unused argument 'itemkey' (unused-argument)
+apibackuper/core.py:299:4: W0613: Unused argument 'changekey' (unused-argument)
+apibackuper/core.py:300:4: W0613: Unused argument 'iterateby' (unused-argument)
+apibackuper/core.py:301:4: W0613: Unused argument 'http_mode' (unused-argument)
+apibackuper/core.py:302:4: W0613: Unused argument 'work_modes' (unused-argument)
+apibackuper/core.py:409:11: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/core.py:394:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:406:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:420:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:449:11: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/core.py:446:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:460:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:468:4: W0622: Redefining built-in 'format' (redefined-builtin)
+apibackuper/core.py:535:11: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/core.py:492:20: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:492:33: W1309: Using an f-string that does not have any interpolated variables (f-string-without-interpolation)
+apibackuper/core.py:508:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:520:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:532:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:546:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:466:0: R0912: Too many branches (13/12) (too-many-branches)
+apibackuper/core.py:583:11: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/core.py:580:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:593:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:634:11: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/core.py:619:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:631:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:645:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:685:11: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/core.py:670:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:682:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:696:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:731:11: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/core.py:728:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:742:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/core.py:6:0: C0411: standard import "warnings" should be placed before third party import "urllib3" (wrong-import-order)
+apibackuper/core.py:8:0: C0411: standard import "typing.Optional" should be placed before third party imports "urllib3", "typer" (wrong-import-order)
+apibackuper/core.py:9:0: C0411: standard import "sys" should be placed before third party imports "urllib3", "typer" (wrong-import-order)
+apibackuper/core.py:10:0: C0411: standard import "os" should be placed before third party imports "urllib3", "typer" (wrong-import-order)
+************* Module apibackuper.common
+apibackuper/common.py:4:0: R0402: Use 'from lxml import etree' instead (consider-using-from-import)
+apibackuper/common.py:38:4: R1705: Unnecessary "else" after "return", remove the "else" and de-indent the code inside it (no-else-return)
+apibackuper/common.py:39:8: R1705: Unnecessary "elif" after "return", remove the leading "el" from "elif" (no-else-return)
+apibackuper/common.py:48:12: R1705: Unnecessary "else" after "return", remove the "else" and de-indent the code inside it (no-else-return)
+apibackuper/common.py:66:12: R1705: Unnecessary "else" after "return", remove the "else" and de-indent the code inside it (no-else-return)
+apibackuper/common.py:38:4: R1702: Too many nested blocks (6/5) (too-many-nested-blocks)
+apibackuper/common.py:34:0: R0911: Too many return statements (10/6) (too-many-return-statements)
+apibackuper/common.py:34:0: R0912: Too many branches (19/12) (too-many-branches)
+apibackuper/common.py:90:4: R1705: Unnecessary "else" after "return", remove the "else" and de-indent the code inside it (no-else-return)
+apibackuper/common.py:95:8: R1705: Unnecessary "elif" after "return", remove the leading "el" from "elif" (no-else-return)
+apibackuper/common.py:4:0: W0611: Unused lxml.etree imported as etree (unused-import)
+************* Module apibackuper.__main__
+apibackuper/__main__.py:11:8: C0415: Import outside toplevel (core.cli) (import-outside-toplevel)
+************* Module apibackuper.cmds.config_loader
+apibackuper/cmds/config_loader.py:42:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/config_loader.py:49:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/config_loader.py:64:0: C0301: Line too long (117/100) (line-too-long)
+apibackuper/cmds/config_loader.py:74:0: C0301: Line too long (114/100) (line-too-long)
+apibackuper/cmds/config_loader.py:83:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/config_loader.py:92:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/config_loader.py:97:0: C0301: Line too long (130/100) (line-too-long)
+apibackuper/cmds/config_loader.py:102:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/config_loader.py:105:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/config_loader.py:109:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/config_loader.py:136:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/config_loader.py:140:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/config_loader.py:144:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/config_loader.py:148:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/config_loader.py:156:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/config_loader.py:163:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/config_loader.py:164:0: C0301: Line too long (103/100) (line-too-long)
+apibackuper/cmds/config_loader.py:177:0: C0305: Trailing newlines (trailing-newlines)
+apibackuper/cmds/config_loader.py:30:15: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/config_loader.py:81:11: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/config_loader.py:55:12: C0415: Import outside toplevel (importlib.resources.files) (import-outside-toplevel)
+apibackuper/cmds/config_loader.py:62:16: C0415: Import outside toplevel (importlib.resources) (import-outside-toplevel)
+apibackuper/cmds/config_loader.py:67:23: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/config_loader.py:72:20: C0415: Import outside toplevel (importlib_resources) (import-outside-toplevel)
+apibackuper/cmds/config_loader.py:77:27: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/config_loader.py:89:19: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/config_loader.py:90:16: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/config_loader.py:38:0: R0912: Too many branches (13/12) (too-many-branches)
+apibackuper/cmds/config_loader.py:114:11: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/config_loader.py:129:11: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/config_loader.py:129:11: W0705: Catching previously caught exception type Exception (duplicate-except)
+apibackuper/cmds/config_loader.py:130:8: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/config_loader.py:172:8: R1705: Unnecessary "elif" after "return", remove the leading "el" from "elif" (no-else-return)
+apibackuper/cmds/config_loader.py:176:25: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/config_loader.py:10:4: W0611: Unused import yaml (unused-import)
+apibackuper/cmds/config_loader.py:16:4: W0611: Unused import jsonschema (unused-import)
+************* Module apibackuper.cmds.http_client
+apibackuper/cmds/http_client.py:14:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/http_client.py:41:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/http_client.py:54:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/http_client.py:62:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/http_client.py:69:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/http_client.py:95:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/http_client.py:97:0: C0301: Line too long (109/100) (line-too-long)
+apibackuper/cmds/http_client.py:110:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/http_client.py:113:0: C0301: Line too long (106/100) (line-too-long)
+apibackuper/cmds/http_client.py:132:0: C0301: Line too long (102/100) (line-too-long)
+apibackuper/cmds/http_client.py:155:0: C0301: Line too long (104/100) (line-too-long)
+apibackuper/cmds/http_client.py:225:0: C0305: Trailing newlines (trailing-newlines)
+apibackuper/cmds/http_client.py:12:0: R0902: Too many instance attributes (11/7) (too-many-instance-attributes)
+apibackuper/cmds/http_client.py:15:4: R0913: Too many arguments (12/5) (too-many-arguments)
+apibackuper/cmds/http_client.py:15:4: R0917: Too many positional arguments (12/5) (too-many-positional-arguments)
+apibackuper/cmds/http_client.py:74:33: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/http_client.py:76:20: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/http_client.py:76:33: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/http_client.py:83:20: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/http_client.py:83:33: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/http_client.py:89:16: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/http_client.py:89:30: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/http_client.py:125:12: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/http_client.py:139:12: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/http_client.py:152:12: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/http_client.py:164:24: W1309: Using an f-string that does not have any interpolated variables (f-string-without-interpolation)
+apibackuper/cmds/http_client.py:171:24: W1309: Using an f-string that does not have any interpolated variables (f-string-without-interpolation)
+apibackuper/cmds/http_client.py:193:24: W1309: Using an f-string that does not have any interpolated variables (f-string-without-interpolation)
+apibackuper/cmds/http_client.py:199:12: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/http_client.py:211:12: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/http_client.py:223:12: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/http_client.py:42:4: R0912: Too many branches (31/12) (too-many-branches)
+apibackuper/cmds/http_client.py:42:4: R0915: Too many statements (88/50) (too-many-statements)
+apibackuper/cmds/http_client.py:12:0: R0903: Too few public methods (1/2) (too-few-public-methods)
+************* Module apibackuper.cmds.utils
+apibackuper/cmds/utils.py:20:0: C0301: Line too long (118/100) (line-too-long)
+apibackuper/cmds/utils.py:43:0: C0305: Trailing newlines (trailing-newlines)
+apibackuper/cmds/utils.py:41:27: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/utils.py:4:0: W0611: Unused import os (unused-import)
+************* Module apibackuper.cmds.project
+apibackuper/cmds/project.py:73:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:76:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:85:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:88:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:121:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:135:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:157:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:160:0: C0301: Line too long (107/100) (line-too-long)
+apibackuper/cmds/project.py:170:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:174:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:189:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:200:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:214:0: C0301: Line too long (119/100) (line-too-long)
+apibackuper/cmds/project.py:274:0: C0301: Line too long (127/100) (line-too-long)
+apibackuper/cmds/project.py:275:0: C0301: Line too long (118/100) (line-too-long)
+apibackuper/cmds/project.py:317:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:323:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:327:0: C0301: Line too long (134/100) (line-too-long)
+apibackuper/cmds/project.py:342:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:352:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:378:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:383:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:389:0: C0301: Line too long (112/100) (line-too-long)
+apibackuper/cmds/project.py:391:0: C0301: Line too long (106/100) (line-too-long)
+apibackuper/cmds/project.py:392:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:395:0: C0301: Line too long (121/100) (line-too-long)
+apibackuper/cmds/project.py:403:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:408:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:416:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:424:13: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:425:17: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:426:42: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:427:31: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:435:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:443:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:450:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:476:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:478:0: C0301: Line too long (109/100) (line-too-long)
+apibackuper/cmds/project.py:491:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:494:0: C0301: Line too long (106/100) (line-too-long)
+apibackuper/cmds/project.py:513:0: C0301: Line too long (102/100) (line-too-long)
+apibackuper/cmds/project.py:536:0: C0301: Line too long (104/100) (line-too-long)
+apibackuper/cmds/project.py:590:0: C0301: Line too long (119/100) (line-too-long)
+apibackuper/cmds/project.py:600:0: C0301: Line too long (121/100) (line-too-long)
+apibackuper/cmds/project.py:686:0: C0301: Line too long (102/100) (line-too-long)
+apibackuper/cmds/project.py:710:0: C0301: Line too long (102/100) (line-too-long)
+apibackuper/cmds/project.py:719:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:723:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:728:0: C0301: Line too long (120/100) (line-too-long)
+apibackuper/cmds/project.py:766:0: C0301: Line too long (114/100) (line-too-long)
+apibackuper/cmds/project.py:791:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:809:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:888:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:927:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:974:0: C0301: Line too long (102/100) (line-too-long)
+apibackuper/cmds/project.py:983:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:1009:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:1051:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:1080:0: C0301: Line too long (114/100) (line-too-long)
+apibackuper/cmds/project.py:1086:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:1098:0: C0301: Line too long (106/100) (line-too-long)
+apibackuper/cmds/project.py:1112:0: C0301: Line too long (102/100) (line-too-long)
+apibackuper/cmds/project.py:1126:0: C0301: Line too long (119/100) (line-too-long)
+apibackuper/cmds/project.py:1162:0: W0311: Bad indentation. Found 21 spaces, expected 20 (bad-indentation)
+apibackuper/cmds/project.py:1163:0: W0311: Bad indentation. Found 21 spaces, expected 20 (bad-indentation)
+apibackuper/cmds/project.py:1164:21: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:1165:0: W0311: Bad indentation. Found 21 spaces, expected 20 (bad-indentation)
+apibackuper/cmds/project.py:1190:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:1196:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:1237:0: C0301: Line too long (109/100) (line-too-long)
+apibackuper/cmds/project.py:1254:0: C0301: Line too long (109/100) (line-too-long)
+apibackuper/cmds/project.py:1267:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:1269:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:1291:0: C0301: Line too long (113/100) (line-too-long)
+apibackuper/cmds/project.py:1297:0: C0301: Line too long (114/100) (line-too-long)
+apibackuper/cmds/project.py:1305:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:1316:0: C0301: Line too long (107/100) (line-too-long)
+apibackuper/cmds/project.py:1321:0: C0301: Line too long (104/100) (line-too-long)
+apibackuper/cmds/project.py:1325:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:1328:37: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:1330:47: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:1332:0: C0301: Line too long (157/100) (line-too-long)
+apibackuper/cmds/project.py:1379:0: C0301: Line too long (105/100) (line-too-long)
+apibackuper/cmds/project.py:1391:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:1417:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:1430:0: C0301: Line too long (102/100) (line-too-long)
+apibackuper/cmds/project.py:1441:18: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:1548:45: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:1552:0: C0301: Line too long (116/100) (line-too-long)
+apibackuper/cmds/project.py:1623:0: C0301: Line too long (116/100) (line-too-long)
+apibackuper/cmds/project.py:1646:0: C0301: Line too long (103/100) (line-too-long)
+apibackuper/cmds/project.py:1689:0: C0301: Line too long (116/100) (line-too-long)
+apibackuper/cmds/project.py:1713:0: C0301: Line too long (102/100) (line-too-long)
+apibackuper/cmds/project.py:1748:0: C0301: Line too long (107/100) (line-too-long)
+apibackuper/cmds/project.py:1800:0: C0301: Line too long (107/100) (line-too-long)
+apibackuper/cmds/project.py:1913:0: C0301: Line too long (118/100) (line-too-long)
+apibackuper/cmds/project.py:1914:0: C0301: Line too long (135/100) (line-too-long)
+apibackuper/cmds/project.py:1988:0: C0301: Line too long (102/100) (line-too-long)
+apibackuper/cmds/project.py:2004:44: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2141:0: C0301: Line too long (102/100) (line-too-long)
+apibackuper/cmds/project.py:2151:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2187:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2199:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2206:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2213:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2219:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2232:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2249:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2266:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2274:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2278:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2286:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2291:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2296:0: C0301: Line too long (120/100) (line-too-long)
+apibackuper/cmds/project.py:2297:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2303:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2305:0: C0301: Line too long (109/100) (line-too-long)
+apibackuper/cmds/project.py:2315:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2319:0: C0301: Line too long (113/100) (line-too-long)
+apibackuper/cmds/project.py:2329:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2332:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2335:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2343:0: C0301: Line too long (117/100) (line-too-long)
+apibackuper/cmds/project.py:2345:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2357:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2365:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2373:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2385:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2393:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2401:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2413:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2415:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2422:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2426:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2434:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2445:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2451:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2456:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2465:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2472:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2484:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2487:0: C0301: Line too long (121/100) (line-too-long)
+apibackuper/cmds/project.py:2488:0: C0301: Line too long (101/100) (line-too-long)
+apibackuper/cmds/project.py:2489:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2498:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2501:0: C0301: Line too long (107/100) (line-too-long)
+apibackuper/cmds/project.py:2507:0: C0301: Line too long (122/100) (line-too-long)
+apibackuper/cmds/project.py:2508:0: C0301: Line too long (109/100) (line-too-long)
+apibackuper/cmds/project.py:2510:0: C0301: Line too long (116/100) (line-too-long)
+apibackuper/cmds/project.py:2511:0: C0301: Line too long (104/100) (line-too-long)
+apibackuper/cmds/project.py:2515:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2525:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2536:0: C0303: Trailing whitespace (trailing-whitespace)
+apibackuper/cmds/project.py:2552:0: C0301: Line too long (102/100) (line-too-long)
+apibackuper/cmds/project.py:1:0: C0302: Too many lines in module (2565/1000) (too-many-lines)
+apibackuper/cmds/project.py:1:0: C0114: Missing module docstring (missing-module-docstring)
+apibackuper/cmds/project.py:24:0: E0401: Unable to import 'xmltodict' (import-error)
+apibackuper/cmds/project.py:24:0: C0413: Import "import xmltodict" should be placed at the top of the module (wrong-import-position)
+apibackuper/cmds/project.py:35:0: C0413: Import "from ..common import get_dict_value, set_dict_value, update_dict_values" should be placed at the top of the module (wrong-import-position)
+apibackuper/cmds/project.py:36:0: C0413: Import "from ..constants import DEFAULT_DELAY, FIELD_SPLITTER, DEFAULT_RETRY_COUNT, DEFAULT_TIMEOUT, FILE_SIZE_DOWNLOAD_LIMIT, DEFAULT_ERROR_STATUS_CODES, RETRY_DELAY, DEFAULT_NUMBER_OF_PAGES" should be placed at the top of the module (wrong-import-position)
+apibackuper/cmds/project.py:46:0: C0413: Import "from ..storage import FilesystemStorage, ZipFileStorage" should be placed at the top of the module (wrong-import-position)
+apibackuper/cmds/project.py:47:0: C0413: Import "from ..auth import AuthHandler" should be placed at the top of the module (wrong-import-position)
+apibackuper/cmds/project.py:48:0: C0413: Import "from ..rate_limiter import RateLimiter" should be placed at the top of the module (wrong-import-position)
+apibackuper/cmds/project.py:50:0: C0413: Import "from tqdm import tqdm" should be placed at the top of the module (wrong-import-position)
+apibackuper/cmds/project.py:69:21: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:74:8: C0116: Missing function or method docstring (missing-function-docstring)
+apibackuper/cmds/project.py:77:8: C0116: Missing function or method docstring (missing-function-docstring)
+apibackuper/cmds/project.py:94:0: C0413: Import "from .config_loader import load_json_file, load_schema, validate_yaml_config, YAMLConfigParser, JSONSCHEMA_AVAILABLE" should be placed at the top of the module (wrong-import-position)
+apibackuper/cmds/project.py:101:0: C0413: Import "from .http_client import HTTPClient" should be placed at the top of the module (wrong-import-position)
+apibackuper/cmds/project.py:103:0: C0413: Import "from .utils import load_file_list, load_csv_data, _url_replacer" should be placed at the top of the module (wrong-import-position)
+apibackuper/cmds/project.py:107:0: R0902: Too many instance attributes (68/7) (too-many-instance-attributes)
+apibackuper/cmds/project.py:141:8: C0103: Variable name "logFormatter" doesn't conform to snake_case naming style (invalid-name)
+apibackuper/cmds/project.py:144:8: C0103: Variable name "rootLogger" doesn't conform to snake_case naming style (invalid-name)
+apibackuper/cmds/project.py:149:8: C0103: Variable name "fileHandler" doesn't conform to snake_case naming style (invalid-name)
+apibackuper/cmds/project.py:149:42: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:153:4: R0914: Too many local variables (27/15) (too-many-locals)
+apibackuper/cmds/project.py:163:16: R1705: Unnecessary "else" after "return", remove the "else" and de-indent the code inside it (no-else-return)
+apibackuper/cmds/project.py:192:19: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:193:16: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:193:30: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:201:8: R1702: Too many nested blocks (6/5) (too-many-nested-blocks)
+apibackuper/cmds/project.py:153:4: R0912: Too many branches (42/12) (too-many-branches)
+apibackuper/cmds/project.py:153:4: R0915: Too many statements (162/50) (too-many-statements)
+apibackuper/cmds/project.py:455:33: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:457:20: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:457:33: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:464:20: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:464:33: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:470:16: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:470:30: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:506:12: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:520:12: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:533:12: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:545:24: W1309: Using an f-string that does not have any interpolated variables (f-string-without-interpolation)
+apibackuper/cmds/project.py:552:24: W1309: Using an f-string that does not have any interpolated variables (f-string-without-interpolation)
+apibackuper/cmds/project.py:574:24: W1309: Using an f-string that does not have any interpolated variables (f-string-without-interpolation)
+apibackuper/cmds/project.py:580:12: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:592:12: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:604:12: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:423:4: R0912: Too many branches (31/12) (too-many-branches)
+apibackuper/cmds/project.py:423:4: R0915: Too many statements (88/50) (too-many-statements)
+apibackuper/cmds/project.py:624:26: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:634:20: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:645:12: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:657:12: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:621:24: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:660:4: R0913: Too many arguments (10/5) (too-many-arguments)
+apibackuper/cmds/project.py:660:4: R0917: Too many positional arguments (10/5) (too-many-positional-arguments)
+apibackuper/cmds/project.py:688:16: W1309: Using an f-string that does not have any interpolated variables (f-string-without-interpolation)
+apibackuper/cmds/project.py:660:4: R1711: Useless return at end of function or method (useless-return)
+apibackuper/cmds/project.py:662:8: W0613: Unused argument 'url' (unused-argument)
+apibackuper/cmds/project.py:663:8: W0613: Unused argument 'pagekey' (unused-argument)
+apibackuper/cmds/project.py:664:8: W0613: Unused argument 'pagesize' (unused-argument)
+apibackuper/cmds/project.py:665:8: W0613: Unused argument 'datakey' (unused-argument)
+apibackuper/cmds/project.py:666:8: W0613: Unused argument 'itemkey' (unused-argument)
+apibackuper/cmds/project.py:667:8: W0613: Unused argument 'changekey' (unused-argument)
+apibackuper/cmds/project.py:668:8: W0613: Unused argument 'iterateby' (unused-argument)
+apibackuper/cmds/project.py:669:8: W0613: Unused argument 'http_mode' (unused-argument)
+apibackuper/cmds/project.py:670:8: W0613: Unused argument 'work_modes' (unused-argument)
+apibackuper/cmds/project.py:696:4: R0914: Too many local variables (21/15) (too-many-locals)
+apibackuper/cmds/project.py:696:21: W0622: Redefining built-in 'format' (redefined-builtin)
+apibackuper/cmds/project.py:712:16: W1309: Using an f-string that does not have any interpolated variables (f-string-without-interpolation)
+apibackuper/cmds/project.py:787:15: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:745:20: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:761:20: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:781:20: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:788:12: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:946:15: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:799:20: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:802:24: E0606: Possibly using variable 'outfile' before assignment (possibly-used-before-assignment)
+apibackuper/cmds/project.py:850:31: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:813:28: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:813:41: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:817:32: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:804:16: R1702: Too many nested blocks (8/5) (too-many-nested-blocks)
+apibackuper/cmds/project.py:849:32: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:849:45: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:851:28: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:804:16: R1702: Too many nested blocks (6/5) (too-many-nested-blocks)
+apibackuper/cmds/project.py:862:26: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:878:20: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:918:31: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:895:32: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:883:16: R1702: Too many nested blocks (7/5) (too-many-nested-blocks)
+apibackuper/cmds/project.py:917:32: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:917:45: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:919:28: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:883:16: R1702: Too many nested blocks (7/5) (too-many-nested-blocks)
+apibackuper/cmds/project.py:937:23: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:936:20: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:936:33: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:938:20: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:938:34: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:939:26: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:944:23: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:943:20: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:943:33: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:945:20: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:947:12: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:952:16: W0702: No exception type(s) specified (bare-except)
+apibackuper/cmds/project.py:957:16: W0702: No exception type(s) specified (bare-except)
+apibackuper/cmds/project.py:696:4: R0911: Too many return statements (13/6) (too-many-return-statements)
+apibackuper/cmds/project.py:696:4: R0912: Too many branches (70/12) (too-many-branches)
+apibackuper/cmds/project.py:696:4: R0915: Too many statements (175/50) (too-many-statements)
+apibackuper/cmds/project.py:734:30: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:867:27: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:891:33: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:960:4: R0914: Too many local variables (35/15) (too-many-locals)
+apibackuper/cmds/project.py:976:16: W1309: Using an f-string that does not have any interpolated variables (f-string-without-interpolation)
+apibackuper/cmds/project.py:1399:15: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:991:20: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1002:23: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:1003:20: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1017:16: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1026:19: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:1027:16: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1033:19: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:1034:16: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1048:19: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:1049:16: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1074:19: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:1070:16: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1082:16: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1120:19: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:1101:20: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1116:16: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1128:16: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1162:21: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1162:34: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1167:16: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1183:23: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1189:16: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1189:30: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1375:23: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:1250:27: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:1234:24: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1237:28: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1237:42: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1251:24: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1254:28: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1254:42: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1273:28: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1273:41: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1280:32: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1283:32: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1284:36: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1291:32: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1291:46: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1297:32: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1297:46: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1354:31: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:1310:32: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1310:45: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1312:32: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1312:45: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1323:32: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1327:32: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1327:45: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1329:42: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1332:36: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1332:49: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1340:28: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1355:28: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1370:24: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1370:37: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1376:20: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1379:24: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1379:38: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1397:23: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:1398:20: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1400:12: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:1405:16: W0702: No exception type(s) specified (bare-except)
+apibackuper/cmds/project.py:1410:16: W0702: No exception type(s) specified (bare-except)
+apibackuper/cmds/project.py:960:4: R0911: Too many return statements (21/6) (too-many-return-statements)
+apibackuper/cmds/project.py:960:4: R0912: Too many branches (122/12) (too-many-branches)
+apibackuper/cmds/project.py:960:4: R0915: Too many statements (340/50) (too-many-statements)
+apibackuper/cmds/project.py:1015:27: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:1021:12: W0612: Unused variable 'start' (unused-variable)
+apibackuper/cmds/project.py:1134:12: W0612: Unused variable 'end' (unused-variable)
+apibackuper/cmds/project.py:1415:4: R0914: Too many local variables (36/15) (too-many-locals)
+apibackuper/cmds/project.py:1575:24: W0622: Redefining built-in 'id' (redefined-builtin)
+apibackuper/cmds/project.py:1432:16: W1309: Using an f-string that does not have any interpolated variables (f-string-without-interpolation)
+apibackuper/cmds/project.py:1461:16: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:1498:20: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1498:33: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1503:12: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1503:25: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1479:15: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:1517:16: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1517:29: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1519:12: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1519:25: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1519:56: E0601: Using variable 'finallist' before assignment (used-before-assignment)
+apibackuper/cmds/project.py:1547:16: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1547:29: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1550:34: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1552:34: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1581:20: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1581:33: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1618:16: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1618:29: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1621:34: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1623:34: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1654:20: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1654:33: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1684:16: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1684:29: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1687:34: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1689:34: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1415:4: R0912: Too many branches (72/12) (too-many-branches)
+apibackuper/cmds/project.py:1415:4: R0915: Too many statements (205/50) (too-many-statements)
+apibackuper/cmds/project.py:1473:16: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:1665:23: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:1640:21: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:1699:4: R0914: Too many local variables (43/15) (too-many-locals)
+apibackuper/cmds/project.py:1715:16: W1309: Using an f-string that does not have any interpolated variables (f-string-without-interpolation)
+apibackuper/cmds/project.py:1753:24: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1753:37: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1784:24: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1784:37: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1739:8: R1702: Too many nested blocks (11/5) (too-many-nested-blocks)
+apibackuper/cmds/project.py:1805:24: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1805:37: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1739:8: R1702: Too many nested blocks (8/5) (too-many-nested-blocks)
+apibackuper/cmds/project.py:1874:20: R1719: The if expression can be replaced with 'test' (simplifiable-if-expression)
+apibackuper/cmds/project.py:1899:16: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1899:29: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1903:35: E0606: Possibly using variable 'url' before assignment (possibly-used-before-assignment)
+apibackuper/cmds/project.py:1921:20: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1921:33: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1929:24: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1942:12: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1942:25: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1943:15: E0606: Possibly using variable 'fstorage' before assignment (possibly-used-before-assignment)
+apibackuper/cmds/project.py:1944:16: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:1944:29: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1699:4: R0912: Too many branches (66/12) (too-many-branches)
+apibackuper/cmds/project.py:1699:4: R0915: Too many statements (166/50) (too-many-statements)
+apibackuper/cmds/project.py:1794:23: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:1806:25: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:1838:16: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:1853:24: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:1866:27: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:1974:4: R0914: Too many local variables (31/15) (too-many-locals)
+apibackuper/cmds/project.py:1990:16: W1309: Using an f-string that does not have any interpolated variables (f-string-without-interpolation)
+apibackuper/cmds/project.py:2009:16: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:2017:16: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:2047:28: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:2056:20: W1201: Use lazy % formatting in logging functions (logging-not-lazy)
+apibackuper/cmds/project.py:2056:34: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:2095:35: E0601: Using variable 'start_page_data' before assignment (used-before-assignment)
+apibackuper/cmds/project.py:2117:14: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:2118:14: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:2119:14: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:2120:14: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:2121:14: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:2123:14: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:2124:14: C0209: Formatting a regular string which could be an f-string (consider-using-f-string)
+apibackuper/cmds/project.py:1974:4: R0912: Too many branches (35/12) (too-many-branches)
+apibackuper/cmds/project.py:1974:4: R0915: Too many statements (101/50) (too-many-statements)
+apibackuper/cmds/project.py:2029:16: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:1974:23: W0613: Unused argument 'mode' (unused-argument)
+apibackuper/cmds/project.py:2127:4: R0914: Too many local variables (22/15) (too-many-locals)
+apibackuper/cmds/project.py:2143:16: W1309: Using an f-string that does not have any interpolated variables (f-string-without-interpolation)
+apibackuper/cmds/project.py:2347:23: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:2276:8: R1702: Too many nested blocks (8/5) (too-many-nested-blocks)
+apibackuper/cmds/project.py:2327:32: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:2328:32: W0107: Unnecessary pass statement (unnecessary-pass)
+apibackuper/cmds/project.py:2276:8: R1702: Too many nested blocks (9/5) (too-many-nested-blocks)
+apibackuper/cmds/project.py:2276:8: R1702: Too many nested blocks (6/5) (too-many-nested-blocks)
+apibackuper/cmds/project.py:2348:20: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:2375:23: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:2283:27: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:2376:20: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:2403:23: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:2362:27: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:2404:20: W1203: Use lazy % formatting in logging functions (logging-fstring-interpolation)
+apibackuper/cmds/project.py:2127:4: R0912: Too many branches (37/12) (too-many-branches)
+apibackuper/cmds/project.py:2127:4: R0915: Too many statements (111/50) (too-many-statements)
+apibackuper/cmds/project.py:2390:27: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:2300:37: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/cmds/project.py:2418:4: R0914: Too many local variables (21/15) (too-many-locals)
+apibackuper/cmds/project.py:2421:8: W0621: Redefining name 'warnings' from outer scope (line 10) (redefined-outer-name)
+apibackuper/cmds/project.py:2442:19: W0718: Catching too general exception Exception (broad-exception-caught)
+apibackuper/cmds/project.py:2428:8: R1702: Too many nested blocks (6/5) (too-many-nested-blocks)
+apibackuper/cmds/project.py:2418:4: R0912: Too many branches (48/12) (too-many-branches)
+apibackuper/cmds/project.py:2418:4: R0915: Too many statements (88/50) (too-many-statements)
+apibackuper/cmds/project.py:2539:4: C0116: Missing function or method docstring (missing-function-docstring)
+apibackuper/cmds/project.py:2554:16: W1309: Using an f-string that does not have any interpolated variables (f-string-without-interpolation)
+apibackuper/cmds/project.py:2565:8: W0107: Unnecessary pass statement (unnecessary-pass)
+apibackuper/cmds/project.py:2539:25: W0613: Unused argument 'filename' (unused-argument)
+apibackuper/cmds/project.py:16:0: C0411: standard import "contextlib.suppress" should be placed before third party import "requests" (wrong-import-order)
+apibackuper/cmds/project.py:17:0: C0411: standard import "runpy.run_path" should be placed before third party import "requests" (wrong-import-order)
+apibackuper/cmds/project.py:18:0: C0411: standard import "typing.Optional" should be placed before third party import "requests" (wrong-import-order)
+apibackuper/cmds/project.py:50:0: C0411: third party import "tqdm.tqdm" should be placed before local imports "common.get_dict_value", "constants.DEFAULT_DELAY", "storage.FilesystemStorage", "auth.AuthHandler", "rate_limiter.RateLimiter" (wrong-import-order)
+apibackuper/cmds/project.py:18:0: W0611: Unused List imported from typing (unused-import)
+apibackuper/cmds/project.py:18:0: W0611: Unused Union imported from typing (unused-import)
+apibackuper/cmds/project.py:18:0: W0611: Unused Tuple imported from typing (unused-import)
+apibackuper/cmds/project.py:35:0: W0611: Unused set_dict_value imported from common (unused-import)
+apibackuper/cmds/project.py:94:0: W0611: Unused load_schema imported from config_loader (unused-import)
+apibackuper/cmds/project.py:101:0: W0611: Unused HTTPClient imported from http_client (unused-import)
+************* Module apibackuper.storage
+apibackuper/storage/__init__.py:1:0: C0114: Missing module docstring (missing-module-docstring)
+apibackuper/storage/__init__.py:11:4: C0116: Missing function or method docstring (missing-function-docstring)
+apibackuper/storage/__init__.py:14:4: C0116: Missing function or method docstring (missing-function-docstring)
+apibackuper/storage/__init__.py:19:8: W0107: Unnecessary pass statement (unnecessary-pass)
+apibackuper/storage/__init__.py:22:0: C0115: Missing class docstring (missing-class-docstring)
+apibackuper/storage/__init__.py:26:20: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+apibackuper/storage/__init__.py:33:4: W0237: Parameter 'name' has been renamed to 'filename' in overriding 'ZipFileStorage.exists' method (arguments-renamed)
+apibackuper/storage/__init__.py:42:0: C0115: Missing class docstring (missing-class-docstring)
+apibackuper/storage/__init__.py:47:8: W0107: Unnecessary pass statement (unnecessary-pass)
+apibackuper/storage/__init__.py:49:4: W0237: Parameter 'name' has been renamed to 'filename' in overriding 'FilesystemStorage.exists' method (arguments-renamed)
+apibackuper/storage/__init__.py:57:15: R1732: Consider using 'with' for resource-allocating operations (consider-using-with)
+************* Module apibackuper.storage.__init__
+apibackuper/storage/__init__.py:1:0: R0801: Similar lines in 2 files
+==apibackuper.cmds.http_client:[49:208]
+==apibackuper.cmds.project:[430:589]
+        try:
+            # Apply rate limiting
+            if self.rate_limiter:
+                self.rate_limiter.wait_if_needed()
+
+            # Merge auth headers
+            if self.auth_handler:
+                auth_headers = self.auth_handler.get_headers()
+                if headers:
+                    headers.update(auth_headers)
+                else:
+                    headers = auth_headers
+
+            # Prepare request kwargs
+            request_kwargs = {
+                "verify": self.verify_ssl,
+                "timeout": (self.connect_timeout, self.read_timeout),
+                "allow_redirects": self.allow_redirects
+            }
+
+            if self.http_mode == "GET":
+                if self.flat_params and len(params.keys()) > 0:
+                    s = []
+                    for key, value in flatten.items():
+                        s.append("%s=%s" %
+                                 (key, value.replace("'", '"').replace("True", "true")))
+                    logging.info("url: %s" % (url + "?" + "&".join(s)))
+                    if headers:
+                        request_kwargs["headers"] = headers
+                        response = self.http.get(url + "?" + "&".join(s), **request_kwargs)
+                    else:
+                        response = self.http.get(url + "?" + "&".join(s), **request_kwargs)
+                else:
+                    logging.info("url: %s, params: %s" % (url, str(params)))
+                    if headers:
+                        request_kwargs["headers"] = headers
+                    request_kwargs["params"] = params
+                    response = self.http.get(url, **request_kwargs)
+            else:
+                logging.debug("Request %s, params %s, headers %s" %
+                              (url, str(params), str(headers)))
+                if headers:
+                    request_kwargs["headers"] = headers
+                request_kwargs["json"] = params
+                response = self.http.post(url, **request_kwargs)
+
+            # Handle OAuth2 token refresh if needed
+            if response.status_code == 401 and self.auth_handler and self.auth_handler.auth_type == "oauth2":
+                if self.auth_handler.refresh_token_if_needed(self.http):
+                    # Retry request with new token
+                    auth_headers = self.auth_handler.get_headers()
+                    if headers:
+                        headers.update(auth_headers)
+                    else:
+                        headers = auth_headers
+                    request_kwargs["headers"] = headers
+                    if self.http_mode == "GET":
+                        response = self.http.get(url, params=params, **request_kwargs)
+                    else:
+                        response = self.http.post(url, json=params, **request_kwargs)
+
+            return response
+        except requests.exceptions.Timeout as e:
+            timeout_info = f"Connect timeout: {self.connect_timeout}s, Read timeout: {self.read_timeout}s"
+            error_msg = (
+                f"Request timeout while connecting to {url}\n"
+                f"  Current timeout settings: {timeout_info}\n"
+                f"  Error details: {str(e)}\n"
+                f"  Suggestions:\n"
+                f"    - Increase timeout values in [request] section:\n"
+                f"      connect_timeout = {self.connect_timeout * 2}\n"
+                f"      read_timeout = {self.read_timeout * 2}\n"
+                f"    - Check network connectivity and API server status\n"
+                f"    - Verify the URL is correct and accessible"
+            )
+            logging.error(f"Request timeout for URL {url}: {e}")
+            raise RuntimeError(error_msg) from e
+        except requests.exceptions.SSLError as e:
+            error_msg = (
+                f"SSL certificate verification failed for {url}\n"
+                f"  Error details: {str(e)}\n"
+                f"  Suggestions:\n"
+                f"    - If this is a trusted server, disable SSL verification in [request] section:\n"
+                f"      verify_ssl = False\n"
+                f"    - Or provide a path to a trusted certificate bundle:\n"
+                f"      verify_ssl = /path/to/certificate.pem\n"
+                f"    - Update your system's certificate store\n"
+                f"    - Check if the server's certificate has expired"
+            )
+            logging.error(f"SSL error for URL {url}: {e}")
+            raise RuntimeError(error_msg) from e
+        except requests.exceptions.ConnectionError as e:
+            error_msg = (
+                f"Failed to connect to {url}\n"
+                f"  Error details: {str(e)}\n"
+                f"  Suggestions:\n"
+                f"    - Check your internet connection\n"
+                f"    - Verify the URL is correct: {url}\n"
+                f"    - Check if the API server is running and accessible\n"
+                f"    - If using a proxy, verify proxy settings in [request] section\n"
+                f"    - Check firewall settings"
+            )
+            logging.error(f"Connection error for URL {url}: {e}")
+            raise RuntimeError(error_msg) from e
+        except requests.exceptions.HTTPError as e:
+            status_code = e.response.status_code if hasattr(e, 'response') and e.response else "unknown"
+            error_msg = (
+                f"HTTP error {status_code} for {url}\n"
+                f"  Error details: {str(e)}\n"
+            )
+            if hasattr(e, 'response') and e.response:
+                error_msg += f"  Response status: {e.response.status_code}\n"
+                if e.response.status_code == 401:
+                    error_msg += (
+                        f"  Suggestions:\n"
+                        f"    - Check authentication credentials in [auth] section\n"
+                        f"    - Verify API key or token is valid and not expired\n"
+                        f"    - Check if authentication type matches API requirements"
+                    )
+                elif e.response.status_code == 403:
+                    error_msg += (
+                        f"  Suggestions:\n"
+                        f"    - Check if your account has permission to access this resource\n"
+                        f"    - Verify API key has required permissions\n"
+                        f"    - Check rate limiting or quota restrictions"
+                    )
+                elif e.response.status_code == 404:
+                    error_msg += (
+                        f"  Suggestions:\n"
+                        f"    - Verify the URL is correct: {url}\n"
+                        f"    - Check if the API endpoint exists\n"
+                        f"    - Review API documentation for correct endpoint path"
+                    )
+                elif e.response.status_code == 429:
+                    error_msg += (
+                        f"  Suggestions:\n"
+                        f"    - You are being rate limited. Wait before retrying\n"
+                        f"    - Configure rate limiting in [rate_limit] section\n"
+                        f"    - Increase delays between requests in [project] section:\n"
+                        f"      default_delay = {self.default_delay * 2}"
+                    )
+                elif e.response.status_code >= 500:
+                    error_msg += (
+                        f"  Suggestions:\n"
+                        f"    - This is a server error. The API may be temporarily unavailable\n"
+                        f"    - Wait a few minutes and try again\n"
+                        f"    - Check API status page if available\n"
+                        f"    - Increase retry settings in [project] section"
+                    )
+            logging.error(f"HTTP error for URL {url}: {e}")
+            raise RuntimeError(error_msg) from e
+        except requests.exceptions.RequestException as e:
+            error_msg = (
+                f"Request failed for {url}\n"
+                f"  Error details: {str(e)}\n"
+                f"  Suggestions:\n"
+                f"    - Check network connectivity\n"
+                f"    - Verify URL and request parameters\n"
+                f"    - Review configuration settings\n" (duplicate-code)
+apibackuper/storage/__init__.py:1:0: R0801: Similar lines in 2 files
+==apibackuper.cmds.http_client:[209:218]
+==apibackuper.cmds.project:[590:599]
+            )
+            logging.error(f"Request error for URL {url}: {e}")
+            raise RuntimeError(error_msg) from e
+        except Exception as e:
+            error_msg = (
+                f"Unexpected error while requesting {url}\n"
+                f"  Error details: {str(e)}\n"
+                f"  Error type: {type(e).__name__}\n"
+                f"  Suggestions:\n" (duplicate-code)
+apibackuper/storage/__init__.py:1:0: R0801: Similar lines in 2 files
+==apibackuper.cmds.project:[649:656]
+==apibackuper.core:[343:350]
+            f"  Error: {str(e)}\n"
+            f"  Error type: {type(e).__name__}\n"
+            f"  Suggestions:\n"
+            f"    - Check if the directory already exists\n"
+            f"    - Verify disk space is available\n"
+            f"    - Check filesystem permissions"
+        ) (duplicate-code)
+apibackuper/storage/__init__.py:1:0: R0801: Similar lines in 2 files
+==apibackuper.cmds.project:[638:644]
+==apibackuper.core:[331:337]
+            f"  Error: {str(e)}\n"
+            f"  Suggestions:\n"
+            f"    - Check if you have write permissions in the current directory\n"
+            f"    - Try running with appropriate permissions\n"
+            f"    - Choose a different location for the project"
+        ) (duplicate-code)
+apibackuper/storage/__init__.py:1:0: R0801: Similar lines in 2 files
+==apibackuper.cmds.http_client:[99:104]
+==apibackuper.cmds.project:[437:444]
+                auth_headers = self.auth_handler.get_headers()
+                if headers:
+                    headers.update(auth_headers)
+                else:
+                    headers = auth_headers
+
+            # Prepare request kwargs (duplicate-code)
+apibackuper/storage/__init__.py:1:0: R0801: Similar lines in 2 files
+==apibackuper.cmds.http_client:[56:63]
+==apibackuper.cmds.project:[480:485]
+                auth_headers = self.auth_handler.get_headers()
+                if headers:
+                    headers.update(auth_headers)
+                else:
+                    headers = auth_headers
+
+            # Prepare request kwargs (duplicate-code)
+
+------------------------------------------------------------------
+Your code has been rated at 7.00/10 (previous run: 7.00/10, +0.00)
+

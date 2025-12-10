@@ -24,7 +24,7 @@ government IT systems too. Examples of tool usage could be found in
 -   Any GET/POST iterative API supported
 -   Allows to estimate time required to backup API
 -   Stores data inside ZIP container
--   Supports export of backup data as JSON lines, gzip, or parquet files
+-   Supports export of backup data as JSON lines, gzip, zstd (Zstandard), or parquet files
 -   **YAML and INI configuration formats** - choose the format that works best for you
 -   Authentication support (Basic, Bearer, API Key, OAuth2)
 -   Rate limiting to prevent API throttling
@@ -196,8 +196,12 @@ $ apibackuper export etrust.jsonl.gz
 # Export as Parquet format (requires pandas and pyarrow)
 $ apibackuper export etrust.parquet
 
+# Export as Zstandard-compressed format (auto-detected from .zst extension)
+$ apibackuper export etrust.jsonl.zst
+
 # Explicitly specify format
 $ apibackuper export --format jsonl etrust.jsonl
+$ apibackuper export --format zstd etrust.zst
 ```
 
 # Configuration
@@ -510,8 +514,12 @@ $ apibackuper export hhemployers.jsonl -p hhemployers
 # Export as Parquet
 $ apibackuper export data.parquet -p hhemployers
 
+# Export as Zstandard-compressed (auto-detected from .zst extension)
+$ apibackuper export data.jsonl.zst -p hhemployers
+
 # Explicitly specify format
 $ apibackuper export --format jsonl output.jsonl -p hhemployers
+$ apibackuper export --format zstd output.zst -p hhemployers
 ```
 
 Get project information:
@@ -682,6 +690,11 @@ The rate limiter uses a token bucket algorithm for per-second limits and sliding
 
 See [HISTORY.md](HISTORY.md) for detailed changelog. Recent updates include:
 
+- **Version 1.0.12**: 
+  - Added **Zstandard (zstd) compression format support** for export
+  - Auto-detection of `.zst` file extension for zstd format
+  - Improved SSL certificate verification handling
+  - Fixed logfile initialization issues
 - **Version 1.0.11**: 
   - Added **YAML configuration format support** alongside existing INI format
   - Added authentication support (Basic, Bearer, API Key, OAuth2)

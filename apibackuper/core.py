@@ -1,13 +1,15 @@
 #!/usr/bin/env python
 # -*- coding: utf8 -*-
+"""Core CLI module for apibackuper"""
 import json
 import logging
-import urllib3
-import warnings
-import typer
-from typing import Optional, List, Tuple, Dict, Any
-import sys
 import os
+import sys
+import warnings
+from typing import Optional, List, Tuple, Dict, Any
+
+import typer
+import urllib3
 
 from .cmds.project import ProjectBuilder
 
@@ -27,15 +29,15 @@ logging.basicConfig(
 
 def enable_verbose() -> None:
     """Enable verbose output to console in addition to file logging"""
-    rootLogger = logging.getLogger()
+    root_logger = logging.getLogger()
     # Only add console handler if it doesn't already exist
-    if not any(isinstance(h, logging.StreamHandler) for h in rootLogger.handlers):
-        consoleHandler = logging.StreamHandler()
-        consoleHandler.setFormatter(
+    if not any(isinstance(h, logging.StreamHandler) for h in root_logger.handlers):
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(
             logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         )
-        rootLogger.addHandler(consoleHandler)
-    rootLogger.setLevel(logging.DEBUG)
+        root_logger.addHandler(console_handler)
+    root_logger.setLevel(logging.DEBUG)
 
 
 # Create main Typer app
@@ -247,7 +249,7 @@ def _print_project_info_text(report: Dict[str, Any]) -> None:
                     value = "yes" if value else "no"
                 typer.echo(f"{label}: {value}")
             typer.echo()
-        
+
         details_stats = statistics.get("details") or {}
         if details_stats and details_stats.get("file_exists"):
             typer.echo("  Details Storage")
@@ -266,7 +268,7 @@ def _print_project_info_text(report: Dict[str, Any]) -> None:
                     value = "yes" if value else "no"
                 typer.echo(f"{label}: {value}")
             typer.echo()
-        
+
         files_stats = statistics.get("files") or {}
         if files_stats and files_stats.get("file_exists"):
             typer.echo("  Files Storage")
@@ -290,39 +292,61 @@ def _print_project_info_text(report: Dict[str, Any]) -> None:
 @app.command()
 def create(
     name: str = typer.Argument(..., help="Project name"),
-    url: Optional[str] = typer.Option(None, "--url", "-u", help="API URL (optional, for initialization)"),
-    config: Optional[str] = typer.Option(None, "--config", "-c", help="Configuration file name"),
-    pagekey: Optional[str] = typer.Option(None, "--pagekey", "-k", help="Page/iteration key for API"),
-    pagesize: Optional[str] = typer.Option(None, "--pagesize", "-s", help="Page size for iteration"),
-    datakey: Optional[str] = typer.Option(None, "--datakey", "-d", help="Data field with object items in API responses"),
-    itemkey: Optional[str] = typer.Option(None, "--itemkey", "-i", help="Item unique key to identify unique items. Multiple keys separated with comma could be used too."),
-    changekey: Optional[str] = typer.Option(None, "--changekey", "-e", help="Field to identify data change"),
-    iterateby: str = typer.Option("page", "--iterateby", "-b", help="Way to iterate API. By 'page' or 'number'"),
-    http_mode: str = typer.Option("GET", "--http-mode", "-m", help="API mode: 'GET' or 'POST'"),
-    work_modes: str = typer.Option("full", "--work-modes", "-w", help="Download modes supported by this API, could be 'full', 'incremental' or 'update'. Multiple modes could be used"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output. Print additional info"),
+    url: Optional[str] = typer.Option(
+        None, "--url", "-u", help="API URL (optional, for initialization)"),
+    config: Optional[str] = typer.Option(  # noqa: ARG001
+        None, "--config", "-c", help="Configuration file name"),
+    pagekey: Optional[str] = typer.Option(  # noqa: ARG001
+        None, "--pagekey", "-k", help="Page/iteration key for API"),
+    pagesize: Optional[str] = typer.Option(  # noqa: ARG001
+        None, "--pagesize", "-s", help="Page size for iteration"),
+    datakey: Optional[str] = typer.Option(  # noqa: ARG001
+        None, "--datakey", "-d",
+        help="Data field with object items in API responses"),
+    itemkey: Optional[str] = typer.Option(  # noqa: ARG001
+        None, "--itemkey", "-i",
+        help=("Item unique key to identify unique items. "
+              "Multiple keys separated with comma could be used too.")),
+    changekey: Optional[str] = typer.Option(  # noqa: ARG001
+        None, "--changekey", "-e", help="Field to identify data change"),
+    iterateby: str = typer.Option(  # noqa: ARG001
+        "page", "--iterateby", "-b",
+        help="Way to iterate API. By 'page' or 'number'"),
+    http_mode: str = typer.Option(  # noqa: ARG001
+        "GET", "--http-mode", "-m", help="API mode: 'GET' or 'POST'"),
+    work_modes: str = typer.Option(  # noqa: ARG001
+        "full", "--work-modes", "-w",
+        help=("Download modes supported by this API, could be 'full', "
+              "'incremental' or 'update'. Multiple modes could be used")),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Verbose output. Print additional info"),
 ):
     """Creates a new project. Optionally initializes it with API configuration if URL is provided."""
     try:
         if verbose:
             enable_verbose()
-        
+
         # Create the project directory
         ProjectBuilder.create(name)
-        
+
         # If URL is provided, initialize the project
         if url:
             # Note: The init method is currently not fully implemented in ProjectBuilder
             # For now, we'll just create the project structure
             # Users can manually edit the config file or use init separately if needed
             if verbose:
-                logging.info(f"Project '{name}' created. URL provided but auto-initialization is not yet fully implemented.")
-                logging.info("Please edit the config file manually or use the init command separately.")
-            print(f"Project '{name}' created. To initialize with API settings, please edit the config file manually.")
+                logging.info(
+                    "Project '%s' created. URL provided but auto-initialization "
+                    "is not yet fully implemented.", name)
+                logging.info(
+                    "Please edit the config file manually or use the init "
+                    "command separately.")
+            print(f"Project '{name}' created. To initialize with API settings, "
+                  "please edit the config file manually.")
         else:
             print(f"Project '{name}' created successfully.")
             print("Edit the config file to configure API settings.")
-            
+
     except KeyboardInterrupt:
         print("\nOperation cancelled by user")
         sys.exit(1)
@@ -335,7 +359,7 @@ def create(
             f"    - Try running with appropriate permissions\n"
             f"    - Choose a different location for the project"
         )
-        logging.error(f"Permission denied creating project '{name}': {e}")
+        logging.error("Permission denied creating project '%s': %s", name, e)
         print(f"Error: {error_msg}")
         sys.exit(1)
     except OSError as e:
@@ -348,10 +372,10 @@ def create(
             f"    - Verify disk space is available\n"
             f"    - Check filesystem permissions"
         )
-        logging.error(f"OS error creating project '{name}': {e}")
+        logging.error("OS error creating project '%s': %s", name, e)
         print(f"Error: {error_msg}")
         sys.exit(1)
-    except Exception as e:
+    except (ValueError, RuntimeError) as e:
         error_msg = (
             f"Failed to create project '{name}'\n"
             f"  Error: {str(e)}\n"
@@ -361,7 +385,8 @@ def create(
             f"    - Try running with --verbose flag for more information\n"
             f"    - Verify you have necessary permissions"
         )
-        logging.error(f"Error creating project '{name}': {e}", exc_info=verbose)
+        logging.error("Error creating project '%s': %s", name, e,
+                      exc_info=verbose)
         print(f"Error: {error_msg}")
         sys.exit(1)
 
@@ -391,7 +416,7 @@ def run(
             f"    - Run 'apibackuper create <name>' to create a new project\n"
             f"    - Use --projectpath to specify the correct project location"
         )
-        logging.error(f"File not found: {e}")
+        logging.error("File not found: %s", e)
         print(f"Error: {error_msg}")
         sys.exit(1)
     except PermissionError as e:
@@ -403,10 +428,10 @@ def run(
             f"    - Verify you have read/write access to the project directory\n"
             f"    - Try running with appropriate permissions"
         )
-        logging.error(f"Permission denied: {e}")
+        logging.error("Permission denied: %s", e)
         print(f"Error: {error_msg}")
         sys.exit(1)
-    except Exception as e:
+    except (ValueError, RuntimeError, IOError) as e:
         error_msg = (
             f"Failed to run project\n"
             f"  Error: {str(e)}\n"
@@ -417,7 +442,7 @@ def run(
             f"    - Verify configuration is correct\n"
             f"    - Check network connectivity if making API requests"
         )
-        logging.error(f"Error running project: {e}", exc_info=verbose)
+        logging.error("Error running project: %s", e, exc_info=verbose)
         print(f"Error: {error_msg}")
         sys.exit(1)
 
@@ -443,10 +468,10 @@ def estimate(
             f"    - Check if configuration file exists\n"
             f"    - Use --projectpath to specify the correct project location"
         )
-        logging.error(f"File not found: {e}")
+        logging.error("File not found: %s", e)
         print(f"Error: {error_msg}")
         sys.exit(1)
-    except Exception as e:
+    except (ValueError, RuntimeError, IOError) as e:
         error_msg = (
             f"Failed to estimate project\n"
             f"  Error: {str(e)}\n"
@@ -457,7 +482,7 @@ def estimate(
             f"    - Ensure total_number_key is configured in [data] section\n"
             f"    - Check network connectivity if making API requests"
         )
-        logging.error(f"Error estimating project: {e}", exc_info=True)
+        logging.error("Error estimating project: %s", e, exc_info=True)
         print(f"Error: {error_msg}")
         sys.exit(1)
 
@@ -465,30 +490,39 @@ def estimate(
 @app.command()
 def export(
     filename: str = typer.Argument(..., help="Output filename"),
-    format: Optional[str] = typer.Option(None, "--format", "-f", help="Export format (jsonl, gzip, or parquet). If not specified, will be guessed from file extension"),
-    projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output. Print additional info"),
+    format: Optional[str] = typer.Option(  # noqa: A002, W0622
+        None, "--format", "-f",
+        help=("Export format (jsonl, gzip, zstd, or parquet). "
+              "If not specified, will be guessed from file extension")),
+    projectpath: Optional[str] = typer.Option(
+        None, "--projectpath", "-p", help="Project path"),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Verbose output. Print additional info"),
 ):
-    """Exports data as jsonl, gzip, or parquet file"""
+    """Exports data as jsonl, gzip, zstd, or parquet file"""
     try:
         if verbose:
             enable_verbose()
-        
+
         # Auto-detect format from filename extension if not specified
         if format is None:
             filename_lower = filename.lower()
             if filename_lower.endswith('.parquet'):
                 format = 'parquet'
+            elif filename_lower.endswith('.zst'):
+                format = 'zstd'
             elif filename_lower.endswith('.gz') or filename_lower.endswith('.gzip'):
                 format = 'gzip'
             elif filename_lower.endswith('.jsonl') or filename_lower.endswith('.json'):
                 format = 'jsonl'
             else:
                 # Default to jsonl if extension is not recognized
-                format = 'jsonl'
+                format = 'jsonl'  # noqa: A001
                 if verbose:
-                    logging.info(f"Format not specified and could not be detected from extension, defaulting to jsonl")
-        
+                    logging.info(
+                        "Format not specified and could not be detected from "
+                        "extension, defaulting to jsonl")
+
         acmd = ProjectBuilder(projectpath)
         acmd.export(format, filename)
     except KeyboardInterrupt:
@@ -503,7 +537,7 @@ def export(
             f"    - Check if storage file exists (run 'apibackuper run' first)\n"
             f"    - Use --projectpath to specify the correct project location"
         )
-        logging.error(f"File not found: {e}")
+        logging.error("File not found: %s", e)
         print(f"Error: {error_msg}")
         sys.exit(1)
     except PermissionError as e:
@@ -515,7 +549,7 @@ def export(
             f"    - Verify the directory exists and is accessible\n"
             f"    - Choose a different output location"
         )
-        logging.error(f"Permission denied: {e}")
+        logging.error("Permission denied: %s", e)
         print(f"Error: {error_msg}")
         sys.exit(1)
     except ValueError as e:
@@ -523,14 +557,14 @@ def export(
             f"Invalid value or format\n"
             f"  Error: {str(e)}\n"
             f"  Suggestions:\n"
-            f"    - Verify the export format is correct (jsonl, gzip, or parquet)\n"
+            f"    - Verify the export format is correct (jsonl, gzip, zstd, or parquet)\n"
             f"    - Check if filename extension matches the format\n"
             f"    - For parquet format, ensure pandas and pyarrow are installed"
         )
-        logging.error(f"Invalid value: {e}")
+        logging.error("Invalid value: %s", e)
         print(f"Error: {error_msg}")
         sys.exit(1)
-    except Exception as e:
+    except (RuntimeError, IOError) as e:
         error_msg = (
             f"Failed to export data\n"
             f"  Error: {str(e)}\n"
@@ -541,7 +575,7 @@ def export(
             f"    - Verify storage file exists and is not corrupted\n"
             f"    - Check if you have sufficient disk space"
         )
-        logging.error(f"Error exporting data: {e}", exc_info=verbose)
+        logging.error("Error exporting data: %s", e, exc_info=verbose)
         print(f"Error: {error_msg}")
         sys.exit(1)
 
@@ -575,10 +609,10 @@ def info(
             f"    - Check if configuration file exists\n"
             f"    - Use --projectpath to specify the correct project location"
         )
-        logging.error(f"File not found: {e}")
+        logging.error("File not found: %s", e)
         print(f"Error: {error_msg}")
         sys.exit(1)
-    except Exception as e:
+    except (ValueError, RuntimeError, IOError) as e:
         error_msg = (
             f"Failed to get project information\n"
             f"  Error: {str(e)}\n"
@@ -588,7 +622,7 @@ def info(
             f"    - Verify configuration file is valid\n"
             f"    - Check if project directory is accessible"
         )
-        logging.error(f"Error getting project info: {e}", exc_info=True)
+        logging.error("Error getting project info: %s", e, exc_info=True)
         print(f"Error: {error_msg}")
         sys.exit(1)
 
@@ -614,7 +648,7 @@ def follow(
             f"    - Check if storage file exists (run 'apibackuper run' first)\n"
             f"    - Use --projectpath to specify the correct project location"
         )
-        logging.error(f"File not found: {e}")
+        logging.error("File not found: %s", e)
         print(f"Error: {error_msg}")
         sys.exit(1)
     except ValueError as e:
@@ -626,10 +660,10 @@ def follow(
             f"    - Use 'full' to process all items from scratch\n"
             f"    - Use 'continue' to resume from where you left off"
         )
-        logging.error(f"Invalid follow mode: {e}")
+        logging.error("Invalid follow mode: %s", e)
         print(f"Error: {error_msg}")
         sys.exit(1)
-    except Exception as e:
+    except (RuntimeError, IOError) as e:
         error_msg = (
             f"Failed to follow data\n"
             f"  Error: {str(e)}\n"
@@ -640,7 +674,7 @@ def follow(
             f"    - Ensure storage file exists and is not corrupted\n"
             f"    - Check network connectivity if making API requests"
         )
-        logging.error(f"Error in follow operation: {e}", exc_info=True)
+        logging.error("Error in follow operation: %s", e, exc_info=True)
         print(f"Error: {error_msg}")
         sys.exit(1)
 
@@ -665,7 +699,7 @@ def getfiles(
             f"    - Check if storage file exists (run 'apibackuper run' first)\n"
             f"    - Use --projectpath to specify the correct project location"
         )
-        logging.error(f"File not found: {e}")
+        logging.error("File not found: %s", e)
         print(f"Error: {error_msg}")
         sys.exit(1)
     except PermissionError as e:
@@ -677,10 +711,10 @@ def getfiles(
             f"    - Verify you have read/write access to the project directory\n"
             f"    - Try running with appropriate permissions"
         )
-        logging.error(f"Permission denied: {e}")
+        logging.error("Permission denied: %s", e)
         print(f"Error: {error_msg}")
         sys.exit(1)
-    except Exception as e:
+    except (RuntimeError, IOError) as e:
         error_msg = (
             f"Failed to download files\n"
             f"  Error: {str(e)}\n"
@@ -691,7 +725,7 @@ def getfiles(
             f"    - Check network connectivity\n"
             f"    - Verify file URLs are accessible"
         )
-        logging.error(f"Error downloading files: {e}", exc_info=True)
+        logging.error("Error downloading files: %s", e, exc_info=True)
         print(f"Error: {error_msg}")
         sys.exit(1)
 
@@ -723,10 +757,10 @@ def validate_config(
             f"    - Check if configuration file exists (apibackuper.yaml, apibackuper.yml, or apibackuper.cfg)\n"
             f"    - Use --projectpath to specify the correct project location"
         )
-        logging.error(f"File not found: {e}")
+        logging.error("File not found: %s", e)
         print(f"Error: {error_msg}")
         sys.exit(1)
-    except Exception as e:
+    except (ValueError, RuntimeError, IOError) as e:
         error_msg = (
             f"Failed to validate configuration\n"
             f"  Error: {str(e)}\n"
@@ -737,7 +771,7 @@ def validate_config(
             f"    - Review configuration file for syntax errors\n"
             f"    - Use 'apibackuper validate-config' to check configuration"
         )
-        logging.error(f"Error validating configuration: {e}", exc_info=verbose)
+        logging.error("Error validating configuration: %s", e, exc_info=verbose)
         print(f"Error: {error_msg}")
         sys.exit(1)
 

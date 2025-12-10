@@ -8,7 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.12] - 2025-11-14
 
 ### Added
+- **Zstandard (zstd) compression format support** for export functionality
+  - Export data as zstd-compressed files with maximum compression level
+  - Auto-detection of `.zst` file extension
+  - Requires `zstandard` library (included in dependencies)
 - Fixed setup.py build issue to avoid importing module during build
+
+### Changed
+- Updated export format documentation to include zstd alongside jsonl, gzip, and parquet
+- Improved SSL certificate verification handling at session level
+
+### Fixed
+- Fixed logfile initialization to ensure it's always available
+- Improved error handling for missing logfile attribute
 
 ## [Unreleased]
 
@@ -147,7 +159,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Fixed** for any bug fixes
 - **Security** for vulnerability fixes
 
-[Unreleased]: https://github.com/datacoon/apibackuper/compare/v1.0.11...HEAD
+[Unreleased]: https://github.com/datacoon/apibackuper/compare/v1.0.12...HEAD
+[1.0.12]: https://github.com/datacoon/apibackuper/compare/v1.0.11...v1.0.12
 [1.0.11]: https://github.com/datacoon/apibackuper/compare/v1.0.10...v1.0.11
 [1.0.10]: https://github.com/datacoon/apibackuper/compare/v1.0.9...v1.0.10
 [1.0.9]: https://github.com/datacoon/apibackuper/compare/v1.0.8...v1.0.9

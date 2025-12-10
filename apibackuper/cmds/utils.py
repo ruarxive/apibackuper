@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """Utility functions for project operations"""
 import csv
-import os
 from typing import Dict, List, Any
 from urllib.parse import urlparse
 

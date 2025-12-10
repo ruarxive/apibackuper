@@ -1,5 +1,12 @@
 # History
 
+## 1.0.12 (2025-11-14)
+* Added Zstandard (zstd) compression format support for export functionality
+* Auto-detection of .zst file extension for zstd format
+* Improved SSL certificate verification handling at session level
+* Fixed logfile initialization to ensure it's always available
+* Fixed setup.py build issue to avoid importing module during build
+
 ## 1.0.11 (2024-XX-XX)
 * Added authentication support (Basic, Bearer, API Key, OAuth2)
 * Added rate limiting functionality to prevent API throttling

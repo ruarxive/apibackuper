@@ -11,7 +11,7 @@ from ..rate_limiter import RateLimiter
 
 class HTTPClient:
     """HTTP client with authentication, rate limiting, and error handling"""
-    
+
     def __init__(
         self,
         http_session: requests.Session,
@@ -38,7 +38,7 @@ class HTTPClient:
         self.logfile = logfile
         self.auth_handler = auth_handler
         self.rate_limiter = rate_limiter
-    
+
     def request(
         self,
         url: str,
@@ -51,7 +51,7 @@ class HTTPClient:
             # Apply rate limiting
             if self.rate_limiter:
                 self.rate_limiter.wait_if_needed()
-            
+
             # Merge auth headers
             if self.auth_handler:
                 auth_headers = self.auth_handler.get_headers()
@@ -59,42 +59,42 @@ class HTTPClient:
                     headers.update(auth_headers)
                 else:
                     headers = auth_headers
-            
+
             # Prepare request kwargs
             request_kwargs = {
                 "verify": self.verify_ssl,
                 "timeout": (self.connect_timeout, self.read_timeout),
                 "allow_redirects": self.allow_redirects
             }
-            
+
             if self.http_mode == "GET":
                 if self.flat_params and len(params.keys()) > 0:
                     s = []
                     for key, value in flatten.items():
-                        s.append("%s=%s" %
-                                 (key, value.replace("'", '"').replace("True", "true")))
-                    logging.info("url: %s" % (url + "?" + "&".join(s)))
+                        val = value.replace("'", '"').replace('True', 'true')
+                        s.append(f"{key}={val}")
+                    logging.info("url: %s", url + "?" + "&".join(s))
                     if headers:
                         request_kwargs["headers"] = headers
-                        response = self.http.get(url + "?" + "&".join(s), **request_kwargs)
-                    else:
-                        response = self.http.get(url + "?" + "&".join(s), **request_kwargs)
+                    response = self.http.get(url + "?" + "&".join(s),
+                                             **request_kwargs)
                 else:
-                    logging.info("url: %s, params: %s" % (url, str(params)))
+                    logging.info("url: %s, params: %s", url, str(params))
                     if headers:
                         request_kwargs["headers"] = headers
                     request_kwargs["params"] = params
                     response = self.http.get(url, **request_kwargs)
             else:
-                logging.debug("Request %s, params %s, headers %s" %
-                              (url, str(params), str(headers)))
+                logging.debug("Request %s, params %s, headers %s",
+                              url, str(params), str(headers))
                 if headers:
                     request_kwargs["headers"] = headers
                 request_kwargs["json"] = params
                 response = self.http.post(url, **request_kwargs)
-            
+
             # Handle OAuth2 token refresh if needed
-            if response.status_code == 401 and self.auth_handler and self.auth_handler.auth_type == "oauth2":
+            if (response.status_code == 401 and self.auth_handler and
+                    self.auth_handler.auth_type == "oauth2"):
                 if self.auth_handler.refresh_token_if_needed(self.http):
                     # Retry request with new token
                     auth_headers = self.auth_handler.get_headers()
@@ -106,8 +106,9 @@ class HTTPClient:
                     if self.http_mode == "GET":
                         response = self.http.get(url, params=params, **request_kwargs)
                     else:
-                        response = self.http.post(url, json=params, **request_kwargs)
-            
+                        response = self.http.post(url, json=params,
+                                                  **request_kwargs)
+
             return response
         except requests.exceptions.Timeout as e:
             timeout_info = f"Connect timeout: {self.connect_timeout}s, Read timeout: {self.read_timeout}s"
@@ -122,7 +123,7 @@ class HTTPClient:
                 f"    - Check network connectivity and API server status\n"
                 f"    - Verify the URL is correct and accessible"
             )
-            logging.error(f"Request timeout for URL {url}: {e}")
+            logging.error("Request timeout for URL %s: %s", url, e)
             raise RuntimeError(error_msg) from e
         except requests.exceptions.SSLError as e:
             error_msg = (
@@ -149,7 +150,7 @@ class HTTPClient:
                 f"    - If using a proxy, verify proxy settings in [request] section\n"
                 f"    - Check firewall settings"
             )
-            logging.error(f"Connection error for URL {url}: {e}")
+            logging.error("Connection error for URL %s: %s", url, e)
             raise RuntimeError(error_msg) from e
         except requests.exceptions.HTTPError as e:
             status_code = e.response.status_code if hasattr(e, 'response') and e.response else "unknown"
@@ -161,17 +162,17 @@ class HTTPClient:
                 error_msg += f"  Response status: {e.response.status_code}\n"
                 if e.response.status_code == 401:
                     error_msg += (
-                        f"  Suggestions:\n"
-                        f"    - Check authentication credentials in [auth] section\n"
-                        f"    - Verify API key or token is valid and not expired\n"
-                        f"    - Check if authentication type matches API requirements"
+                        "  Suggestions:\n"
+                        "    - Check authentication credentials in [auth] section\n"
+                        "    - Verify API key or token is valid and not expired\n"
+                        "    - Check if authentication type matches API requirements"
                     )
                 elif e.response.status_code == 403:
                     error_msg += (
-                        f"  Suggestions:\n"
-                        f"    - Check if your account has permission to access this resource\n"
-                        f"    - Verify API key has required permissions\n"
-                        f"    - Check rate limiting or quota restrictions"
+                        "  Suggestions:\n"
+                        "    - Check if your account has permission to access this resource\n"
+                        "    - Verify API key has required permissions\n"
+                        "    - Check rate limiting or quota restrictions"
                     )
                 elif e.response.status_code == 404:
                     error_msg += (
@@ -190,13 +191,13 @@ class HTTPClient:
                     )
                 elif e.response.status_code >= 500:
                     error_msg += (
-                        f"  Suggestions:\n"
-                        f"    - This is a server error. The API may be temporarily unavailable\n"
-                        f"    - Wait a few minutes and try again\n"
-                        f"    - Check API status page if available\n"
-                        f"    - Increase retry settings in [project] section"
+                        "  Suggestions:\n"
+                        "    - This is a server error. The API may be temporarily unavailable\n"
+                        "    - Wait a few minutes and try again\n"
+                        "    - Check API status page if available\n"
+                        "    - Increase retry settings in [project] section"
                     )
-            logging.error(f"HTTP error for URL {url}: {e}")
+            logging.error("HTTP error for URL %s: %s", url, e)
             raise RuntimeError(error_msg) from e
         except requests.exceptions.RequestException as e:
             error_msg = (
@@ -208,9 +209,9 @@ class HTTPClient:
                 f"    - Review configuration settings\n"
                 f"    - Check logs for more details: {self.logfile}"
             )
-            logging.error(f"Request error for URL {url}: {e}")
+            logging.error("Request error for URL %s: %s", url, e)
             raise RuntimeError(error_msg) from e
-        except Exception as e:
+        except (ValueError, RuntimeError, IOError) as e:
             error_msg = (
                 f"Unexpected error while requesting {url}\n"
                 f"  Error details: {str(e)}\n"
@@ -220,6 +221,7 @@ class HTTPClient:
                 f"    - Verify configuration is correct\n"
                 f"    - Try running with --verbose flag for more information"
             )
-            logging.error(f"Unexpected error in request to {url}: {e}", exc_info=True)
+            logging.error("Unexpected error in request to %s: %s", url, e,
+                          exc_info=True)
             raise RuntimeError(error_msg) from e
 
