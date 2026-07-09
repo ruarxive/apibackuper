@@ -168,7 +168,17 @@ class TestUrlReplacer:
         url = "https://api.example.com/data"
         params = {"active": True, "deleted": False}
         result = _url_replacer(url, params, query_mode=True)
-        
+
         assert "active=True" in result
         assert "deleted=False" in result
+
+    def test_url_replacer_non_query_mode_no_question_mark(self):
+        """Test that non-query mode does not produce a '?' character"""
+        url = "https://api.example.com/data"
+        params = {"page": 1, "size": 10}
+        result = _url_replacer(url, params, query_mode=False)
+
+        # Non-query mode should use ';' as both initiator and separator
+        assert "?" not in result
+        assert result.startswith(url + ";")
 

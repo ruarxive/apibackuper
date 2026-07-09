@@ -37,35 +37,13 @@ government IT systems too. Examples of tool usage could be found in
 
 # Installation
 
-## Linux
+## Requirements
 
-Most Linux distributions provide a package that can be installed using
-the system package manager, for example:
+- Python 3.8 or greater
 
-``` bash
-# Debian, Ubuntu, etc.
-$ apt install apibackuper
-```
+## Linux, macOS, Windows
 
-``` bash
-# Fedora
-$ dnf install apibackuper
-```
-
-``` bash
-# CentOS, RHEL, ...
-$ yum install apibackuper
-```
-
-``` bash
-# Arch Linux
-$ pacman -S apibackuper
-```
-
-## Windows, etc.
-
-A universal installation method (that works on Windows, Mac OS X, Linux,
-вЂ¦, and always provides the latest version) is to use pip:
+Install using pip (works on all platforms):
 
 ``` bash
 # Make sure we have an up-to-date version of pip and setuptools:
@@ -74,12 +52,9 @@ $ pip install --upgrade pip setuptools
 $ pip install --upgrade apibackuper
 ```
 
-(If `pip` installation fails for some reason, you can try
-`easy_install apibackuper` as a fallback.)
-
 ## Python version
 
-Python version 3.6 or greater is required.
+Python version 3.8 or greater is required.
 
 # Quickstart
 
@@ -455,7 +430,7 @@ HTTP request configuration:
 -   timeout - total request timeout in seconds (default: 120)
 -   connect_timeout - connection timeout in seconds (default: 30)
 -   read_timeout - read timeout in seconds (default: 120)
--   verify_ssl - verify SSL certificates (default: true). Set to false if you encounter SSL certificate verification errors. The tool will provide helpful error messages if SSL verification fails.
+-   verify_ssl - verify SSL certificates (default: true). Applies to all modes (run, follow, estimate, getfiles). Set to false if you encounter SSL certificate verification errors. A warning is logged when SSL verification is disabled.
 -   user_agent - custom user agent string (default: "apibackuper/1.0.11")
 -   max_redirects - maximum number of redirects to follow (default: 5)
 -   allow_redirects - whether to follow redirects (default: true)
@@ -567,7 +542,7 @@ The `examples/` directory contains several working examples:
 
 ### Example: Handling SSL Certificate Issues
 
-If you encounter SSL certificate verification errors, you'll see a helpful error message:
+SSL certificate verification is **enabled by default** for all modes (run, follow, estimate, getfiles). If you encounter SSL certificate verification errors, you'll see a helpful error message:
 
 ```
 Error: SSL certificate verification failed for URL https://example.com/api.
@@ -575,7 +550,7 @@ Update the project configuration [request] section to set 'verify_ssl = False'
 or provide a path to a trusted certificate bundle.
 ```
 
-To fix this, add a `request` section to your config:
+To disable verification for a specific project, add a `request` section to your config:
 
 **YAML:**
 ``` yaml
@@ -588,6 +563,8 @@ request:
 [request]
 verify_ssl = False
 ```
+
+> **Security note**: Disabling SSL verification makes the connection vulnerable to man-in-the-middle attacks. A warning is logged when verification is disabled. Use this only for trusted internal APIs or testing.
 
 ### Example: Using Authentication
 
@@ -686,10 +663,43 @@ burst_size = 5
 
 The rate limiter uses a token bucket algorithm for per-second limits and sliding windows for per-minute and per-hour limits.
 
+## Quickstarts
+
+Quickstart templates are available in `examples/templates/`:
+
+- `page-based.yaml` - basic page-number pagination
+- `skip-offset.yaml` - offset/limit pagination
+- `bearer-auth.yaml` - bearer token auth
+- `follow-multihop.yaml` - multi-hop follow rules
+
+## FAQ
+
+**How do I handle SSL verification errors?**  
+Set `request.verify_ssl: false` in YAML or `verify_ssl = False` in INI. This setting applies to all modes (run, follow, estimate, getfiles). A warning is logged when SSL is disabled.
+
+**How do I enable faster runs without exceeding API limits?**  
+Set `request.parallelism` and `rate_limit` values. Concurrency respects rate limits.
+
+**How do I only fetch changed data?**  
+Use `apibackuper update` and configure `data.change_key` plus `project.update_mode`.
+
+**How do I resume a long-running job?**  
+Use `apibackuper run --resume` with `settings.checkpoint_interval_pages`.
+
+**What Python versions are supported?**  
+Python 3.8 or greater is required. Python 3.6 and 3.7 are no longer supported.
+
 ## Latest Updates
 
-See [HISTORY.md](HISTORY.md) for detailed changelog. Recent updates include:
+See [CHANGELOG.md](CHANGELOG.md) for detailed changelog. Recent updates include:
 
+- **Unreleased (development)**:
+  - **Security**: SSL verification now configurable in all modes (follow, estimate, getfiles)
+  - **Security**: Path traversal prevention in filesystem storage
+  - **Security**: SQL injection prevention in SQLite backend
+  - **Bug fixes**: Integer division crash, thread safety, file handle leaks, URL replacer logic
+  - **Build**: Minimum Python version raised to 3.8, CI updated, dependencies cleaned up
+  - **Refactor**: Deduplicated error handling and config-not-found blocks
 - **Version 1.0.12**: 
   - Added **Zstandard (zstd) compression format support** for export
   - Auto-detection of `.zst` file extension for zstd format

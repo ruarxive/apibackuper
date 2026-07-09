@@ -30,7 +30,7 @@ jobs:
       
       - name: Run flake8
         run: |
-          flake8 apibackuper --max-line-length=100 --extend-ignore=E203,E501
+          flake8 apibackuper --max-line-length=100 --extend-ignore=E203
       
       - name: Run bandit security check
         run: |
@@ -73,10 +73,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ['3.6', '3.7', '3.8', '3.9', '3.10', '3.11', '3.12']
-        exclude:
-          # Python 3.6 and 3.7 are EOL, but still test them
-          # Remove these excludes if you want to drop support
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
       
     steps:
       - uses: actions/checkout@v4
@@ -105,7 +102,7 @@ jobs:
             ./apibackuper ./tests
       
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           file: ./coverage.xml
           flags: unittests

@@ -6,12 +6,21 @@ import logging
 import os
 import sys
 import warnings
+import tempfile
+import re
 from typing import Optional, List, Tuple, Dict, Any
+from urllib.parse import urlparse
 
+import functools
 import typer
 import urllib3
 
 from .cmds.project import ProjectBuilder
+try:
+    import yaml
+    YAML_AVAILABLE = True
+except ImportError:
+    YAML_AVAILABLE = False
 
 # Suppress various warnings
 urllib3.disable_warnings()
@@ -44,6 +53,101 @@ def enable_verbose() -> None:
 app = typer.Typer()
 
 
+def _slugify_project_name(value: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9_-]+", "-", value).strip("-")
+    return cleaned or "apibackuper-project"
+
+
+def _build_detect_config(url: str) -> Dict[str, Any]:
+    parsed = urlparse(url)
+    name_seed = parsed.netloc or parsed.path.strip("/").split("/")[0] or "apibackuper-project"
+    project_name = _slugify_project_name(name_seed)
+    return {
+        "settings": {
+            "name": project_name,
+            "initialized": False
+        },
+        "project": {
+            "url": url,
+            "http_mode": "GET",
+            "work_modes": "full",
+            "resp_type": "json"
+        },
+        "params": {
+            "page_size_limit": 100
+        },
+        "data": {},
+        "storage": {
+            "storage_type": "zip",
+            "storage_path": "storage"
+        }
+    }
+
+
+def _apply_detect_suggestions(config_data: Dict[str, Any], suggestions: Dict[str, Any]) -> None:
+    if not suggestions:
+        return
+    data_section = config_data.setdefault("data", {})
+    project_section = config_data.setdefault("project", {})
+    if suggestions.get("data_key") and "data_key" not in data_section:
+        data_section["data_key"] = suggestions["data_key"]
+    if suggestions.get("total_number_key") and "total_number_key" not in data_section:
+        data_section["total_number_key"] = suggestions["total_number_key"]
+    if suggestions.get("iterate_by") and "iterate_by" not in project_section:
+        project_section["iterate_by"] = suggestions["iterate_by"]
+
+
+def _handle_cli_errors(func):
+    """Decorator that handles common CLI exceptions with consistent error messages."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except KeyboardInterrupt:
+            print("\nOperation cancelled by user")
+            sys.exit(1)
+        except FileNotFoundError as e:
+            error_msg = (
+                f"Required file not found\n"
+                f"  Error: {str(e)}\n"
+                f"  Suggestions:\n"
+                f"    - Verify the project path is correct\n"
+                f"    - Check if configuration file exists\n"
+                f"    - Run 'apibackuper create <name>' to create a new project\n"
+                f"    - Use --projectpath to specify the correct project location"
+            )
+            logging.error("File not found: %s", e)
+            print(f"Error: {error_msg}")
+            sys.exit(1)
+        except PermissionError as e:
+            error_msg = (
+                f"Permission denied\n"
+                f"  Error: {str(e)}\n"
+                f"  Suggestions:\n"
+                f"    - Check file and directory permissions\n"
+                f"    - Verify you have read/write access to the project directory\n"
+                f"    - Try running with appropriate permissions"
+            )
+            logging.error("Permission denied: %s", e)
+            print(f"Error: {error_msg}")
+            sys.exit(1)
+        except (ValueError, RuntimeError, IOError) as e:
+            error_msg = (
+                f"Operation failed\n"
+                f"  Error: {str(e)}\n"
+                f"  Error type: {type(e).__name__}\n"
+                f"  Suggestions:\n"
+                f"    - Check logs for more details: apibackuper.log\n"
+                f"    - Run with --verbose flag for more information\n"
+                f"    - Verify configuration is correct\n"
+                f"    - Check network connectivity if making API requests"
+            )
+            logging.error("Error: %s", e)
+            print(f"Error: {error_msg}")
+            sys.exit(1)
+    return wrapper
+
+
 def _print_project_info_text(report: Dict[str, Any]) -> None:
     """Print project information in a human-readable text format."""
 
@@ -74,6 +178,7 @@ def _print_project_info_text(report: Dict[str, Any]) -> None:
     follow = report.get("follow") or {}
     files = report.get("files") or {}
     code = report.get("code") or {}
+    run = report.get("run") or {}
     statistics = report.get("statistics") or {}
 
     _print_section(
@@ -224,6 +329,21 @@ def _print_project_info_text(report: Dict[str, Any]) -> None:
             [
                 ("postfetch", "Postfetch script"),
                 ("follow", "Follow script"),
+            ],
+        )
+
+    if run:
+        _print_section(
+            "Last Run",
+            run,
+            [
+                ("status", "Status"),
+                ("last_run_start", "Start time"),
+                ("last_run_end", "End time"),
+                ("records_processed", "Records"),
+                ("bytes_processed", "Bytes"),
+                ("last_page", "Last page"),
+                ("last_change_key", "Last change key"),
             ],
         )
 
@@ -392,99 +512,105 @@ def create(
 
 
 @app.command()
+@_handle_cli_errors
 def run(
     mode: str = typer.Argument("full", help="Run mode"),
     projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
+    resume: bool = typer.Option(False, "--resume", help="Resume from checkpoint"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output. Print additional info"),
 ):
     """Executes project, collects data from API"""
+    if verbose:
+        enable_verbose()
+    acmd = ProjectBuilder(projectpath)
+    if acmd.config_format == "ini":
+        print("Warning: INI configuration is deprecated; use YAML instead.")
+    acmd.run(mode, resume=resume)
+
+
+@app.command()
+@_handle_cli_errors
+def update(
+    projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
+    resume: bool = typer.Option(False, "--resume", help="Resume from checkpoint"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output. Print additional info"),
+):
+    """Executes project update mode using stored state"""
+    if verbose:
+        enable_verbose()
+    acmd = ProjectBuilder(projectpath)
+    if acmd.config_format == "ini":
+        print("Warning: INI configuration is deprecated; use YAML instead.")
+    acmd.update(resume=resume)
+
+
+@app.command()
+def detect(
+    projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
+    url: Optional[str] = typer.Option(
+        None, "--url", "-u", help="API URL to detect and generate config for"),
+    write_config: bool = typer.Option(False, "--write-config", help="Write suggestions to YAML config"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output. Print additional info"),
+):
+    """Detect pagination and data keys for a project"""
     try:
         if verbose:
             enable_verbose()
-        acmd = ProjectBuilder(projectpath)
-        acmd.run(mode)
+        if url:
+            if not YAML_AVAILABLE:
+                print("Error: PyYAML is required to generate YAML config output.")
+                sys.exit(1)
+            config_data = _build_detect_config(url)
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_config_path = os.path.join(temp_dir, "apibackuper.yaml")
+                with open(temp_config_path, "w", encoding="utf8") as fobj:
+                    yaml.safe_dump(config_data, fobj, sort_keys=False, allow_unicode=True)
+                acmd = ProjectBuilder(temp_dir)
+                suggestions = acmd.detect(write_config=False)
+            _apply_detect_suggestions(config_data, suggestions)
+            if write_config:
+                target_dir = projectpath or os.getcwd()
+                target_path = os.path.join(target_dir, "apibackuper.yaml")
+                if os.path.exists(target_path):
+                    raise RuntimeError(f"Config file already exists: {target_path}")
+                with open(target_path, "w", encoding="utf8") as fobj:
+                    yaml.safe_dump(config_data, fobj, sort_keys=False, allow_unicode=True)
+                typer.echo(f"Config written to {target_path}")
+            else:
+                typer.echo(yaml.safe_dump(config_data, sort_keys=False, allow_unicode=True))
+        else:
+            acmd = ProjectBuilder(projectpath)
+            suggestions = acmd.detect(write_config=write_config)
+            if suggestions:
+                typer.echo(json.dumps(suggestions, indent=2, sort_keys=True))
+            else:
+                typer.echo("No suggestions detected")
     except KeyboardInterrupt:
         print("\nOperation cancelled by user")
         sys.exit(1)
-    except FileNotFoundError as e:
-        error_msg = (
-            f"Required file not found\n"
-            f"  Error: {str(e)}\n"
-            f"  Suggestions:\n"
-            f"    - Verify the project path is correct\n"
-            f"    - Check if configuration file exists\n"
-            f"    - Run 'apibackuper create <name>' to create a new project\n"
-            f"    - Use --projectpath to specify the correct project location"
-        )
-        logging.error("File not found: %s", e)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
-    except PermissionError as e:
-        error_msg = (
-            f"Permission denied\n"
-            f"  Error: {str(e)}\n"
-            f"  Suggestions:\n"
-            f"    - Check file and directory permissions\n"
-            f"    - Verify you have read/write access to the project directory\n"
-            f"    - Try running with appropriate permissions"
-        )
-        logging.error("Permission denied: %s", e)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
     except (ValueError, RuntimeError, IOError) as e:
         error_msg = (
-            f"Failed to run project\n"
+            f"Failed to detect configuration\n"
             f"  Error: {str(e)}\n"
             f"  Error type: {type(e).__name__}\n"
             f"  Suggestions:\n"
             f"    - Check logs for more details: apibackuper.log\n"
-            f"    - Run with --verbose flag for more information\n"
-            f"    - Verify configuration is correct\n"
-            f"    - Check network connectivity if making API requests"
+            f"    - Verify configuration and network connectivity"
         )
-        logging.error("Error running project: %s", e, exc_info=verbose)
+        logging.error("Error detecting configuration: %s", e, exc_info=verbose)
         print(f"Error: {error_msg}")
         sys.exit(1)
 
 
 @app.command()
+@_handle_cli_errors
 def estimate(
     mode: str = typer.Argument("full", help="Estimate mode"),
     projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
 ):
     """Estimate data size, records number and execution time"""
-    try:
-        acmd = ProjectBuilder(projectpath)
-        acmd.estimate(mode)
-    except KeyboardInterrupt:
-        print("\nOperation cancelled by user")
-        sys.exit(1)
-    except FileNotFoundError as e:
-        error_msg = (
-            f"Required file not found\n"
-            f"  Error: {str(e)}\n"
-            f"  Suggestions:\n"
-            f"    - Verify the project path is correct\n"
-            f"    - Check if configuration file exists\n"
-            f"    - Use --projectpath to specify the correct project location"
-        )
-        logging.error("File not found: %s", e)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
-    except (ValueError, RuntimeError, IOError) as e:
-        error_msg = (
-            f"Failed to estimate project\n"
-            f"  Error: {str(e)}\n"
-            f"  Error type: {type(e).__name__}\n"
-            f"  Suggestions:\n"
-            f"    - Check logs for more details: apibackuper.log\n"
-            f"    - Verify configuration is correct\n"
-            f"    - Ensure total_number_key is configured in [data] section\n"
-            f"    - Check network connectivity if making API requests"
-        )
-        logging.error("Error estimating project: %s", e, exc_info=True)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
+    acmd = ProjectBuilder(projectpath)
+    acmd.estimate(mode)
 
 
 @app.command()
@@ -494,6 +620,10 @@ def export(
         None, "--format", "-f",
         help=("Export format (jsonl, gzip, zstd, or parquet). "
               "If not specified, will be guessed from file extension")),
+    fields: Optional[str] = typer.Option(
+        None, "--fields", help="Comma-separated list of fields to export"),
+    where: Optional[str] = typer.Option(
+        None, "--where", help="Simple filter expression, e.g. \"updated_at >= 2024-01-01\""),
     projectpath: Optional[str] = typer.Option(
         None, "--projectpath", "-p", help="Project path"),
     verbose: bool = typer.Option(
@@ -524,7 +654,8 @@ def export(
                         "extension, defaulting to jsonl")
 
         acmd = ProjectBuilder(projectpath)
-        acmd.export(format, filename)
+        fields_list = [f.strip() for f in fields.split(",")] if fields else None
+        acmd.export(format, filename, fields=fields_list, where=where)
     except KeyboardInterrupt:
         print("\nOperation cancelled by user")
         sys.exit(1)
@@ -628,151 +759,40 @@ def info(
 
 
 @app.command()
+@_handle_cli_errors
 def follow(
     mode: str = typer.Argument(..., help="Follow mode: full or continue"),
     projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
 ):
     """Follow already extracted data to collect details. Use one of modes: full or continue"""
-    try:
-        acmd = ProjectBuilder(projectpath)
-        acmd.follow(mode)
-    except KeyboardInterrupt:
-        print("\nOperation cancelled by user")
-        sys.exit(1)
-    except FileNotFoundError as e:
-        error_msg = (
-            f"Required file not found\n"
-            f"  Error: {str(e)}\n"
-            f"  Suggestions:\n"
-            f"    - Verify the project path is correct\n"
-            f"    - Check if storage file exists (run 'apibackuper run' first)\n"
-            f"    - Use --projectpath to specify the correct project location"
-        )
-        logging.error("File not found: %s", e)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
-    except ValueError as e:
-        error_msg = (
-            f"Invalid follow mode: {mode}\n"
-            f"  Error: {str(e)}\n"
-            f"  Valid modes: 'full' or 'continue'\n"
-            f"  Suggestions:\n"
-            f"    - Use 'full' to process all items from scratch\n"
-            f"    - Use 'continue' to resume from where you left off"
-        )
-        logging.error("Invalid follow mode: %s", e)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
-    except (RuntimeError, IOError) as e:
-        error_msg = (
-            f"Failed to follow data\n"
-            f"  Error: {str(e)}\n"
-            f"  Error type: {type(e).__name__}\n"
-            f"  Suggestions:\n"
-            f"    - Check logs for more details: apibackuper.log\n"
-            f"    - Verify follow configuration in config file\n"
-            f"    - Ensure storage file exists and is not corrupted\n"
-            f"    - Check network connectivity if making API requests"
-        )
-        logging.error("Error in follow operation: %s", e, exc_info=True)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
+    acmd = ProjectBuilder(projectpath)
+    acmd.follow(mode)
 
 
 @app.command()
+@_handle_cli_errors
 def getfiles(
     projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
 ):
     """Download files associated with records"""
-    try:
-        acmd = ProjectBuilder(projectpath)
-        acmd.getfiles()
-    except KeyboardInterrupt:
-        print("\nOperation cancelled by user")
-        sys.exit(1)
-    except FileNotFoundError as e:
-        error_msg = (
-            f"Required file not found\n"
-            f"  Error: {str(e)}\n"
-            f"  Suggestions:\n"
-            f"    - Verify the project path is correct\n"
-            f"    - Check if storage file exists (run 'apibackuper run' first)\n"
-            f"    - Use --projectpath to specify the correct project location"
-        )
-        logging.error("File not found: %s", e)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
-    except PermissionError as e:
-        error_msg = (
-            f"Permission denied\n"
-            f"  Error: {str(e)}\n"
-            f"  Suggestions:\n"
-            f"    - Check file and directory permissions\n"
-            f"    - Verify you have read/write access to the project directory\n"
-            f"    - Try running with appropriate permissions"
-        )
-        logging.error("Permission denied: %s", e)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
-    except (RuntimeError, IOError) as e:
-        error_msg = (
-            f"Failed to download files\n"
-            f"  Error: {str(e)}\n"
-            f"  Error type: {type(e).__name__}\n"
-            f"  Suggestions:\n"
-            f"    - Check logs for more details: apibackuper.log\n"
-            f"    - Verify files configuration in config file\n"
-            f"    - Check network connectivity\n"
-            f"    - Verify file URLs are accessible"
-        )
-        logging.error("Error downloading files: %s", e, exc_info=True)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
+    acmd = ProjectBuilder(projectpath)
+    acmd.getfiles()
 
 
 @app.command()
+@_handle_cli_errors
 def validate_config(
     projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
 ):
     """Validate project configuration"""
-    try:
-        acmd = ProjectBuilder(projectpath)
-        result = acmd.validate_config(verbose=verbose)
-        if result:
-            print("Configuration is valid")
-            sys.exit(0)
-        else:
-            print("Configuration validation failed")
-            sys.exit(1)
-    except KeyboardInterrupt:
-        print("\nOperation cancelled by user")
-        sys.exit(1)
-    except FileNotFoundError as e:
-        error_msg = (
-            f"Configuration file not found\n"
-            f"  Error: {str(e)}\n"
-            f"  Suggestions:\n"
-            f"    - Verify the project path is correct\n"
-            f"    - Check if configuration file exists (apibackuper.yaml, apibackuper.yml, or apibackuper.cfg)\n"
-            f"    - Use --projectpath to specify the correct project location"
-        )
-        logging.error("File not found: %s", e)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
-    except (ValueError, RuntimeError, IOError) as e:
-        error_msg = (
-            f"Failed to validate configuration\n"
-            f"  Error: {str(e)}\n"
-            f"  Error type: {type(e).__name__}\n"
-            f"  Suggestions:\n"
-            f"    - Check logs for more details: apibackuper.log\n"
-            f"    - Run with --verbose flag for more information\n"
-            f"    - Review configuration file for syntax errors\n"
-            f"    - Use 'apibackuper validate-config' to check configuration"
-        )
-        logging.error("Error validating configuration: %s", e, exc_info=verbose)
-        print(f"Error: {error_msg}")
+    acmd = ProjectBuilder(projectpath)
+    result = acmd.validate_config(verbose=verbose)
+    if result:
+        print("Configuration is valid")
+        sys.exit(0)
+    else:
+        print("Configuration validation failed")
         sys.exit(1)
 
 

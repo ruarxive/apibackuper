@@ -3,7 +3,14 @@ import os
 import tempfile
 import zipfile
 import pytest
-from apibackuper.storage import FileStorage, ZipFileStorage, FilesystemStorage
+from apibackuper.storage import (
+    FileStorage,
+    ZipFileStorage,
+    FilesystemStorage,
+    ZipStorageBackend,
+    SqliteStorageBackend,
+    build_storage_backend,
+)
 
 
 class TestFileStorage:
@@ -178,4 +185,102 @@ class TestFilesystemStorage:
             assert f.read() == b"content2"
         with open(os.path.join(storage_path, "subdir", "file3.txt"), "rb") as f:
             assert f.read() == b"content3"
+
+
+class TestStorageBackends:
+    """Tests for new storage backends"""
+
+    def test_zip_backend_save_and_get(self, temp_dir):
+        zip_path = os.path.join(temp_dir, "pages.zip")
+        backend = ZipStorageBackend(zip_path, mode="w")
+        backend.save_page("page_1.json", b'{"items": []}')
+        backend.save_object("obj_1.json", b'{"id": 1}')
+        backend.close()
+
+        backend = ZipStorageBackend(zip_path, mode="a")
+        assert "page_1.json" in backend.list_objects("page")
+        assert backend.get_object("page_1.json") == b'{"items": []}'
+        backend.close()
+
+    def test_sqlite_backend_save_and_get(self, temp_dir):
+        db_path = os.path.join(temp_dir, "storage.db")
+        backend = SqliteStorageBackend(db_path, reset=True)
+        backend.save_page("page_1.json", b'{"items": []}')
+        backend.save_object("obj_1.json", b'{"id": 1}')
+        backend.close()
+
+        backend = SqliteStorageBackend(db_path)
+        assert "page_1.json" in backend.list_objects("page")
+        assert "obj_1.json" in backend.list_objects("object")
+        assert backend.get_object("page_1.json", "page") == b'{"items": []}'
+        backend.close()
+
+    def test_build_storage_backend(self, temp_dir):
+        zip_path = os.path.join(temp_dir, "storage.zip")
+        sqlite_path = os.path.join(temp_dir, "storage.db")
+        zip_backend = build_storage_backend("zip", zip_path, "full")
+        sqlite_backend = build_storage_backend("sqlite", sqlite_path, "full")
+        assert isinstance(zip_backend, ZipStorageBackend)
+        assert isinstance(sqlite_backend, SqliteStorageBackend)
+        zip_backend.close()
+        sqlite_backend.close()
+
+
+class TestFilesystemStorageSecurity:
+    """Tests for FilesystemStorage path traversal prevention"""
+
+    def test_path_traversal_rejected(self, temp_dir):
+        """Test that path traversal attempts are rejected"""
+        storage_path = os.path.join(temp_dir, "storage")
+        storage = FilesystemStorage(storage_path)
+
+        with pytest.raises(ValueError, match="Path traversal"):
+            storage.store("../../etc/passwd", b"malicious")
+
+    def test_path_traversal_exists_rejected(self, temp_dir):
+        """Test that path traversal is rejected on exists()"""
+        storage_path = os.path.join(temp_dir, "storage")
+        storage = FilesystemStorage(storage_path)
+
+        with pytest.raises(ValueError, match="Path traversal"):
+            storage.exists("../../../etc/shadow")
+
+    def test_normal_nested_path_accepted(self, temp_dir):
+        """Test that normal nested paths work correctly"""
+        storage_path = os.path.join(temp_dir, "storage")
+        storage = FilesystemStorage(storage_path)
+        storage.store("subdir/deep/file.txt", b"content")
+
+        assert storage.exists("subdir/deep/file.txt")
+        file_path = os.path.join(storage_path, "subdir", "deep", "file.txt")
+        assert os.path.exists(file_path)
+
+
+class TestSqliteStorageBackendSecurity:
+    """Tests for SQL injection prevention"""
+
+    def test_invalid_table_name_rejected(self, temp_dir):
+        """Test that invalid table names raise ValueError"""
+        db_path = os.path.join(temp_dir, "storage.db")
+        backend = SqliteStorageBackend(db_path, reset=True)
+        backend.save_page("page_1.json", b"test")
+
+        with pytest.raises(ValueError, match="Invalid table"):
+            backend.list_objects("nonexistent")
+
+        backend.close()
+
+    def test_valid_table_names_work(self, temp_dir):
+        """Test that valid table names work correctly"""
+        db_path = os.path.join(temp_dir, "storage.db")
+        backend = SqliteStorageBackend(db_path, reset=True)
+        backend.save_page("page_1.json", b"test")
+        backend.save_object("obj_1.json", b"test")
+
+        pages = backend.list_objects("page")
+        objects = backend.list_objects("object")
+        assert "page_1.json" in pages
+        assert "obj_1.json" in objects
+
+        backend.close()
 

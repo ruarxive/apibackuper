@@ -30,6 +30,19 @@
           "type": "string",
           "description": "Log file name",
           "default": "apibackuper.log"
+        },
+        "state_file": {
+          "type": "string",
+          "description": "Path to persistent run state file"
+        },
+        "checkpoint_file": {
+          "type": "string",
+          "description": "Path to checkpoint file for resume"
+        },
+        "checkpoint_interval_pages": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Pages between checkpoint saves"
         }
       },
       "additionalProperties": false
@@ -61,6 +74,17 @@
           "enum": ["page", "skip", "range"],
           "description": "How to iterate through pages",
           "default": "page"
+        },
+        "detect": {
+          "type": "boolean",
+          "description": "Enable auto-detection during run",
+          "default": false
+        },
+        "update_mode": {
+          "type": "string",
+          "enum": ["by_change_key", "by_timestamp", "custom_script"],
+          "description": "Update mode behavior",
+          "default": "by_change_key"
         },
         "resp_type": {
           "type": "string",
@@ -134,6 +158,14 @@
         "force_flat_params": {
           "type": "boolean",
           "description": "Force flat parameter format"
+        },
+        "change_key_param": {
+          "type": "string",
+          "description": "Request parameter name for change key filtering"
+        },
+        "update_since_param": {
+          "type": "string",
+          "description": "Request parameter name for update-since filtering"
         }
       },
       "additionalProperties": false
@@ -170,7 +202,7 @@
       "properties": {
         "storage_type": {
           "type": "string",
-          "enum": ["zip", "filesystem"],
+          "enum": ["zip", "filesystem", "sqlite"],
           "description": "Storage type"
         },
         "storage_path": {
@@ -201,41 +233,83 @@
       "additionalProperties": false
     },
     "follow": {
-      "type": "object",
-      "properties": {
-        "follow_mode": {
-          "type": "string",
-          "enum": ["item", "url", "drilldown", "prefix"],
-          "description": "Follow mode type"
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "follow_mode": {
+              "type": "string",
+              "enum": ["item", "url", "drilldown", "prefix"],
+              "description": "Follow mode type"
+            },
+            "follow_http_mode": {
+              "type": "string",
+              "enum": ["GET", "POST"],
+              "description": "HTTP method for follow requests",
+              "default": "GET"
+            },
+            "follow_data_key": {
+              "type": "string",
+              "description": "Key path to follow data in response"
+            },
+            "follow_item_key": {
+              "type": "string",
+              "description": "Key path to item identifier for following"
+            },
+            "follow_param": {
+              "type": "string",
+              "description": "Parameter name for follow requests"
+            },
+            "follow_pattern": {
+              "type": "string",
+              "description": "URL pattern for follow requests"
+            },
+            "follow_url_key": {
+              "type": "string",
+              "description": "Key path to URL in item data"
+            },
+            "rules": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {"type": "string"},
+                  "follow_mode": {"type": "string"},
+                  "follow_http_mode": {"type": "string"},
+                  "follow_data_key": {"type": "string"},
+                  "follow_item_key": {"type": "string"},
+                  "follow_param": {"type": "string"},
+                  "follow_pattern": {"type": "string"},
+                  "follow_url_key": {"type": "string"},
+                  "iterate_by": {"type": "string"},
+                  "params": {"type": "object"}
+                },
+                "additionalProperties": true
+              }
+            }
+          },
+          "additionalProperties": false
         },
-        "follow_http_mode": {
-          "type": "string",
-          "enum": ["GET", "POST"],
-          "description": "HTTP method for follow requests",
-          "default": "GET"
-        },
-        "follow_data_key": {
-          "type": "string",
-          "description": "Key path to follow data in response"
-        },
-        "follow_item_key": {
-          "type": "string",
-          "description": "Key path to item identifier for following"
-        },
-        "follow_param": {
-          "type": "string",
-          "description": "Parameter name for follow requests"
-        },
-        "follow_pattern": {
-          "type": "string",
-          "description": "URL pattern for follow requests"
-        },
-        "follow_url_key": {
-          "type": "string",
-          "description": "Key path to URL in item data"
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {"type": "string"},
+              "follow_mode": {"type": "string"},
+              "follow_http_mode": {"type": "string"},
+              "follow_data_key": {"type": "string"},
+              "follow_item_key": {"type": "string"},
+              "follow_param": {"type": "string"},
+              "follow_pattern": {"type": "string"},
+              "follow_url_key": {"type": "string"},
+              "iterate_by": {"type": "string"},
+              "params": {"type": "object"}
+            },
+            "additionalProperties": true
+          }
         }
-      },
-      "additionalProperties": false
+      ]
     },
     "files": {
       "type": "object",
@@ -275,6 +349,17 @@
           "type": ["string", "boolean"],
           "description": "Use aria2 for downloads"
         }
+      },
+      "additionalProperties": false
+    },
+    "hooks": {
+      "type": "object",
+      "properties": {
+        "before_run": {"type": "string"},
+        "before_request": {"type": "string"},
+        "after_response": {"type": "string"},
+        "after_page": {"type": "string"},
+        "after_run": {"type": "string"}
       },
       "additionalProperties": false
     },
@@ -409,6 +494,28 @@
           "type": "boolean",
           "description": "Allow redirects",
           "default": true
+        },
+        "parallelism": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of concurrent requests"
+        },
+        "retry": {
+          "type": "object",
+          "properties": {
+            "max_retries": {"type": "integer", "minimum": 0},
+            "backoff_strategy": {
+              "type": "string",
+              "enum": ["fixed", "exponential"]
+            },
+            "initial_delay": {"type": "integer", "minimum": 0},
+            "max_delay": {"type": "integer", "minimum": 0},
+            "retry_on_status": {
+              "type": "array",
+              "items": {"type": "integer"}
+            }
+          },
+          "additionalProperties": false
         },
         "proxies": {
           "type": ["object", "string"],

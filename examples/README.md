@@ -8,3 +8,5 @@
 * hhemployers - Russian companies employers from hh.ru
 * subsidies - registry of government subsidies from budget.gov.ru
 * sozd - Russian state Duma (parliament) bills extractor using custom Python code
+* templates - starter YAML templates for common scenarios
+* features - feature-focused examples for new capabilities

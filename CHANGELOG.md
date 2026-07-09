@@ -25,17 +25,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Pre-commit hooks configuration for code quality
-- Comprehensive test suite setup with pytest
-- CI/CD pipeline configuration
-- Type checking with mypy
-- Code formatting with black and isort
-- Modern Python packaging with pyproject.toml
+- **Security**: SSL certificate verification is now configurable in `follow`, `estimate`, and `getfiles` modes (previously hardcoded to disabled)
+- **Security**: Path traversal prevention in filesystem storage
+- **Security**: SQL injection prevention in SQLite storage backend via table name allowlist
+- **Security**: Warning logged when SSL verification is disabled
+- **Build**: `zstandard` added to `setup.py` and `requirements.txt` dependencies
+- **Build**: CI pipeline updated to Python 3.8-3.12 (EOL 3.6/3.7 removed)
+- **Build**: flake8 line-length enforcement restored (removed `--extend-ignore=E501`)
+- **Build**: Pre-commit hooks updated (fixed broken JSON validation hook)
+- **Tests**: Added security tests for path traversal and SQL injection prevention
+- **Tests**: Added URL replacer non-query mode test
 
 ### Changed
-- Updated tox.ini to test multiple Python versions (3.6-3.12)
-- Improved requirements.txt with better documentation
-- Enhanced development workflow with pre-commit hooks
+- **Breaking**: Minimum Python version raised from 3.6 to 3.8
+- **Refactor**: Extracted 8x-duplicated "config not found" error block into `_raise_config_not_found()` helper
+- **Refactor**: Extracted 6x-duplicated CLI error handling into `_handle_cli_errors` decorator with `functools.wraps`
+- **Refactor**: `auth.refresh_token_if_needed` now catches all `Exception` types (not just `IOError/OSError/ValueError`)
+- **Build**: Removed dead `PyTest` command class from `setup.py`
+- **Build**: Removed `mock` and `pylint` from dev dependencies (unused/redundant)
+- **Build**: Fixed license classifier in `setup.py` (BSD → MIT)
+- **Build**: Removed deprecated `setup.cfg` `[wheel] universal = 1` setting
+- **Build**: Updated `codecov-action` from v4 to v5
+
+### Fixed
+- **Bug**: Integer division crash in pagination page count calculation (`/` → `//`) for non-divisible totals
+- **Bug**: Dead no-op branch in `run()` start_page assignment
+- **Bug**: Lexicographic string comparison for change-key values (removed erroneous `str()` cast)
+- **Bug**: URL `_url_replacer` non-query mode producing `?` instead of `;` as query initiator
+- **Bug**: Thread-unsafe shared counters in parallel page fetching (added `threading.Lock`)
+- **Bug**: File handle leaks in `getfiles()` download loop (added `try/finally` cleanup)
+- **Bug**: File handle leak in `follow()` headers.json loading (switched to `with` statement)
+
+### Removed
+- **Dead code**: Deleted `apibackuper/cmds/http_client.py` (227 lines, never imported)
+- **Dead code**: Deleted `tests/test_http_client.py` (tested dead code)
+- **Cleanup**: Removed commented-out code blocks and unused imports
 
 ## [1.0.11] - 2025-11-14
 

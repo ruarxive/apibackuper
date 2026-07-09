@@ -130,3 +130,103 @@ class TestProjectBuilder:
         assert hasattr(builder, 'http')
         assert builder.http is not None
 
+    def test_hook_loading_and_execution(self, temp_dir):
+        """Test loading and executing hook scripts"""
+        hook_path = os.path.join(temp_dir, "hook.py")
+        with open(hook_path, "w", encoding="utf-8") as f:
+            f.write("def hook(context):\n    return {'value': 42}\n")
+
+        config_path = os.path.join(temp_dir, "apibackuper.yaml")
+        yaml_content = """settings:
+  name: hook_test
+project:
+  url: https://api.example.com
+  http_mode: GET
+params:
+  page_size_limit: 1
+data:
+  data_key: items
+storage:
+  storage_type: zip
+hooks:
+  before_run: hook.py
+"""
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(yaml_content)
+
+        builder = ProjectBuilder(temp_dir)
+        result = builder._run_hook("before_run", {})
+        assert result == {"value": 42}
+
+    def test_follow_rules_parsing(self, temp_dir):
+        """Test parsing follow rules from YAML"""
+        config_path = os.path.join(temp_dir, "apibackuper.yaml")
+        yaml_content = """settings:
+  name: follow_test
+project:
+  url: https://api.example.com
+  http_mode: GET
+params:
+  page_size_limit: 1
+data:
+  data_key: items
+storage:
+  storage_type: zip
+follow:
+  rules:
+    - name: departments
+      follow_mode: item
+      follow_pattern: https://api.example.com/orgs/{org_id}/departments
+      follow_item_key: id
+"""
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(yaml_content)
+
+        builder = ProjectBuilder(temp_dir)
+        assert builder.follow_rules
+        assert builder.follow_rules[0]["name"] == "departments"
+
+    def test_parse_where_and_match(self, temp_dir):
+        """Test export where parsing and matching"""
+        config_path = os.path.join(temp_dir, "apibackuper.yaml")
+        yaml_content = """settings:
+  name: where_test
+project:
+  url: https://api.example.com
+  http_mode: GET
+params:
+  page_size_limit: 1
+data:
+  data_key: items
+storage:
+  storage_type: zip
+"""
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(yaml_content)
+        builder = ProjectBuilder(temp_dir)
+        condition = builder._parse_where("value >= 10")
+        assert builder._match_where({"value": 10}, condition) is True
+        assert builder._match_where({"value": 5}, condition) is False
+
+    def test_retry_delay_retry_after(self, temp_dir):
+        """Test retry delay honors Retry-After"""
+        config_path = os.path.join(temp_dir, "apibackuper.yaml")
+        yaml_content = """settings:
+  name: retry_test
+project:
+  url: https://api.example.com
+  http_mode: GET
+params:
+  page_size_limit: 1
+data:
+  data_key: items
+storage:
+  storage_type: zip
+"""
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(yaml_content)
+        builder = ProjectBuilder(temp_dir)
+        response = Mock()
+        response.headers = {"Retry-After": "7"}
+        delay = builder._get_retry_delay(1, response)
+        assert delay == 7

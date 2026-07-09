@@ -1,6 +1,13 @@
 from zipfile import ZipFile, ZIP_DEFLATED
 import os
 
+from .backends import (
+    StorageBackend,
+    ZipStorageBackend,
+    SqliteStorageBackend,
+    build_storage_backend,
+)
+
 
 class FileStorage:
     """Base file storage class"""
@@ -45,14 +52,23 @@ class FilesystemStorage(FileStorage):
         FileStorage.__init__(self)
         self.dirpath = dirpath
 
+    def _safe_path(self, filename):
+        """Resolve filename to a path inside dirpath, rejecting traversal attempts."""
+        # Strip leading slashes and backslashes
+        clean = filename.lstrip('/').lstrip('\\')
+        base = os.path.abspath(self.dirpath)
+        fullname = os.path.abspath(os.path.join(base, clean))
+        # Reject paths that escape the base directory
+        if not fullname.startswith(base + os.sep) and fullname != base:
+            raise ValueError(f"Path traversal detected: {filename}")
+        return fullname
+
     def exists(self, filename):
-        fullname = os.path.join(self.dirpath, filename.lstrip('/').lstrip('\\'))
+        fullname = self._safe_path(filename)
         return os.path.exists(fullname)
 
     def store(self, filename, content):
-        filename = filename.lstrip('/').lstrip('\\')
-        fullname = os.path.join(self.dirpath, filename)
+        fullname = self._safe_path(filename)
         os.makedirs(os.path.dirname(fullname), exist_ok=True)
-        fobj = open(fullname, "wb")
-        fobj.write(content)
-        fobj.close()
+        with open(fullname, "wb") as fobj:
+            fobj.write(content)

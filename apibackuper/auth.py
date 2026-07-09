@@ -142,7 +142,7 @@ class AuthHandler:
                         self.auth_data["token"] = data["access_token"]
                         logging.info("OAuth2 token refreshed successfully")
                         return True
-            except (IOError, OSError, ValueError) as e:
+            except Exception as e:
                 logging.warning("Failed to refresh OAuth2 token: %s", e)
         return False
 

@@ -6,6 +6,12 @@ import json
 import logging
 import os
 import time
+import threading
+import subprocess
+import tempfile
+import sys
+from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import zipfile
 import warnings
 from timeit import default_timer as timer
@@ -15,7 +21,7 @@ from urllib.parse import urlparse
 import requests
 from contextlib import suppress
 from runpy import run_path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 # Suppress deprecation warnings
 warnings.filterwarnings('ignore', category=DeprecationWarning)
@@ -43,7 +49,7 @@ from ..constants import (
     RETRY_DELAY,
     DEFAULT_NUMBER_OF_PAGES
 )
-from ..storage import FilesystemStorage, ZipFileStorage
+from ..storage import FilesystemStorage, ZipFileStorage, build_storage_backend
 from ..auth import AuthHandler
 from ..rate_limiter import RateLimiter
 
@@ -195,12 +201,13 @@ class ProjectBuilder:
             conf = configparser.ConfigParser()
             conf.read(filename, encoding="utf8")
             self.config = conf
+            logging.warning("INI configuration is deprecated; use YAML instead.")
 
         if self.config is not None:
-            storagedir = (self.config.get(
+            self.storage_path = (self.config.get(
                 "storage", "storage_path") if self.config.has_option(
                     "storage", "storage_path") else "storage")
-            self.storagedir = os.path.join(self.project_path, storagedir)
+            self.storagedir = os.path.join(self.project_path, self.storage_path)
             self.field_splitter = (self.config.get(
                 "settings", "splitter") if self.config.has_option(
                     "settings", "splitter") else FIELD_SPLITTER)
@@ -209,7 +216,15 @@ class ProjectBuilder:
             self.name = self.config.get("settings", "name")
             self.logfile = (self.config.get("settings", "logfile") if self.config.has_option(
                 "settings", "logfile") else "apibackuper.log")
+            self.state_file = (self.config.get("settings", "state_file") if self.config.has_option(
+                "settings", "state_file") else os.path.join(self.project_path, "apibackuper_state.json"))
+            self.checkpoint_file = (self.config.get("settings", "checkpoint_file") if self.config.has_option(
+                "settings", "checkpoint_file") else os.path.join(self.project_path, "apibackuper_checkpoint.json"))
+            self.checkpoint_interval_pages = (self.config.getint(
+                "settings", "checkpoint_interval_pages") if self.config.has_option(
+                    "settings", "checkpoint_interval_pages") else 0)
             self.data_key = self.config.get("data", "data_key") if self.config.has_option('data', 'data_key') else None
+            self.change_key = self.config.get("data", "change_key") if self.config.has_option('data', 'change_key') else None
             self.storage_type = self.config.get("storage", "storage_type")
             self.http_mode = self.config.get("project", "http_mode")
             self.description = (self.config.get(
@@ -223,6 +238,12 @@ class ProjectBuilder:
             self.iterate_by = (self.config.get(
                 "project", "iterate_by") if self.config.has_option(
                     "project", "iterate_by") else "page")
+            self.detect_enabled = (self.config.getboolean(
+                "project", "detect") if self.config.has_option(
+                    "project", "detect") else False)
+            self.update_mode = (self.config.get(
+                "project", "update_mode") if self.config.has_option(
+                    "project", "update_mode") else None)
             self.default_delay = (self.config.getint(
                 "project", "default_delay") if self.config.has_option(
                     "project", "default_delay") else DEFAULT_DELAY)
@@ -244,6 +265,12 @@ class ProjectBuilder:
             self.flat_params = (self.config.getboolean(
                 "params", "force_flat_params") if self.config.has_option(
                     "params", "force_flat_params") else False)
+            self.change_key_param = (self.config.get(
+                "params", "change_key_param") if self.config.has_option(
+                    "params", "change_key_param") else None)
+            self.update_since_param = (self.config.get(
+                "params", "update_since_param") if self.config.has_option(
+                    "params", "update_since_param") else None)
             self.total_number_key = (self.config.get("data", "total_number_key")
                                      if self.config.has_option(
                                          "data", "total_number_key") else "")
@@ -265,16 +292,28 @@ class ProjectBuilder:
             self.page_size_param = (self.config.get(
                 "params", "page_size_param") if self.config.has_option(
                     "params", "page_size_param") else None)
-            self.storage_file = os.path.join(self.storagedir, "storage.zip")
+            self.storage_file = self._resolve_storage_file()
             self.details_storage_file = os.path.join(self.storagedir,
                                                      "details.zip")
 
             self.code_postfetch = self.config.get('code', 'postfetch') if self.config.has_option('code', 'postfetch') else None
             self.code_follow = self.config.get('code', 'follow') if self.config.has_option('code', 'follow') else None
+            self.hooks = {}
+            if self.config.has_section("hooks"):
+                for hook_name in ["before_run", "before_request", "after_response", "after_page", "after_run"]:
+                    if self.config.has_option("hooks", hook_name):
+                        self.hooks[hook_name] = self.config.get("hooks", hook_name)
 
             self.follow_enabled = False
             if self.config.has_section("follow"):
                 self.follow_enabled = True
+                self.follow_rules = []
+                if self.config_format == "yaml" and hasattr(self.config, "_data"):
+                    follow_data = self.config._data.get("follow")
+                    if isinstance(follow_data, list):
+                        self.follow_rules = follow_data
+                    elif isinstance(follow_data, dict) and isinstance(follow_data.get("rules"), list):
+                        self.follow_rules = follow_data.get("rules")
                 self.follow_data_key = (self.config.get(
                     "follow", "follow_data_key") if self.config.has_option(
                         "follow", "follow_data_key") else None)
@@ -337,6 +376,21 @@ class ProjectBuilder:
                     if self.config.has_option("rate_limit", "burst_size"):
                         burst = self.config.getint("rate_limit", "burst_size")
                     self.rate_limiter = RateLimiter(rps, rpm, rph, burst)
+            self._rate_lock = threading.Lock()
+
+            # Enhanced error handling
+            self.error_retry_codes = DEFAULT_ERROR_STATUS_CODES
+            self.max_consecutive_errors = 10
+            self.continue_on_error = True
+
+            if self.config.has_section("error_handling"):
+                if self.config.has_option("error_handling", "retry_on_errors"):
+                    codes_str = self.config.get("error_handling", "retry_on_errors")
+                    self.error_retry_codes = [int(c.strip()) for c in codes_str.split(",")]
+                if self.config.has_option("error_handling", "max_consecutive_errors"):
+                    self.max_consecutive_errors = self.config.getint("error_handling", "max_consecutive_errors")
+                if self.config.has_option("error_handling", "continue_on_error"):
+                    self.continue_on_error = self.config.getboolean("error_handling", "continue_on_error")
 
             # Request configuration
             self.request_timeout = DEFAULT_TIMEOUT
@@ -347,6 +401,13 @@ class ProjectBuilder:
             self.max_redirects = 5
             self.allow_redirects = True
             self.proxies = None
+            self.parallelism = 1
+            self.retry_policy = {}
+            self.retry_backoff_strategy = "fixed"
+            self.retry_max_retries = self.retry_count
+            self.retry_initial_delay = self.retry_delay
+            self.retry_max_delay = max(self.retry_delay, self.retry_delay * 4)
+            self.retry_on_status = self.error_retry_codes
 
             if self.config.has_section("request"):
                 if self.config.has_option("request", "timeout"):
@@ -373,20 +434,40 @@ class ProjectBuilder:
                             if "=" in p:
                                 k, v = p.split("=", 1)
                                 self.proxies[k.strip()] = v.strip()
+                if self.config_format == "yaml" and hasattr(self.config, "_data"):
+                    request_data = self.config._data.get("request", {})
+                    if isinstance(request_data, dict):
+                        if isinstance(request_data.get("parallelism"), int):
+                            self.parallelism = max(1, request_data.get("parallelism"))
+                        retry_data = request_data.get("retry")
+                        if isinstance(retry_data, dict):
+                            self.retry_max_retries = retry_data.get("max_retries", self.retry_max_retries)
+                            self.retry_backoff_strategy = retry_data.get(
+                                "backoff_strategy", self.retry_backoff_strategy
+                            )
+                            self.retry_initial_delay = retry_data.get(
+                                "initial_delay", self.retry_initial_delay
+                            )
+                            self.retry_max_delay = retry_data.get(
+                                "max_delay", self.retry_max_delay
+                            )
+                            retry_on = retry_data.get("retry_on_status")
+                            if isinstance(retry_on, list):
+                                self.retry_on_status = retry_on
 
-            # Enhanced error handling
-            self.error_retry_codes = DEFAULT_ERROR_STATUS_CODES
-            self.max_consecutive_errors = 10
-            self.continue_on_error = True
-
-            if self.config.has_section("error_handling"):
-                if self.config.has_option("error_handling", "retry_on_errors"):
-                    codes_str = self.config.get("error_handling", "retry_on_errors")
-                    self.error_retry_codes = [int(c.strip()) for c in codes_str.split(",")]
-                if self.config.has_option("error_handling", "max_consecutive_errors"):
-                    self.max_consecutive_errors = self.config.getint("error_handling", "max_consecutive_errors")
-                if self.config.has_option("error_handling", "continue_on_error"):
-                    self.continue_on_error = self.config.getboolean("error_handling", "continue_on_error")
+                if self.config.has_option("request", "retry_max_retries"):
+                    self.retry_max_retries = self.config.getint("request", "retry_max_retries")
+                if self.config.has_option("request", "retry_backoff_strategy"):
+                    self.retry_backoff_strategy = self.config.get("request", "retry_backoff_strategy")
+                if self.config.has_option("request", "retry_initial_delay"):
+                    self.retry_initial_delay = self.config.getint("request", "retry_initial_delay")
+                if self.config.has_option("request", "retry_max_delay"):
+                    self.retry_max_delay = self.config.getint("request", "retry_max_delay")
+                if self.config.has_option("request", "retry_on_status"):
+                    codes_str = self.config.get("request", "retry_on_status")
+                    self.retry_on_status = [int(c.strip()) for c in codes_str.split(",")]
+                if self.config.has_option("request", "parallelism"):
+                    self.parallelism = max(1, self.config.getint("request", "parallelism"))
 
             # Logging configuration
             if self.config.has_section("logging"):
@@ -415,8 +496,237 @@ class ProjectBuilder:
             # Initialize HTTP session with new settings
             self.http.headers.update({"User-Agent": self.user_agent})
             self.http.verify = self.verify_ssl  # Set verify at session level for all requests
+            if not self.verify_ssl:
+                logging.warning(
+                    "SSL certificate verification is disabled. "
+                    "This makes connections vulnerable to man-in-the-middle attacks. "
+                    "Set 'request.verify_ssl = true' in config to enable verification."
+                )
             if self.proxies:
                 self.http.proxies.update(self.proxies)
+
+            if not self.update_mode:
+                self.update_mode = "by_change_key" if self.change_key else "by_timestamp"
+
+    def _raise_config_not_found(self) -> None:
+        """Raise a consistent error when config file is missing."""
+        config_files = [
+            os.path.join(self.project_path, "apibackuper.yaml"),
+            os.path.join(self.project_path, "apibackuper.yml"),
+            os.path.join(self.project_path, "apibackuper.cfg")
+        ]
+        found_files = [f for f in config_files if os.path.exists(f)]
+        error_msg = (
+            f"Configuration file not found in: {self.project_path}\n"
+            f"  Expected files: apibackuper.yaml, apibackuper.yml, or apibackuper.cfg\n"
+        )
+        if found_files:
+            error_msg += f"  Found files: {', '.join(os.path.basename(f) for f in found_files)}\n"
+        error_msg += (
+            "  Suggestions:\n"
+            "    - Run 'apibackuper create <name>' to create a new project\n"
+            "    - Navigate to the project directory first\n"
+            f"    - Use --projectpath option to specify project location"
+        )
+        print(f"Error: {error_msg}")
+
+    def _resolve_storage_file(self) -> str:
+        storage_path = self.storage_path if hasattr(self, "storage_path") else "storage"
+        if self.storage_type == "sqlite":
+            candidate = storage_path
+            if not os.path.isabs(candidate):
+                candidate = os.path.join(self.project_path, candidate)
+            if candidate.endswith(os.sep) or os.path.isdir(candidate):
+                candidate = os.path.join(candidate, "storage.db")
+            return candidate
+        return os.path.join(self.storagedir, "storage.zip")
+
+    def _load_state(self) -> Dict[str, Any]:
+        """Load persistent run state."""
+        if not self.state_file or not os.path.exists(self.state_file):
+            return {}
+        try:
+            with open(self.state_file, "r", encoding="utf8") as fobj:
+                return json.load(fobj)
+        except (IOError, OSError, ValueError) as e:
+            logging.warning("Failed to load state file %s: %s", self.state_file, e)
+            return {}
+
+    def _save_state(self, state: Dict[str, Any]) -> None:
+        """Persist run state to disk."""
+        if not self.state_file:
+            return
+        try:
+            state_dir = os.path.dirname(self.state_file)
+            if state_dir and not os.path.exists(state_dir):
+                os.makedirs(state_dir)
+            with open(self.state_file, "w", encoding="utf8") as fobj:
+                json.dump(state, fobj, ensure_ascii=False, indent=2)
+        except (IOError, OSError, ValueError) as e:
+            logging.warning("Failed to write state file %s: %s", self.state_file, e)
+
+    def _load_checkpoint(self) -> Dict[str, Any]:
+        """Load checkpoint for resume."""
+        if not self.checkpoint_file or not os.path.exists(self.checkpoint_file):
+            return {}
+        try:
+            with open(self.checkpoint_file, "r", encoding="utf8") as fobj:
+                return json.load(fobj)
+        except (IOError, OSError, ValueError) as e:
+            logging.warning("Failed to load checkpoint file %s: %s",
+                            self.checkpoint_file, e)
+            return {}
+
+    def _save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+        """Persist checkpoint to disk."""
+        if not self.checkpoint_file:
+            return
+        try:
+            checkpoint_dir = os.path.dirname(self.checkpoint_file)
+            if checkpoint_dir and not os.path.exists(checkpoint_dir):
+                os.makedirs(checkpoint_dir)
+            with open(self.checkpoint_file, "w", encoding="utf8") as fobj:
+                json.dump(checkpoint, fobj, ensure_ascii=False, indent=2)
+        except (IOError, OSError, ValueError) as e:
+            logging.warning("Failed to write checkpoint file %s: %s",
+                            self.checkpoint_file, e)
+
+    def _run_hook(self, hook_name: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        hook_path = self.hooks.get(hook_name) if hasattr(self, "hooks") else None
+        if not hook_path:
+            return None
+        try:
+            resolved_path = hook_path
+            if not os.path.isabs(resolved_path):
+                resolved_path = os.path.join(self.project_path, resolved_path)
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf8", delete=False) as temp_file:
+                json.dump(context, temp_file, ensure_ascii=False)
+                context_path = temp_file.name
+            try:
+                cmd = [
+                    sys.executable,
+                    "-I",
+                    "-c",
+                    (
+                        "import json,runpy,sys;"
+                        "ctx=json.load(open(sys.argv[1]));"
+                        "mod=runpy.run_path(sys.argv[2]);"
+                        "fn=mod.get('hook') or mod.get('run');"
+                        "out=fn(ctx) if callable(fn) else None;"
+                        "json.dump(out, sys.stdout) if out is not None else sys.stdout.write('null')"
+                    ),
+                    context_path,
+                    resolved_path
+                ]
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False
+                )
+                if result.returncode != 0:
+                    logging.warning("Hook %s failed: %s", hook_name, result.stderr.strip())
+                    return None
+                try:
+                    return json.loads(result.stdout) if result.stdout else None
+                except json.JSONDecodeError:
+                    logging.warning("Hook %s returned non-JSON output", hook_name)
+                    return None
+            finally:
+                os.unlink(context_path)
+        except (IOError, OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as e:
+            logging.warning("Error running hook %s: %s", hook_name, e)
+            return None
+
+    def _serialize_response(self, response: requests.Response) -> Dict[str, Any]:
+        text = None
+        try:
+            text = response.text
+        except (ValueError, RuntimeError):
+            text = None
+        truncated = False
+        if text and len(text) > 2000:
+            text = text[:2000]
+            truncated = True
+        return {
+            "status_code": response.status_code,
+            "headers": dict(response.headers),
+            "url": response.url,
+            "text": text,
+            "text_truncated": truncated
+        }
+
+    def _should_retry(self, status_code: int) -> bool:
+        retry_codes = self.retry_on_status or self.error_retry_codes
+        return status_code in retry_codes
+
+    def _get_retry_delay(self, attempt: int, response: Optional[requests.Response]) -> int:
+        if response is not None:
+            retry_after = response.headers.get("Retry-After")
+            if retry_after:
+                try:
+                    return int(retry_after)
+                except ValueError:
+                    pass
+        if self.retry_backoff_strategy == "exponential":
+            delay = self.retry_initial_delay * (2 ** (attempt - 1))
+        else:
+            delay = self.retry_initial_delay
+        return int(min(max(delay, 0), self.retry_max_delay))
+
+    def _parse_where(self, where: Optional[str]) -> Optional[Dict[str, Any]]:
+        if not where:
+            return None
+        operators = ["<=", ">=", "!=", "==", ">", "<"]
+        for op in operators:
+            if op in where:
+                left, right = where.split(op, 1)
+                field = left.strip()
+                value = right.strip().strip('"').strip("'")
+                try:
+                    if "." in value:
+                        value = float(value)
+                    else:
+                        value = int(value)
+                except ValueError:
+                    pass
+                return {"field": field, "op": op, "value": value}
+        return None
+
+    def _match_where(self, item: Dict[str, Any], condition: Optional[Dict[str, Any]]) -> bool:
+        if not condition:
+            return True
+        field = condition["field"]
+        op = condition["op"]
+        value = condition["value"]
+        actual = get_dict_value(item, field, splitter=self.field_splitter)
+        if actual is None:
+            return False
+        try:
+            if op == "==":
+                return actual == value
+            if op == "!=":
+                return actual != value
+            if op == ">":
+                return actual > value
+            if op == "<":
+                return actual < value
+            if op == ">=":
+                return actual >= value
+            if op == "<=":
+                return actual <= value
+        except TypeError:
+            return False
+        return False
+
+    def _select_fields(self, item: Dict[str, Any], fields: Optional[List[str]]) -> Dict[str, Any]:
+        if not fields:
+            return item
+        selected = {}
+        for field in fields:
+            selected[field] = get_dict_value(item, field, splitter=self.field_splitter)
+        return selected
 
     def _single_request(
         self,
@@ -429,7 +739,8 @@ class ProjectBuilder:
         try:
             # Apply rate limiting
             if self.rate_limiter:
-                self.rate_limiter.wait_if_needed()
+                with self._rate_lock:
+                    self.rate_limiter.wait_if_needed()
 
             # Merge auth headers
             if self.auth_handler:
@@ -672,49 +983,19 @@ class ProjectBuilder:
         """[TBD] Unfinished method. Don't use it please"""
         self.__read_config(self.config_filename)
         if self.config is None:
-            config_files = [
-                os.path.join(self.project_path, "apibackuper.yaml"),
-                os.path.join(self.project_path, "apibackuper.yml"),
-                os.path.join(self.project_path, "apibackuper.cfg")
-            ]
-            found_files = [f for f in config_files if os.path.exists(f)]
-            error_msg = (
-                f"Configuration file not found in: {self.project_path}\n"
-                f"  Expected files: apibackuper.yaml, apibackuper.yml, or apibackuper.cfg\n"
-            )
-            if found_files:
-                error_msg += f"  Found files: {', '.join(os.path.basename(f) for f in found_files)}\n"
-            error_msg += (
-                "  Suggestions:\n"
-                "    - Run 'apibackuper create <name>' to create a new project\n"
-                "    - Navigate to the project directory first\n"
-                f"    - Use --projectpath option to specify project location"
-            )
-            print(f"Error: {error_msg}")
+            self._raise_config_not_found()
             return
 
-    def export(self, format: str, filename: str) -> None:  # noqa: A002, W0622
+    def export(
+        self,
+        format: str,
+        filename: str,
+        fields: Optional[List[str]] = None,
+        where: Optional[str] = None
+    ) -> None:  # noqa: A002, W0622
         """Exports data as JSON lines, gzip, zstd, or parquet formats"""
         if self.config is None:
-            config_files = [
-                os.path.join(self.project_path, "apibackuper.yaml"),
-                os.path.join(self.project_path, "apibackuper.yml"),
-                os.path.join(self.project_path, "apibackuper.cfg")
-            ]
-            found_files = [f for f in config_files if os.path.exists(f)]
-            error_msg = (
-                f"Configuration file not found in: {self.project_path}\n"
-                f"  Expected files: apibackuper.yaml, apibackuper.yml, or apibackuper.cfg\n"
-            )
-            if found_files:
-                error_msg += f"  Found files: {', '.join(os.path.basename(f) for f in found_files)}\n"
-            error_msg += (
-                "  Suggestions:\n"
-                "    - Run 'apibackuper create <name>' to create a new project\n"
-                "    - Navigate to the project directory first\n"
-                f"    - Use --projectpath option to specify project location"
-            )
-            print(f"Error: {error_msg}")
+            self._raise_config_not_found()
             return
 
         if not filename:
@@ -722,6 +1003,7 @@ class ProjectBuilder:
             return
 
         try:
+            condition = self._parse_where(where)
             # Check if parquet format is requested
             if format == "parquet":
                 if not PARQUET_AVAILABLE:
@@ -827,14 +1109,19 @@ class ProjectBuilder:
                                         self.follow_data_key,
                                         splitter=self.field_splitter)
                                     if isinstance(follow_data, dict):
-                                        if format == "parquet":
-                                            all_records.append(follow_data)
-                                        else:
-                                            outfile.write(
-                                                json.dumps(follow_data, ensure_ascii=False) +
-                                                "\n")
+                                        if self._match_where(follow_data, condition):
+                                            follow_data = self._select_fields(follow_data, fields)
+                                            if format == "parquet":
+                                                all_records.append(follow_data)
+                                            else:
+                                                outfile.write(
+                                                    json.dumps(follow_data, ensure_ascii=False) +
+                                                    "\n")
                                     else:
                                         for item in follow_data:
+                                            if not self._match_where(item, condition):
+                                                continue
+                                            item = self._select_fields(item, fields)
                                             if format == "parquet":
                                                 all_records.append(item)
                                             else:
@@ -842,11 +1129,13 @@ class ProjectBuilder:
                                                     json.dumps(item, ensure_ascii=False) +
                                                     "\n")
                                 else:
-                                    if format == "parquet":
-                                        all_records.append(data)
-                                    else:
-                                        outfile.write(
-                                            json.dumps(data, ensure_ascii=False) + "\n")
+                                    if self._match_where(data, condition):
+                                        data = self._select_fields(data, fields)
+                                        if format == "parquet":
+                                            all_records.append(data)
+                                        else:
+                                            outfile.write(
+                                                json.dumps(data, ensure_ascii=False) + "\n")
                             except KeyError:
                                 logging.info("Data key: %s not found", self.data_key)
                         except (IOError, OSError, ValueError) as e:
@@ -860,51 +1149,37 @@ class ProjectBuilder:
                         progress_bar.close()
                     mzip.close()
             else:
-                storage_file = os.path.join(self.storagedir, "storage.zip")
-                if not os.path.exists(storage_file):
-                    print("Storage file not found %s" % (storage_file))
+                if not os.path.exists(self.storage_file):
+                    print("Storage file not found %s" % (self.storage_file))
                     if format != "parquet":
                         outfile.close()
                     return
-                try:
-                    mzip = ZipFile(storage_file, mode="r", compression=ZIP_DEFLATED)
-                except (IOError, OSError, zipfile.BadZipFile) as e:
-                    error_msg = (
-                        f"Cannot read storage file: {details_file}\n"
-                        f"  Error: {str(e)}\n"
-                        f"  Suggestions:\n"
-                        f"    - Check if the file exists and is accessible\n"
-                        f"    - Verify file permissions\n"
-                        f"    - The file may be corrupted - try running the backup again\n"
-                        f"    - Check if the file is locked by another process"
-                    )
-                    logging.error("Error opening storage zip file %s: %s",
-                                  details_file, e)
-                    print(f"Error: {error_msg}")
-                    if format != "parquet":
-                        outfile.close()
-                    return
-                try:
-                    file_list = mzip.namelist()
-                    total_files = len(file_list)
-                    if total_files > 0:
-                        progress_bar = tqdm(total=total_files, desc="Exporting files", unit="file")
-
-                    for fname in file_list:
-                        try:
-                            tf = mzip.open(fname, "r")
+                if self.storage_type == "sqlite":
+                    try:
+                        storage_backend = build_storage_backend("sqlite", self.storage_file, "continue")
+                    except (IOError, OSError, ValueError) as e:
+                        print(f"Error: Cannot open storage backend: {e}")
+                        if format != "parquet":
+                            outfile.close()
+                        return
+                    try:
+                        file_list = storage_backend.list_objects("page")
+                        total_files = len(file_list)
+                        if total_files > 0:
+                            progress_bar = tqdm(total=total_files, desc="Exporting files", unit="file")
+                        for fname in file_list:
                             try:
-                                data = json.load(tf)
-                            except (json.JSONDecodeError, ValueError) as e:
-                                logging.warning(f"Error parsing JSON from {fname}: {e}")
-                                continue
-                            finally:
-                                tf.close()
-                            try:
+                                content = storage_backend.get_object(fname, "page")
+                                if content is None:
+                                    continue
+                                data = json.loads(content)
                                 if self.data_key:
                                     for item in get_dict_value(
                                             data, self.data_key,
                                             splitter=self.field_splitter):
+                                        if not self._match_where(item, condition):
+                                            continue
+                                        item = self._select_fields(item, fields)
                                         if format == "parquet":
                                             all_records.append(item)
                                         else:
@@ -912,23 +1187,94 @@ class ProjectBuilder:
                                                 json.dumps(item, ensure_ascii=False) + "\n")
                                 else:
                                     for item in data:
+                                        if not self._match_where(item, condition):
+                                            continue
+                                        item = self._select_fields(item, fields)
                                         if format == "parquet":
                                             all_records.append(item)
                                         else:
                                             outfile.write(
                                                 json.dumps(item, ensure_ascii=False) + "\n")
-                            except KeyError:
-                                logging.info("Data key: %s not found", self.data_key)
-                        except (IOError, OSError, ValueError) as e:
-                            logging.warning("Error processing file %s: %s",
-                                            fname, e)
-                        finally:
-                            if progress_bar:
-                                progress_bar.update(1)
-                finally:
-                    if progress_bar:
-                        progress_bar.close()
-                    mzip.close()
+                            except (json.JSONDecodeError, ValueError) as e:
+                                logging.warning("Error parsing JSON from %s: %s", fname, e)
+                            finally:
+                                if progress_bar:
+                                    progress_bar.update(1)
+                    finally:
+                        if progress_bar:
+                            progress_bar.close()
+                        storage_backend.close()
+                else:
+                    storage_file = self.storage_file
+                    try:
+                        mzip = ZipFile(storage_file, mode="r", compression=ZIP_DEFLATED)
+                    except (IOError, OSError, zipfile.BadZipFile) as e:
+                        error_msg = (
+                            f"Cannot read storage file: {storage_file}\n"
+                            f"  Error: {str(e)}\n"
+                            f"  Suggestions:\n"
+                            f"    - Check if the file exists and is accessible\n"
+                            f"    - Verify file permissions\n"
+                            f"    - The file may be corrupted - try running the backup again\n"
+                            f"    - Check if the file is locked by another process"
+                        )
+                        logging.error("Error opening storage zip file %s: %s",
+                                      storage_file, e)
+                        print(f"Error: {error_msg}")
+                        if format != "parquet":
+                            outfile.close()
+                        return
+                    try:
+                        file_list = mzip.namelist()
+                        total_files = len(file_list)
+                        if total_files > 0:
+                            progress_bar = tqdm(total=total_files, desc="Exporting files", unit="file")
+
+                        for fname in file_list:
+                            try:
+                                tf = mzip.open(fname, "r")
+                                try:
+                                    data = json.load(tf)
+                                except (json.JSONDecodeError, ValueError) as e:
+                                    logging.warning(f"Error parsing JSON from {fname}: {e}")
+                                    continue
+                                finally:
+                                    tf.close()
+                                try:
+                                    if self.data_key:
+                                        for item in get_dict_value(
+                                                data, self.data_key,
+                                                splitter=self.field_splitter):
+                                            if not self._match_where(item, condition):
+                                                continue
+                                            item = self._select_fields(item, fields)
+                                            if format == "parquet":
+                                                all_records.append(item)
+                                            else:
+                                                outfile.write(
+                                                    json.dumps(item, ensure_ascii=False) + "\n")
+                                    else:
+                                        for item in data:
+                                            if not self._match_where(item, condition):
+                                                continue
+                                            item = self._select_fields(item, fields)
+                                            if format == "parquet":
+                                                all_records.append(item)
+                                            else:
+                                                outfile.write(
+                                                    json.dumps(item, ensure_ascii=False) + "\n")
+                                except KeyError:
+                                    logging.info("Data key: %s not found", self.data_key)
+                            except (IOError, OSError, ValueError) as e:
+                                logging.warning("Error processing file %s: %s",
+                                                fname, e)
+                            finally:
+                                if progress_bar:
+                                    progress_bar.update(1)
+                    finally:
+                        if progress_bar:
+                            progress_bar.close()
+                        mzip.close()
 
             # Handle parquet export
             if format == "parquet":
@@ -962,40 +1308,39 @@ class ProjectBuilder:
                 except Exception:
                     pass
 
-    def run(self, mode: str) -> None:
+    def run(self, mode: str, resume: bool = False) -> None:
         """Run data collection"""
         if self.config is None:
-            config_files = [
-                os.path.join(self.project_path, "apibackuper.yaml"),
-                os.path.join(self.project_path, "apibackuper.yml"),
-                os.path.join(self.project_path, "apibackuper.cfg")
-            ]
-            found_files = [f for f in config_files if os.path.exists(f)]
-            error_msg = (
-                f"Configuration file not found in: {self.project_path}\n"
-                f"  Expected files: apibackuper.yaml, apibackuper.yml, or apibackuper.cfg\n"
-            )
-            if found_files:
-                error_msg += f"  Found files: {', '.join(os.path.basename(f) for f in found_files)}\n"
-            error_msg += (
-                "  Suggestions:\n"
-                "    - Run 'apibackuper create <name>' to create a new project\n"
-                "    - Navigate to the project directory first\n"
-                f"    - Use --projectpath option to specify project location"
-            )
-            print(f"Error: {error_msg}")
+            self._raise_config_not_found()
             return
 
-        mzip = None
+        storage_backend = None
         progress_bar = None
+        run_start_time = datetime.now(timezone.utc)
+        state = self._load_state() if mode == "update" else {}
+        checkpoint = self._load_checkpoint() if resume else {}
+        last_change_value = state.get("last_change_key")
+        last_run_end = state.get("last_run_end")
+        resume_page = checkpoint.get("last_page") if resume else None
+        pages_processed = 0
+        total_records = 0
+        total_bytes = 0
+        error_counts: Dict[str, int] = {}
         try:
-            if not os.path.exists(self.storagedir):
-                try:
-                    os.mkdir(self.storagedir)
-                except (OSError, PermissionError) as e:
-                    logging.error("Error creating storage directory: %s", e)
-                    print(f"Error: Cannot create storage directory: {e}")
+            try:
+                if self.storage_type == "zip":
+                    os.makedirs(self.storagedir, exist_ok=True)
+                elif self.storage_type == "sqlite":
+                    storage_dir = os.path.dirname(self.storage_file)
+                    if storage_dir:
+                        os.makedirs(storage_dir, exist_ok=True)
+                else:
+                    print(f"Unsupported storage type: {self.storage_type}")
                     return
+            except (OSError, PermissionError) as e:
+                logging.error("Error creating storage directory: %s", e)
+                print(f"Error: Cannot create storage directory: {e}")
+                return
 
             process_func = None
             if self.code_postfetch is not None:
@@ -1008,19 +1353,11 @@ class ProjectBuilder:
                     logging.error("Error loading postfetch script: %s", e)
                     print(f"Warning: Error loading postfetch script: {e}")
 
-            if self.storage_type != "zip":
-                print("Only zip storage supported right now")
-                return
-
-            storage_file = os.path.join(self.storagedir, "storage.zip")
             try:
-                if mode == "full":
-                    mzip = ZipFile(storage_file, mode="w", compression=ZIP_DEFLATED)
-                else:
-                    mzip = ZipFile(storage_file, mode="a", compression=ZIP_DEFLATED)
-            except (IOError, OSError, zipfile.BadZipFile, PermissionError) as e:
-                logging.error("Error opening storage file: %s", e)
-                print(f"Error: Cannot open storage file: {e}")
+                storage_backend = build_storage_backend(self.storage_type, self.storage_file, mode)
+            except (IOError, OSError, PermissionError, ValueError) as e:
+                logging.error("Error opening storage backend: %s", e)
+                print(f"Error: Cannot open storage backend: {e}")
                 return
 
             start = timer()
@@ -1054,6 +1391,16 @@ class ProjectBuilder:
                 logging.warning("Error loading url_params.json: %s", e)
                 url_params = None
 
+            hook_result = self._run_hook("before_run", {
+                "mode": mode,
+                "project_path": self.project_path,
+                "headers": headers,
+                "params": params
+            })
+            if isinstance(hook_result, dict):
+                headers = hook_result.get("headers", headers)
+                params = hook_result.get("params", params)
+
             try:
                 if self.query_mode == "params":
                     url = _url_replacer(self.start_url, url_params or {})
@@ -1061,7 +1408,26 @@ class ProjectBuilder:
                     url = _url_replacer(self.start_url, url_params or {}, query_mode=True)
                 else:
                     url = self.start_url
+                hook_result = self._run_hook("before_request", {
+                    "url": url,
+                    "headers": headers,
+                    "params": params,
+                    "mode": mode,
+                    "page": None
+                })
+                if isinstance(hook_result, dict):
+                    url = hook_result.get("url", url)
+                    headers = hook_result.get("headers", headers)
+                    params = hook_result.get("params", params)
                 response = self._single_request(url, headers, params, flatten)
+                self._run_hook("after_response", {
+                    "url": url,
+                    "headers": headers,
+                    "params": params,
+                    "mode": mode,
+                    "page": None,
+                    "response": self._serialize_response(response)
+                })
             except requests.exceptions.RequestException as e:
                 error_msg = str(e)
                 if hasattr(e, 'response') and e.response:
@@ -1074,7 +1440,8 @@ class ProjectBuilder:
                     )
                 logging.error("Error making initial request to %s: %s", url, e)
                 print(f"Error: {error_msg}")
-                mzip.close()
+                if storage_backend:
+                    storage_backend.close()
                 return
             except (ValueError, RuntimeError, IOError) as e:
                 error_msg = (
@@ -1087,7 +1454,8 @@ class ProjectBuilder:
                 logging.error("Unexpected error in initial request to %s: %s",
                               url, e, exc_info=True)
                 print(f"Error: {error_msg}")
-                mzip.close()
+                if storage_backend:
+                    storage_backend.close()
                 return
 
             try:
@@ -1107,7 +1475,8 @@ class ProjectBuilder:
                     logging.error("Unsupported response type: %s",
                                   self.resp_type)
                     print(f"Error: {error_msg}")
-                    mzip.close()
+                    if storage_backend:
+                        storage_backend.close()
                     return
             except (json.JSONDecodeError, ValueError) as e:
                 error_msg = (
@@ -1122,7 +1491,8 @@ class ProjectBuilder:
                 )
                 logging.error("Error parsing response from %s: %s", url, e)
                 print(f"Error: {error_msg}")
-                mzip.close()
+                if storage_backend:
+                    storage_backend.close()
                 return
             except (IOError, OSError, RuntimeError) as e:
                 error_msg = (
@@ -1135,8 +1505,13 @@ class ProjectBuilder:
                 logging.error("Error processing response from %s: %s", url, e,
                               exc_info=True)
                 print(f"Error: {error_msg}")
-                mzip.close()
+                if storage_backend:
+                    storage_backend.close()
                 return
+
+            if self.detect_enabled and self.resp_type == "json":
+                suggestions = self._detect_suggestions(start_page_data)
+                self._apply_detection(suggestions)
 
             #        print(json.dumps(start_page_data, ensure_ascii=False))
             end = timer()
@@ -1152,7 +1527,7 @@ class ProjectBuilder:
                     else:
                         total = int(total)
                     nr = 1 if total % self.page_limit > 0 else 0
-                    num_pages = (total / self.page_limit) + nr
+                    num_pages = (total // self.page_limit) + nr
                 elif len(self.pages_number_key) > 0:
                     num_pages = get_dict_value(start_page_data,
                                                self.pages_number_key,
@@ -1187,15 +1562,24 @@ class ProjectBuilder:
             # rewriting last page and continue
             if mode == "continue":
                 logging.debug("Continue mode enabled, looking for last saved page")
-                pagenames = mzip.namelist()
+                pagenames = storage_backend.list_objects("page") if storage_backend else []
                 for page in range(self.start_page, num_pages):
                     if "page_%d.json" % (page) not in pagenames:
-                        if page > self.start_page:
-                            start_page = page
-                        else:
-                            start_page = page
+                        start_page = page
                         break
                 logging.debug("Start page number %d", start_page)
+
+            if resume_page:
+                start_page = max(start_page, int(resume_page))
+                logging.debug("Resume enabled, start page %d", start_page)
+
+            if mode == "update":
+                if self.update_mode == "by_change_key" and self.change_key_param and last_change_value:
+                    change_params[self.change_key_param] = last_change_value
+                elif self.update_mode == "by_timestamp" and self.update_since_param and last_run_end:
+                    change_params[self.update_since_param] = last_run_end
+                elif self.update_mode == "custom_script":
+                    logging.warning("Custom update mode is configured but not implemented.")
 
             # Initialize progress tracking
             total_pages = end_page - start_page
@@ -1204,216 +1588,283 @@ class ProjectBuilder:
                 progress_bar = tqdm(total=total_pages, desc="Downloading pages", unit="page")
 
             consecutive_errors = 0
-            for page in range(start_page, end_page):
+            def fetch_page(target_page: int) -> Dict[str, Any]:
+                local_change_params = dict(change_params)
+                local_params = dict(params)
+                local_url_params = dict(url_params) if url_params else None
+                local_flatten = dict(flatten) if flatten else None
+
+                if self.page_size_param and len(self.page_size_param) > 0:
+                    local_change_params[self.page_size_param] = self.page_limit
+                if self.iterate_by == "page":
+                    local_change_params[self.page_number_param] = target_page
+                elif self.iterate_by == "skip":
+                    local_change_params[self.count_skip_param] = (target_page - 1) * self.page_limit
+                elif self.iterate_by == "range":
+                    local_change_params[self.count_from_param] = (target_page - 1) * self.page_limit
+                    local_change_params[self.count_to_param] = target_page * self.page_limit
+
+                if self.query_mode in ("params", "mixed"):
+                    if local_url_params is None:
+                        local_url_params = {}
+                    local_url_params.update(local_change_params)
+                else:
+                    local_params = update_dict_values(local_params, local_change_params)
+                    if self.flat_params and len(local_params.keys()) > 0:
+                        local_flatten = {}
+                        for k, v in local_params.items():
+                            local_flatten[k] = str(v)
+
+                if self.query_mode == "params":
+                    request_url = _url_replacer(self.start_url, local_url_params or {})
+                elif self.query_mode == "mixed":
+                    request_url = _url_replacer(self.start_url, local_url_params or {}, query_mode=True)
+                else:
+                    request_url = self.start_url
+
                 try:
-                    if self.page_size_param and len(self.page_size_param) > 0:
-                        change_params[self.page_size_param] = self.page_limit
-                    if self.iterate_by == "page":
-                        change_params[self.page_number_param] = page
-                    elif self.iterate_by == "skip":
-                        change_params[self.count_skip_param] = (page -
-                                                                1) * self.page_limit
-                    elif self.iterate_by == "range":
-                        change_params[self.count_from_param] = (page -
-                                                                1) * self.page_limit
-                        change_params[self.count_to_param] = page * self.page_limit
-                    url = (self.start_url if self.query_mode != "params" else
-                           _url_replacer(self.start_url, url_params or {}))
-                    if self.query_mode in ("params", "mixed"):
-                        if url_params is None:
-                            url_params = {}
-                        url_params.update(change_params)
-                    else:
-                        #                print(params, change_params)
-                        params = update_dict_values(params, change_params)
-                        if self.flat_params and len(params.keys()) > 0:
-                            for k, v in params.items():
-                                flatten[k] = str(v)
-                    if self.query_mode == "params":
-                        url = _url_replacer(self.start_url, url_params or {})
-                    elif self.query_mode == "mixed":
-                        url = _url_replacer(self.start_url,
-                                            url_params or {},
-                                            query_mode=True)
-                    else:
-                        url = self.start_url
+                    hook_result = self._run_hook("before_request", {
+                        "url": request_url,
+                        "headers": headers,
+                        "params": local_params,
+                        "mode": mode,
+                        "page": target_page
+                    })
+                    local_headers = headers
+                    if isinstance(hook_result, dict):
+                        request_url = hook_result.get("url", request_url)
+                        local_headers = hook_result.get("headers", headers)
+                        local_params = hook_result.get("params", local_params)
+                    response = self._single_request(request_url, local_headers, local_params, local_flatten)
+                    self._run_hook("after_response", {
+                        "url": request_url,
+                        "headers": local_headers,
+                        "params": local_params,
+                        "mode": mode,
+                        "page": target_page,
+                        "response": self._serialize_response(response)
+                    })
+                except requests.exceptions.RequestException as e:
+                    return {"page": target_page, "error": str(e), "status": None}
+                except (ValueError, RuntimeError, IOError) as e:
+                    return {"page": target_page, "error": str(e), "status": None}
+
+                time.sleep(self.default_delay)
+
+                if self._should_retry(response.status_code):
+                    max_retries = max(self.retry_max_retries, 0)
+                    for attempt in range(1, max_retries + 1):
+                        delay = self._get_retry_delay(attempt, response)
+                        time.sleep(delay)
+                        try:
+                            response = self._single_request(request_url, local_headers, local_params, local_flatten)
+                        except requests.exceptions.RequestException:
+                            continue
+                        if not self._should_retry(response.status_code):
+                            break
+
+                return {
+                    "page": target_page,
+                    "status": response.status_code,
+                    "content": response.content
+                }
+
+            _result_lock = threading.Lock()
+
+            def handle_success(target_page: int, content: bytes) -> bool:
+                nonlocal pages_processed, total_bytes, total_records, last_change_value
+                if num_pages is not None:
+                    logging.info("Saving page %d of %d", target_page, num_pages)
+                else:
+                    logging.info("Saving page %d", target_page)
+                if self.resp_type == "json":
+                    outdata = content
                     try:
-                        response = self._single_request(url, headers, params, flatten)
-                    except requests.exceptions.RequestException as e:
-                        logging.error("Request error on page %d: %s", page, e)
+                        page_data = json.loads(content)
+                    except (ValueError, json.JSONDecodeError):
+                        page_data = None
+                elif self.resp_type == "xml":
+                    page_data = xmltodict.parse(content)
+                    outdata = json.dumps(page_data, ensure_ascii=False)
+                elif self.resp_type == "html":
+                    if process_func is None:
+                        logging.error("HTML response type requires process function")
+                        return False
+                    page_data = process_func(content)
+                    outdata = json.dumps(page_data, ensure_ascii=False)
+                else:
+                    logging.warning("Unknown response type: %s", self.resp_type)
+                    return False
+
+                if len(outdata) == 0:
+                    logging.info("Empty results on page %d. Stopped", target_page)
+                    return False
+                if storage_backend:
+                    storage_backend.save_page("page_%d.json" % (target_page), outdata)
+                with _result_lock:
+                    total_bytes += len(outdata)
+                    pages_processed += 1
+                    if page_data is not None:
+                        try:
+                            items = get_dict_value(page_data, self.data_key,
+                                                   splitter=self.field_splitter)
+                            if isinstance(items, list):
+                                total_records += len(items)
+                            elif items is not None:
+                                total_records += 1
+                            if self.change_key and isinstance(items, list):
+                                for item in items:
+                                    if isinstance(item, dict):
+                                        value = get_dict_value(item, self.change_key,
+                                                               splitter=self.field_splitter)
+                                        if value is not None:
+                                            if not last_change_value or value > last_change_value:
+                                                last_change_value = value
+                        except (TypeError, ValueError):
+                            pass
+                self._run_hook("after_page", {
+                    "page": target_page,
+                    "mode": mode,
+                    "records_processed": total_records,
+                    "bytes_written": len(outdata)
+                })
+                if progress_bar:
+                    progress_bar.update(1)
+                    elapsed = max(1e-6, time.time() - start)
+                    with _result_lock:
+                        current_pages = pages_processed
+                    speed = current_pages / elapsed
+                    eta_seconds = int((total_pages - current_pages) / speed) if speed else 0
+                    progress_bar.set_postfix({
+                        "speed_p/s": f"{speed:.2f}",
+                        "eta_s": eta_seconds
+                    })
+                if self.checkpoint_interval_pages:
+                    with _result_lock:
+                        current_processed = pages_processed
+                    if current_processed > 0 and current_processed % self.checkpoint_interval_pages == 0:
+                        checkpoint_payload = {
+                            "last_page": target_page,
+                            "records_processed": total_records,
+                            "storage_bytes": total_bytes,
+                            "updated_at": datetime.now(timezone.utc).isoformat()
+                        }
+                        self._save_checkpoint(checkpoint_payload)
+                if self.page_limit and len(outdata) < int(self.page_limit):
+                    logging.info("Page %d size is %d, less than expected page size %s. Stopped",
+                                 target_page, len(outdata), str(self.page_limit))
+                    return False
+                return True
+
+            pages = list(range(start_page, end_page))
+            if self.parallelism <= 1:
+                for page in pages:
+                    result = fetch_page(page)
+                    if result.get("error") or self._should_retry(result.get("status")):
                         consecutive_errors += 1
+                        if result.get("status") is not None:
+                            error_counts[str(result.get("status"))] = (
+                                error_counts.get(str(result.get("status")), 0) + 1
+                            )
                         if consecutive_errors >= self.max_consecutive_errors:
-                            logging.error("Too many consecutive errors (%d). Stopping.", consecutive_errors)
                             if progress_bar:
                                 progress_bar.close()
-                            mzip.close()
+                            if storage_backend:
+                                storage_backend.close()
                             return
                         if not self.continue_on_error:
                             if progress_bar:
                                 progress_bar.close()
-                            mzip.close()
+                            if storage_backend:
+                                storage_backend.close()
                             return
                         if progress_bar:
                             progress_bar.update(1)
                         continue
-                    except (ValueError, RuntimeError, IOError) as e:
-                        logging.error("Unexpected error on page %d: %s", page, e)
-                        consecutive_errors += 1
-                        if consecutive_errors >= self.max_consecutive_errors:
-                            logging.error("Too many consecutive errors (%d). Stopping.", consecutive_errors)
-                            if progress_bar:
-                                progress_bar.close()
-                            mzip.close()
-                            return
-                        if not self.continue_on_error:
-                            if progress_bar:
-                                progress_bar.close()
-                            mzip.close()
-                            return
-                        if progress_bar:
-                            progress_bar.update(1)
-                        continue
-
-                    time.sleep(self.default_delay)
-
-                    if response.status_code in self.error_retry_codes:
-                        rc = 0
-                        for rc in range(1, self.retry_count, 1):
-                            logging.info("Retry attempt %d of %d, delay %d",
-                                         rc, self.retry_count, self.retry_delay)
-                            time.sleep(self.retry_delay)
-                            try:
-                                response = self._single_request(url, headers, params,
-                                                                flatten)
-                            except requests.exceptions.RequestException as e:
-                                logging.warning("Retry request failed: %s", e)
-                                continue
-                            if response.status_code not in self.error_retry_codes:
-                                logging.info(
-                                    "Looks like finally we have proper response on %d attempt",
-                                    rc)
-                                consecutive_errors = 0
-                                break
-                        if response.status_code in self.error_retry_codes:
+                    consecutive_errors = 0
+                    if not handle_success(page, result["content"]):
+                        break
+            else:
+                for offset in range(0, len(pages), self.parallelism):
+                    batch = pages[offset:offset + self.parallelism]
+                    results: Dict[int, Dict[str, Any]] = {}
+                    with ThreadPoolExecutor(max_workers=self.parallelism) as executor:
+                        future_map = {executor.submit(fetch_page, page): page for page in batch}
+                        for future in as_completed(future_map):
+                            result = future.result()
+                            results[result["page"]] = result
+                    for page in batch:
+                        result = results.get(page)
+                        if result is None:
+                            continue
+                        if result.get("error") or self._should_retry(result.get("status")):
                             consecutive_errors += 1
+                            if result.get("status") is not None:
+                                error_counts[str(result.get("status"))] = (
+                                    error_counts.get(str(result.get("status")), 0) + 1
+                                )
                             if consecutive_errors >= self.max_consecutive_errors:
-                                logging.error("Too many consecutive errors (%d). Stopping.", consecutive_errors)
                                 if progress_bar:
                                     progress_bar.close()
-                                mzip.close()
+                                if storage_backend:
+                                    storage_backend.close()
                                 return
                             if not self.continue_on_error:
-                                logging.error("Error on page %d and continue_on_error is False. Stopping.", page)
                                 if progress_bar:
                                     progress_bar.close()
-                                mzip.close()
+                                if storage_backend:
+                                    storage_backend.close()
                                 return
                             if progress_bar:
                                 progress_bar.update(1)
                             continue
-
-                    if response.status_code not in self.error_retry_codes:
                         consecutive_errors = 0
-                        try:
-                            if num_pages is not None:
-                                logging.info("Saving page %d of %d", page, num_pages)
-                            else:
-                                logging.info("Saving page %d", page)
-                            if self.resp_type == "json":
-                                outdata = response.content
-                            elif self.resp_type == "xml":
-                                outdata = json.dumps(xmltodict.parse(response.content), ensure_ascii=False)
-                            elif self.resp_type == "html":
-                                if process_func is None:
-                                    logging.error("HTML response type requires process function")
-                                    continue
-                                outdata = json.dumps(process_func(response.content), ensure_ascii=False)
-                            else:
-                                logging.warning("Unknown response type: %s",
-                                                self.resp_type)
-                                continue
+                        if not handle_success(page, result["content"]):
+                            return
 
-                            if len(outdata) == 0:
-                                logging.info("Empty results on page %d. Stopped", page)
-                                break
-                            mzip.writestr("page_%d.json" % (page), outdata)
-                            if self.page_limit:
-                                if len(outdata) < int(self.page_limit):
-                                    logging.info("Page %d size is %d, less than expected page size %s. Stopped",
-                                                 page, len(outdata), str(self.page_limit))
-                                    if progress_bar:
-                                        progress_bar.update(1)
-                                        progress_bar.close()
-                                    break
-                            if progress_bar:
-                                progress_bar.update(1)
-                        except (json.JSONDecodeError, ValueError) as e:
-                            logging.error("Error processing response for page %d: %s",
-                                          page, e)
-                            consecutive_errors += 1
-                            if consecutive_errors >= self.max_consecutive_errors:
-                                if progress_bar:
-                                    progress_bar.close()
-                                mzip.close()
-                                return
-                            if not self.continue_on_error:
-                                if progress_bar:
-                                    progress_bar.close()
-                                mzip.close()
-                                return
-                            if progress_bar:
-                                progress_bar.update(1)
-                        except (IOError, OSError, ValueError) as e:
-                            logging.error("Error saving page %d: %s", page, e)
-                            consecutive_errors += 1
-                            if consecutive_errors >= self.max_consecutive_errors:
-                                if progress_bar:
-                                    progress_bar.close()
-                                mzip.close()
-                                return
-                            if not self.continue_on_error:
-                                if progress_bar:
-                                    progress_bar.close()
-                                mzip.close()
-                                return
-                            if progress_bar:
-                                progress_bar.update(1)
-                    else:
-                        logging.info("Errors persist on page %d. Stopped", page)
-                        if progress_bar:
-                            progress_bar.update(1)
-                        if not self.continue_on_error:
-                            break
-                except (ValueError, RuntimeError, IOError) as e:
-                    logging.error("Unexpected error processing page %d: %s", page, e)
-                    consecutive_errors += 1
-                    if consecutive_errors >= self.max_consecutive_errors:
-                        logging.error("Too many consecutive errors (%d). Stopping.", consecutive_errors)
-                        if progress_bar:
-                            progress_bar.close()
-                        mzip.close()
-                        return
-                    if not self.continue_on_error:
-                        if progress_bar:
-                            progress_bar.close()
-                        mzip.close()
-                        return
-                    if progress_bar:
-                        progress_bar.update(1)
+            run_end_time = datetime.now(timezone.utc)
+            state_payload = {
+                "last_run_start": run_start_time.isoformat(),
+                "last_run_end": run_end_time.isoformat(),
+                "last_page": (start_page + pages_processed - 1) if pages_processed > 0 else start_page,
+                "last_change_key": last_change_value,
+                "records_processed": total_records,
+                "bytes_processed": total_bytes
+            }
+            self._save_state(state_payload)
+            print("Run summary:")
+            print(f"  Pages processed: {pages_processed}")
+            if total_records:
+                print(f"  Total records: {total_records}")
+            print(f"  Total bytes: {total_bytes}")
+            if error_counts:
+                print("  Errors by status:")
+                for code, count in sorted(error_counts.items()):
+                    print(f"    {code}: {count}")
+            else:
+                print("  Errors by status: none")
+
+            self._run_hook("after_run", {
+                "mode": mode,
+                "pages_processed": pages_processed,
+                "records_processed": total_records,
+                "bytes_processed": total_bytes,
+                "errors": error_counts
+            })
 
             if progress_bar:
                 progress_bar.close()
-            if mzip:
+            if storage_backend:
                 try:
-                    mzip.close()
+                    storage_backend.close()
                 except (IOError, OSError) as e:
-                    logging.error("Error closing zip file: %s", e)
+                    logging.error("Error closing storage backend: %s", e)
         except (ValueError, RuntimeError, IOError) as e:
             logging.error("Fatal error in run method: %s", e)
             print(f"Error: Fatal error occurred: {e}")
-            if mzip:
+            if storage_backend:
                 try:
-                    mzip.close()
+                    storage_backend.close()
                 except Exception:
                     pass
             if progress_bar:
@@ -1424,29 +1875,265 @@ class ProjectBuilder:
 
         # pass
 
+    def update(self, resume: bool = False) -> None:
+        """Run update mode with state tracking."""
+        self.run("update", resume=resume)
+
+    def _detect_suggestions(self, data: Any) -> Dict[str, Any]:
+        suggestions: Dict[str, Any] = {}
+        if isinstance(data, dict):
+            for key in ["results", "items", "data"]:
+                if isinstance(data.get(key), list):
+                    suggestions["data_key"] = key
+                    break
+            if "data_key" not in suggestions:
+                for key, value in data.items():
+                    if isinstance(value, list):
+                        suggestions["data_key"] = key
+                        break
+            for key in ["total", "count", "total_count"]:
+                if key in data:
+                    suggestions["total_number_key"] = key
+                    break
+            if "page" in data or "pages" in data:
+                suggestions["iterate_by"] = "page"
+            elif "offset" in data or "skip" in data:
+                suggestions["iterate_by"] = "skip"
+        return suggestions
+
+    def _apply_detection(self, suggestions: Dict[str, Any]) -> None:
+        if not suggestions:
+            return
+        if not self.config.has_option("data", "data_key") and suggestions.get("data_key"):
+            self.data_key = suggestions["data_key"]
+        if not self.config.has_option("data", "total_number_key") and suggestions.get("total_number_key"):
+            self.total_number_key = suggestions["total_number_key"]
+        if not self.config.has_option("project", "iterate_by") and suggestions.get("iterate_by"):
+            self.iterate_by = suggestions["iterate_by"]
+
+    def detect(self, write_config: bool = False) -> Dict[str, Any]:
+        """Detect pagination and data keys from a sample request."""
+        headers = load_json_file(os.path.join(self.project_path, "headers.json"), default={})
+        params = load_json_file(os.path.join(self.project_path, "params.json"), default={})
+        url_params = load_json_file(os.path.join(self.project_path, "url_params.json"), default=None)
+        if self.query_mode == "params":
+            url = _url_replacer(self.start_url, url_params or {})
+        elif self.query_mode == "mixed":
+            url = _url_replacer(self.start_url, url_params or {}, query_mode=True)
+        else:
+            url = self.start_url
+        response = self._single_request(url, headers, params, None)
+        if self.resp_type != "json":
+            print("Detection only supports JSON responses.")
+            return {}
+        try:
+            data = response.json()
+        except (ValueError, json.JSONDecodeError):
+            print("Detection failed: response is not valid JSON.")
+            return {}
+        suggestions = self._detect_suggestions(data)
+        if write_config and self.config_format == "yaml" and hasattr(self.config, "_data"):
+            yaml_data = self.config._data
+            yaml_data.setdefault("data", {})
+            yaml_data.setdefault("project", {})
+            if suggestions.get("data_key") and "data_key" not in yaml_data.get("data", {}):
+                yaml_data["data"]["data_key"] = suggestions["data_key"]
+            if suggestions.get("total_number_key") and "total_number_key" not in yaml_data.get("data", {}):
+                yaml_data["data"]["total_number_key"] = suggestions["total_number_key"]
+            if suggestions.get("iterate_by") and "iterate_by" not in yaml_data.get("project", {}):
+                yaml_data["project"]["iterate_by"] = suggestions["iterate_by"]
+            if YAML_AVAILABLE:
+                with open(self.config_filename, "w", encoding="utf8") as fobj:
+                    yaml.safe_dump(yaml_data, fobj, sort_keys=False, allow_unicode=True)
+        return suggestions
+
+    def _follow_rule(
+        self,
+        rule: Dict[str, Any],
+        mode: str,
+        params: Dict[str, Any],
+        headers: Dict[str, Any],
+        process_func: Optional[Any]
+    ) -> None:
+        follow_mode = rule.get("follow_mode") or rule.get("mode") or self.follow_mode
+        follow_pattern = rule.get("follow_pattern") or self.follow_pattern
+        follow_item_key = rule.get("follow_item_key") or self.follow_item_key
+        follow_data_key = rule.get("follow_data_key") or self.follow_data_key
+        follow_url_key = rule.get("follow_url_key") or self.follow_url_key
+        follow_http_mode = rule.get("follow_http_mode") or self.follow_http_mode
+        follow_param = rule.get("follow_param") or self.follow_param
+        iterate_by = rule.get("iterate_by")
+        rule_params = rule.get("params") or {}
+        page_number_param = rule_params.get("page_number_param")
+        page_size_param = rule_params.get("page_size_param")
+        page_size_limit = rule_params.get("page_size_limit")
+        max_pages = rule_params.get("max_pages", 1000)
+
+        details_storage_file = self.details_storage_file
+        if rule.get("name"):
+            details_storage_file = os.path.join(self.storagedir, f"details_{rule['name']}.zip")
+
+        source_zip = ZipFile(self.storage_file, mode="r", compression=ZIP_DEFLATED)
+
+        if follow_mode == "item":
+            allkeys = []
+            logging.info("Extract unique key values from downloaded data")
+            file_list = source_zip.namelist()
+            extract_progress = None
+            if len(file_list) > 0:
+                extract_progress = tqdm(total=len(file_list), desc="Extracting keys", unit="file")
+            for fname in file_list:
+                tf = source_zip.open(fname, "r")
+                data = json.load(tf)
+                tf.close()
+                try:
+                    for item in get_dict_value(data,
+                                               self.data_key,
+                                               splitter=self.field_splitter):
+                        allkeys.append(item[follow_item_key])
+                except (KeyError, TypeError):
+                    logging.info("Data key: %s not found" % (self.data_key))
+                if extract_progress:
+                    extract_progress.update(1)
+            if extract_progress:
+                extract_progress.close()
+            logging.info("%d allkeys to process", len(allkeys))
+            if mode == "full":
+                details_zip = ZipFile(details_storage_file,
+                                      mode="w",
+                                      compression=ZIP_DEFLATED)
+                finallist = allkeys
+            else:
+                details_zip = ZipFile(details_storage_file,
+                                      mode="a",
+                                      compression=ZIP_DEFLATED)
+                keys = []
+                filenames = details_zip.namelist()
+                for name in filenames:
+                    if name.endswith(".json"):
+                        base = name.rsplit(".", 1)[0]
+                        base = base.rsplit("_page_", 1)[0]
+                        keys.append(base)
+                finallist = list(set(allkeys) - set(keys))
+            logging.info("%d keys in final list", len(finallist))
+
+            progress_bar = None
+            if len(finallist) > 0:
+                progress_bar = tqdm(total=len(finallist), desc="Following items", unit="item")
+            for key in finallist:
+                if iterate_by and page_number_param and page_size_limit:
+                    page = 1
+                    while page <= max_pages:
+                        change_params = {}
+                        if follow_param:
+                            change_params[follow_param] = key
+                        if page_size_param:
+                            change_params[page_size_param] = page_size_limit
+                        change_params[page_number_param] = page
+                        request_params = update_dict_values(dict(params), change_params)
+                        if follow_http_mode == "GET":
+                            response = self.http.get(
+                                follow_pattern,
+                                params=request_params,
+                                headers=headers if headers else None,
+                                verify=self.verify_ssl
+                            )
+                        else:
+                            response = self.http.post(
+                                follow_pattern,
+                                params=request_params,
+                                headers=headers if headers else None,
+                                verify=self.verify_ssl
+                            )
+                        if self.resp_type == 'json':
+                            content = response.content
+                            try:
+                                data = response.json()
+                            except (ValueError, json.JSONDecodeError):
+                                data = None
+                        elif self.resp_type == 'html':
+                            data = process_func(response.content) if process_func else None
+                            content = json.dumps(data, ensure_ascii=False).encode("utf8")
+                        else:
+                            data = None
+                            content = response.content
+                        details_zip.writestr(f"{key}_page_{page}.json", content)
+                        items = None
+                        if data is not None and follow_data_key:
+                            items = get_dict_value(data, follow_data_key, splitter=self.field_splitter)
+                        if not items or (isinstance(items, list) and len(items) < page_size_limit):
+                            break
+                        page += 1
+                else:
+                    change_params = {}
+                    if follow_param:
+                        change_params[follow_param] = key
+                    request_params = update_dict_values(dict(params), change_params)
+                    if follow_http_mode == "GET":
+                        response = self.http.get(follow_pattern,
+                                                 params=request_params,
+                                                 headers=headers, verify=self.verify_ssl)
+                    else:
+                        response = self.http.post(follow_pattern,
+                                                  params=request_params,
+                                                  headers=headers, verify=self.verify_ssl)
+                    logging.info("Saving object with id %s" % (key))
+                    if self.resp_type == 'json':
+                        details_zip.writestr('%s.json' % (key), response.content)
+                    elif self.resp_type == 'html':
+                        details_zip.writestr('%s.json' % (key), json.dumps(
+                            process_func(response.content), ensure_ascii=False))
+                time.sleep(DEFAULT_DELAY)
+                if progress_bar:
+                    progress_bar.update(1)
+            if progress_bar:
+                progress_bar.close()
+            details_zip.close()
+        elif follow_mode == "url":
+            allkeys = {}
+            logging.info("Extract urls to follow from downloaded data")
+            file_list = source_zip.namelist()
+            extract_progress = None
+            if len(file_list) > 0:
+                extract_progress = tqdm(total=len(file_list), desc="Extracting URLs", unit="file")
+            for fname in file_list:
+                tf = source_zip.open(fname, "r")
+                data = json.load(tf)
+                tf.close()
+                try:
+                    for item in get_dict_value(data,
+                                               self.data_key,
+                                               splitter=self.field_splitter):
+                        item_id = item[follow_item_key]
+                        allkeys[item_id] = get_dict_value(
+                            item,
+                            follow_url_key,
+                            splitter=self.field_splitter)
+                except KeyError:
+                    logging.info("Data key: %s not found" % (self.data_key))
+                if extract_progress:
+                    extract_progress.update(1)
+            if extract_progress:
+                extract_progress.close()
+            if mode == "full":
+                details_zip = ZipFile(details_storage_file, mode="w", compression=ZIP_DEFLATED)
+            else:
+                details_zip = ZipFile(details_storage_file, mode="a", compression=ZIP_DEFLATED)
+            for key, url in allkeys.items():
+                if follow_http_mode == "GET":
+                    response = self.http.get(url, headers=headers, verify=self.verify_ssl)
+                else:
+                    response = self.http.post(url, headers=headers, verify=self.verify_ssl)
+                details_zip.writestr('%s.json' % (key), response.content)
+            details_zip.close()
+
+        source_zip.close()
+
     def follow(self, mode: str = "full") -> None:
         """Collects data about each data using additional requests"""
 
         if self.config is None:
-            config_files = [
-                os.path.join(self.project_path, "apibackuper.yaml"),
-                os.path.join(self.project_path, "apibackuper.yml"),
-                os.path.join(self.project_path, "apibackuper.cfg")
-            ]
-            found_files = [f for f in config_files if os.path.exists(f)]
-            error_msg = (
-                f"Configuration file not found in: {self.project_path}\n"
-                f"  Expected files: apibackuper.yaml, apibackuper.yml, or apibackuper.cfg\n"
-            )
-            if found_files:
-                error_msg += f"  Found files: {', '.join(os.path.basename(f) for f in found_files)}\n"
-            error_msg += (
-                "  Suggestions:\n"
-                "    - Run 'apibackuper create <name>' to create a new project\n"
-                "    - Navigate to the project directory first\n"
-                f"    - Use --projectpath option to specify project location"
-            )
-            print(f"Error: {error_msg}")
+            self._raise_config_not_found()
             return
         if not self.follow_enabled:
             print("Follow mode not enabled")
@@ -1460,6 +2147,7 @@ class ProjectBuilder:
         if not os.path.exists(self.storage_file):
             print("Storage file not found")
             return
+
 
         process_func = None
         if self.code_postfetch is not None:
@@ -1481,11 +2169,15 @@ class ProjectBuilder:
 
         headers_file = os.path.join(self.project_path, "headers.json")
         if os.path.exists(headers_file):
-            f = open(headers_file, "r", encoding="utf8")
-            headers = json.load(f)
-            f.close()
+            with open(headers_file, "r", encoding="utf8") as f:
+                headers = json.load(f)
         else:
             headers = {}
+
+        if hasattr(self, "follow_rules") and self.follow_rules:
+            for rule in self.follow_rules:
+                self._follow_rule(rule, mode, params, headers, process_func)
+            return
 
         mzip = ZipFile(self.storage_file, mode="r", compression=ZIP_DEFLATED)
 
@@ -1543,18 +2235,18 @@ class ProjectBuilder:
                     if headers:
                         response = self.http.get(self.follow_pattern,
                                                  params=params,
-                                                 headers=headers, verify=False)
+                                                 headers=headers, verify=self.verify_ssl)
                     else:
                         response = self.http.get(self.follow_pattern,
-                                                 params=params, verify=False)
+                                                 params=params, verify=self.verify_ssl)
                 else:
                     if headers:
                         response = self.http.post(self.follow_pattern,
                                                   params=params,
-                                                  headers=headers, verify=False)
+                                                  headers=headers, verify=self.verify_ssl)
                     else:
                         response = self.http.post(self.follow_pattern,
-                                                  params=params, verify=False)
+                                                  params=params, verify=self.verify_ssl)
                 logging.info("Saving object with id %s. %d of %d" %
                              (key, n, total))
                 if self.resp_type == 'json':
@@ -1620,12 +2312,9 @@ class ProjectBuilder:
                 if headers:
                     response = self.http.get(url,
                                              params=params,
-                                             headers=headers, verify=False)
+                                             headers=headers, verify=self.verify_ssl)
                 else:
-                    response = self.http.get(url, params=params, verify=False)
-                #                else:
-                #                if http_mode == 'GET':
-                #                    response = self.http.post(start_url, json=params)
+                    response = self.http.get(url, params=params, verify=self.verify_ssl)
                 logging.info("Saving object with id %s. %d of %d" %
                              (key, n, total))
                 if self.resp_type == 'json':
@@ -1691,7 +2380,7 @@ class ProjectBuilder:
                 n += 1
                 url = self.follow_pattern + str(key)
                 #                print(url)
-                response = self.http.get(url, verify=False)
+                response = self.http.get(url, verify=self.verify_ssl)
                 logging.info("Saving object with id %s. %d of %d" %
                              (key, n, total))
                 if self.resp_type == 'json':
@@ -1710,25 +2399,7 @@ class ProjectBuilder:
     def getfiles(self, be_careful: bool = False) -> None:
         """Downloads all files associated with this API data"""
         if self.config is None:
-            config_files = [
-                os.path.join(self.project_path, "apibackuper.yaml"),
-                os.path.join(self.project_path, "apibackuper.yml"),
-                os.path.join(self.project_path, "apibackuper.cfg")
-            ]
-            found_files = [f for f in config_files if os.path.exists(f)]
-            error_msg = (
-                f"Configuration file not found in: {self.project_path}\n"
-                f"  Expected files: apibackuper.yaml, apibackuper.yml, or apibackuper.cfg\n"
-            )
-            if found_files:
-                error_msg += f"  Found files: {', '.join(os.path.basename(f) for f in found_files)}\n"
-            error_msg += (
-                "  Suggestions:\n"
-                "    - Run 'apibackuper create <name>' to create a new project\n"
-                "    - Navigate to the project directory first\n"
-                f"    - Use --projectpath option to specify project location"
-            )
-            print(f"Error: {error_msg}")
+            self._raise_config_not_found()
             return
         if not os.path.exists(self.storagedir):
             os.mkdir(self.storagedir)
@@ -1880,6 +2551,8 @@ class ProjectBuilder:
                 fieldnames=["filename", "filesize", "reason"],
             )
             skipped.writeheader()
+        # Ensure files are closed even if an exception occurs during downloads
+        files_to_close = [list_file, skipped_file]
 
         use_aria2 = True if self.use_aria2 == "True" else False
         if use_aria2:
@@ -1899,110 +2572,88 @@ class ProjectBuilder:
         download_progress = None
         if total_files > 0:
             download_progress = tqdm(total=total_files, desc="Downloading files", unit="file")
-        for uniq_id in uniq_ids:
-            if self.fetch_mode == "prefix":
-                url = self.root_url + str(uniq_id)
-            elif self.fetch_mode == "pattern":
-                url = self.root_url.format(uniq_id)
-            n += 1
-            if n % 50 == 0:
-                logging.info("Downloaded %d files", n)
-            #            if url in processed_files:
-            #                continue
-            if be_careful:
-                r = self.http.head(url, timeout=DEFAULT_TIMEOUT, verify=False)
-                if ("content-disposition" in r.headers.keys()
-                        and self.storage_mode == "filepath"):
-                    filename = (r.headers["content-disposition"].rsplit(
-                        "filename=", 1)[-1].strip('"'))
-                elif self.default_ext is not None:
-                    filename = uniq_id + "." + self.default_ext
+        try:
+            for uniq_id in uniq_ids:
+                if self.fetch_mode == "prefix":
+                    url = self.root_url + str(uniq_id)
+                elif self.fetch_mode == "pattern":
+                    url = self.root_url.format(uniq_id)
+                n += 1
+                if n % 50 == 0:
+                    logging.info("Downloaded %d files", n)
+                if be_careful:
+                    r = self.http.head(url, timeout=DEFAULT_TIMEOUT, verify=self.verify_ssl)
+                    if ("content-disposition" in r.headers.keys()
+                            and self.storage_mode == "filepath"):
+                        filename = (r.headers["content-disposition"].rsplit(
+                            "filename=", 1)[-1].strip('"'))
+                    elif self.default_ext is not None:
+                        filename = uniq_id + "." + self.default_ext
+                    else:
+                        filename = uniq_id
+                    if ("content-length" in r.headers.keys() and int(
+                            r.headers["content-length"]) > FILE_SIZE_DOWNLOAD_LIMIT
+                            and self.file_storage_type == "zip"):
+                        logging.info("File skipped with size %d and name %s" %
+                                     (int(r.headers["content-length"]), url))
+                        record = {
+                            "filename":
+                            filename,
+                            "filesize":
+                            str(r.headers["content-length"]),
+                            "reason":
+                            "File too large. More than %d bytes" %
+                            (FILE_SIZE_DOWNLOAD_LIMIT),
+                        }
+                        skipped_files_dict[uniq_id] = record
+                        skipped.writerow(record)
+                        continue
                 else:
-                    filename = uniq_id
-                #                if not 'content-length' in r.headers.keys():
-                #                    logging.info('File %s skipped since content-length not found in headers' % (url))
-                #                    record = {'filename' : filename, 'filesize' : "0", 'reason' : 'Content-length not set in headers'}
-                #                    skipped_files_dict[uniq_id] = record
-                #                    skipped.writerow(record)
-                #                    continue
-                if ("content-length" in r.headers.keys() and int(
-                        r.headers["content-length"]) > FILE_SIZE_DOWNLOAD_LIMIT
-                        and self.file_storage_type == "zip"):
-                    logging.info("File skipped with size %d and name %s" %
-                                 (int(r.headers["content-length"]), url))
-                    record = {
-                        "filename":
-                        filename,
-                        "filesize":
-                        str(r.headers["content-length"]),
-                        "reason":
-                        "File too large. More than %d bytes" %
-                        (FILE_SIZE_DOWNLOAD_LIMIT),
-                    }
-                    skipped_files_dict[uniq_id] = record
-                    skipped.writerow(record)
+                    if self.default_ext is not None:
+                        filename = str(uniq_id) + "." + self.default_ext
+                    else:
+                        filename = str(uniq_id)
+                if self.storage_mode == "filepath":
+                    filename = urlparse(url).path
+                logging.info("Processing %s as %s", url, filename)
+                if fstorage.exists(filename):
+                    logging.info("File %s already stored", filename)
+                    if download_progress:
+                        download_progress.update(1)
                     continue
-            else:
-                if self.default_ext is not None:
-                    filename = str(uniq_id) + "." + self.default_ext
+                if not use_aria2:
+                    response = self.http.get(url, headers=headers,
+                                             timeout=DEFAULT_TIMEOUT,
+                                             verify=self.verify_ssl)
+                    fstorage.store(filename, response.content)
+                    list_file.write(url + "\n")
                 else:
-                    filename = str(uniq_id)
-            if self.storage_mode == "filepath":
-                filename = urlparse(url).path
-            logging.info("Processing %s as %s", url, filename)
-            if fstorage.exists(filename):
-                logging.info("File %s already stored", filename)
+                    aria2.add_uris(
+                        uris=[
+                            url,
+                        ],
+                        options={
+                            "out": filename,
+                            "dir":
+                            os.path.abspath(os.path.join("storage", "files")),
+                        },
+                    )
                 if download_progress:
                     download_progress.update(1)
-                continue
-            if not use_aria2:
-                response = self.http.get(url, headers=headers,
-                                         timeout=DEFAULT_TIMEOUT,
-                                         verify=False)
-                fstorage.store(filename, response.content)
-                list_file.write(url + "\n")
-            else:
-                aria2.add_uris(
-                    uris=[
-                        url,
-                    ],
-                    options={
-                        "out": filename,
-                        "dir":
-                        os.path.abspath(os.path.join("storage", "files")),
-                    },
-                )
+        finally:
             if download_progress:
-                download_progress.update(1)
-
-        if download_progress:
-            download_progress.close()
-        fstorage.close()
-        list_file.close()
-        skipped_file.close()
+                download_progress.close()
+            fstorage.close()
+            for fobj in files_to_close:
+                try:
+                    fobj.close()
+                except (IOError, OSError):
+                    pass
 
     def estimate(self, mode: str) -> None:  # noqa: ARG002
         """Measures time, size and count of records"""
         if self.config is None:
-            config_files = [
-                os.path.join(self.project_path, "apibackuper.yaml"),
-                os.path.join(self.project_path, "apibackuper.yml"),
-                os.path.join(self.project_path, "apibackuper.cfg")
-            ]
-            found_files = [f for f in config_files if os.path.exists(f)]
-            error_msg = (
-                f"Configuration file not found in: {self.project_path}\n"
-                f"  Expected files: apibackuper.yaml, apibackuper.yml, or apibackuper.cfg\n"
-            )
-            if found_files:
-                error_msg += f"  Found files: {', '.join(os.path.basename(f) for f in found_files)}\n"
-            error_msg += (
-                "  Suggestions:\n"
-                "    - Run 'apibackuper create <name>' to create a new project\n"
-                "    - Navigate to the project directory first\n"
-                f"    - Use --projectpath option to specify project location"
-            )
-            print(f"Error: {error_msg}")
+            self._raise_config_not_found()
             return
         data = []
         params = {}
@@ -2055,10 +2706,10 @@ class ProjectBuilder:
                             (k, v.replace("'", '"').replace("True", "true")))
                     if headers:
                         start_page_data = self.http.get(
-                            url + "?" + "&".join(s), headers=headers, verify=False).json()
+                            url + "?" + "&".join(s), headers=headers, verify=self.verify_ssl).json()
                     else:
                         start_page_data = self.http.get(url + "?" +
-                                                        "&".join(s), verify=False).json()
+                                                        "&".join(s), verify=self.verify_ssl).json()
                 else:
                     logging.debug("Start request params: %s headers: %s" %
                                   (str(params), str(headers)))
@@ -2067,18 +2718,18 @@ class ProjectBuilder:
                             response = self.http.get(url,
                                                      params=params,
                                                      headers=headers,
-                                                     verify=False)
+                                                     verify=self.verify_ssl)
                         else:
                             response = self.http.get(url,
                                                      headers=headers,
-                                                     verify=False)
+                                                     verify=self.verify_ssl)
                     else:
                         if params and len(params.keys()) > 0:
                             response = self.http.get(url,
                                                      params=params,
-                                                     verify=False)
+                                                     verify=self.verify_ssl)
                         else:
-                            response = self.http.get(url, verify=False)
+                            response = self.http.get(url, verify=self.verify_ssl)
 
                     if self.resp_type == 'json':
                         start_page_data = response.json()
@@ -2089,10 +2740,10 @@ class ProjectBuilder:
                 if headers:
                     response = self.http.post(url,
                                               json=params,
-                                              verify=False,
+                                              verify=self.verify_ssl,
                                               headers=headers)
                 else:
-                    response = self.http.post(url, json=params, verify=False)
+                    response = self.http.post(url, json=params, verify=self.verify_ssl)
 
                 if self.resp_type == 'json':
                     start_page_data = response.json()
@@ -2109,7 +2760,7 @@ class ProjectBuilder:
             return
         request_time = end - start
         nr = 1 if total % self.page_limit > 0 else 0
-        req_number = (total / self.page_limit) + nr
+        req_number = (total // self.page_limit) + nr
         if self.data_key:
             req_data = get_dict_value(start_page_data,
                                       self.data_key,
@@ -2134,26 +2785,7 @@ class ProjectBuilder:
     def info(self, stats: bool = False) -> Optional[Dict[str, Any]]:
         """Get project information and statistics"""
         if self.config is None:
-            config_files = [
-                os.path.join(self.project_path, "apibackuper.yaml"),
-                os.path.join(self.project_path, "apibackuper.yml"),
-                os.path.join(self.project_path, "apibackuper.cfg")
-            ]
-            found_files = [f for f in config_files if os.path.exists(f)]
-            error_msg = (
-                f"Configuration file not found in: {self.project_path}\n"
-                f"  Expected files: apibackuper.yaml, apibackuper.yml, or apibackuper.cfg\n"
-            )
-            if found_files:
-                error_msg += f"  Found files: {', '.join(os.path.basename(f) for f in found_files)}\n"
-            error_msg += (
-                "  Suggestions:\n"
-                "    - Run 'apibackuper create <name>' to create a new project\n"
-                "    - Navigate to the project directory first\n"
-                f"    - Use --projectpath option to specify project location\n"
-                f"    - Check if config file exists and has correct name"
-            )
-            print(f"Error: {error_msg}")
+            self._raise_config_not_found()
             return None
 
         report = {
@@ -2284,30 +2916,20 @@ class ProjectBuilder:
             stats_data = {}
 
             # Storage statistics
-            storage_file = os.path.join(self.storagedir, "storage.zip")
-            if os.path.exists(storage_file):
-                try:
-                    mzip = ZipFile(storage_file, mode="r", compression=ZIP_DEFLATED)
-                    file_list = mzip.namelist()
-                    total_size = sum(mzip.getinfo(f).file_size for f in file_list)
-
-                    # Count all records accurately
-                    total_records = 0
-                    sample_count = 0
-                    sample_records = 0
-
-                    # Use progress bar for large files
-                    if len(file_list) > 0:
-                        progress_bar = None
-                        if len(file_list) > 100:
-                            progress_bar = tqdm(total=len(file_list), desc="Counting records", unit="file", leave=False)
-
+            if self.storage_type == "sqlite":
+                if os.path.exists(self.storage_file):
+                    try:
+                        storage_backend = build_storage_backend("sqlite", self.storage_file, "continue")
+                        file_list = storage_backend.list_objects("page")
+                        total_size = 0
+                        total_records = 0
                         for fname in file_list:
                             try:
-                                tf = mzip.open(fname, "r")
-                                data = json.load(tf)
-                                tf.close()
-
+                                content = storage_backend.get_object(fname, "page")
+                                if content is None:
+                                    continue
+                                total_size += len(content)
+                                data = json.loads(content)
                                 if self.data_key:
                                     items = get_dict_value(data, self.data_key, splitter=self.field_splitter)
                                     if isinstance(items, list):
@@ -2319,48 +2941,107 @@ class ProjectBuilder:
                                         total_records += len(data)
                                     elif data is not None:
                                         total_records += 1
+                            except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
+                                logging.debug("Error counting records in %s: %s",
+                                              fname, e)
+                        stats_data["storage"] = {
+                            "file_exists": True,
+                            "total_files": len(file_list),
+                            "total_size_bytes": total_size,
+                            "total_size_mb": round(total_size / (1024 * 1024), 2),
+                            "total_size_gb": round(total_size / (1024 * 1024 * 1024), 3),
+                            "total_records": total_records,
+                            "avg_records_per_file": round(total_records / len(file_list), 2) if len(file_list) > 0 else 0
+                        }
+                        storage_backend.close()
+                    except (IOError, OSError, ValueError) as e:
+                        logging.error("Error reading sqlite storage: %s", e)
+                        stats_data["storage"] = {
+                            "file_exists": True,
+                            "error": str(e)
+                        }
+                else:
+                    stats_data["storage"] = {
+                        "file_exists": False
+                    }
+            else:
+                storage_file = os.path.join(self.storagedir, "storage.zip")
+                if os.path.exists(storage_file):
+                    try:
+                        mzip = ZipFile(storage_file, mode="r", compression=ZIP_DEFLATED)
+                        file_list = mzip.namelist()
+                        total_size = sum(mzip.getinfo(f).file_size for f in file_list)
 
-                                # Track sample for average calculation
-                                if sample_count < 10:
+                        # Count all records accurately
+                        total_records = 0
+                        sample_count = 0
+                        sample_records = 0
+
+                        # Use progress bar for large files
+                        if len(file_list) > 0:
+                            progress_bar = None
+                            if len(file_list) > 100:
+                                progress_bar = tqdm(total=len(file_list), desc="Counting records", unit="file", leave=False)
+
+                            for fname in file_list:
+                                try:
+                                    tf = mzip.open(fname, "r")
+                                    data = json.load(tf)
+                                    tf.close()
+
                                     if self.data_key:
                                         items = get_dict_value(data, self.data_key, splitter=self.field_splitter)
                                         if isinstance(items, list):
-                                            sample_records += len(items)
+                                            total_records += len(items)
+                                        elif items is not None:
+                                            total_records += 1
                                     else:
                                         if isinstance(data, list):
-                                            sample_records += len(data)
-                                    sample_count += 1
-                            except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
-                                logging.debug("Error counting records in %s: %s",
-                                             fname, e)
+                                            total_records += len(data)
+                                        elif data is not None:
+                                            total_records += 1
+
+                                    # Track sample for average calculation
+                                    if sample_count < 10:
+                                        if self.data_key:
+                                            items = get_dict_value(data, self.data_key, splitter=self.field_splitter)
+                                            if isinstance(items, list):
+                                                sample_records += len(items)
+                                        else:
+                                            if isinstance(data, list):
+                                                sample_records += len(data)
+                                        sample_count += 1
+                                except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
+                                    logging.debug("Error counting records in %s: %s",
+                                                 fname, e)
+
+                                if progress_bar:
+                                    progress_bar.update(1)
 
                             if progress_bar:
-                                progress_bar.update(1)
+                                progress_bar.close()
 
-                        if progress_bar:
-                            progress_bar.close()
+                        stats_data["storage"] = {
+                            "file_exists": True,
+                            "total_files": len(file_list),
+                            "total_size_bytes": total_size,
+                            "total_size_mb": round(total_size / (1024 * 1024), 2),
+                            "total_size_gb": round(total_size / (1024 * 1024 * 1024), 3),
+                            "total_records": total_records,
+                            "avg_records_per_file": round(total_records / len(file_list), 2) if len(file_list) > 0 else 0
+                        }
 
+                        mzip.close()
+                    except (IOError, OSError, zipfile.BadZipFile) as e:
+                        logging.error("Error reading storage file: %s", e)
+                        stats_data["storage"] = {
+                            "file_exists": True,
+                            "error": str(e)
+                        }
+                else:
                     stats_data["storage"] = {
-                        "file_exists": True,
-                        "total_files": len(file_list),
-                        "total_size_bytes": total_size,
-                        "total_size_mb": round(total_size / (1024 * 1024), 2),
-                        "total_size_gb": round(total_size / (1024 * 1024 * 1024), 3),
-                        "total_records": total_records,
-                        "avg_records_per_file": round(total_records / len(file_list), 2) if len(file_list) > 0 else 0
+                        "file_exists": False
                     }
-
-                    mzip.close()
-                except (IOError, OSError, zipfile.BadZipFile) as e:
-                    logging.error("Error reading storage file: %s", e)
-                    stats_data["storage"] = {
-                        "file_exists": True,
-                        "error": str(e)
-                    }
-            else:
-                stats_data["storage"] = {
-                    "file_exists": False
-                }
 
             # Details storage statistics
             details_file = os.path.join(self.storagedir, "details.zip")
@@ -2420,6 +3101,18 @@ class ProjectBuilder:
 
             report["statistics"] = stats_data
 
+        state = self._load_state()
+        if state:
+            report["run"] = {
+                "last_run_start": state.get("last_run_start"),
+                "last_run_end": state.get("last_run_end"),
+                "status": "success" if state.get("last_run_end") else "unknown",
+                "records_processed": state.get("records_processed"),
+                "bytes_processed": state.get("bytes_processed"),
+                "last_page": state.get("last_page"),
+                "last_change_key": state.get("last_change_key")
+            }
+
         return report
 
     def validate_config(self, verbose: bool = False) -> bool:
@@ -2430,6 +3123,9 @@ class ProjectBuilder:
         if self.config is None:
             errors.append("Configuration file not found")
             return False
+
+        if self.config_format == "ini":
+            warnings.append("INI configuration is deprecated; use YAML instead")
 
         # For YAML configs, use schema validation first
         if self.config_format == 'yaml' and JSONSCHEMA_AVAILABLE:
@@ -2500,7 +3196,7 @@ class ProjectBuilder:
                 errors.append("Missing required option: storage.storage_type")
             else:
                 storage_type = self.config.get("storage", "storage_type")
-                if storage_type not in ["zip", "filesystem"]:
+                if storage_type not in ["zip", "filesystem", "sqlite"]:
                     warnings.append(f"Storage type '{storage_type}' may not be fully supported")
 
         # Validate authentication if configured
@@ -2545,25 +3241,7 @@ class ProjectBuilder:
 
     def to_package(self, filename: Optional[str] = None) -> None:  # noqa: ARG002
         if self.config is None:
-            config_files = [
-                os.path.join(self.project_path, "apibackuper.yaml"),
-                os.path.join(self.project_path, "apibackuper.yml"),
-                os.path.join(self.project_path, "apibackuper.cfg")
-            ]
-            found_files = [f for f in config_files if os.path.exists(f)]
-            error_msg = (
-                f"Configuration file not found in: {self.project_path}\n"
-                f"  Expected files: apibackuper.yaml, apibackuper.yml, or apibackuper.cfg\n"
-            )
-            if found_files:
-                error_msg += f"  Found files: {', '.join(os.path.basename(f) for f in found_files)}\n"
-            error_msg += (
-                "  Suggestions:\n"
-                "    - Run 'apibackuper create <name>' to create a new project\n"
-                "    - Navigate to the project directory first\n"
-                f"    - Use --projectpath option to specify project location"
-            )
-            print(f"Error: {error_msg}")
+            self._raise_config_not_found()
             return
 
         #        if not filename:

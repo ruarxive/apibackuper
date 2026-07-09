@@ -27,13 +27,14 @@ def load_csv_data(filename: str, key: str, encoding: str = "utf8", delimiter: st
 
 
 def _url_replacer(url: str, params: Dict[str, Any], query_mode: bool = False) -> str:
-    """Replaces URL params"""
-    if query_mode:
-        query_char = "?"
-        splitter = "&"
-    else:
-        splitter = PARAM_SPLITTER
-        query_char = PARAM_SPLITTER
+    """Replaces URL params.
+
+    In query mode, uses '?' as the query initiator and '&' as the separator.
+    In params (non-query) mode, uses PARAM_SPLITTER (';') for both initiator
+    and separator, producing URLs like ``url;key=val;key2=val2``.
+    """
+    splitter = "&" if query_mode else PARAM_SPLITTER
+    query_char = "?" if query_mode else PARAM_SPLITTER
     parsed = urlparse(url)
     finalparams = []
     for key, value in params.items():

@@ -64,6 +64,7 @@ class TestCLICommands:
         """Test run command"""
         mock_project_builder = Mock()
         mock_project_builder.run = Mock()
+        mock_project_builder.config_format = "yaml"
         mock_project_builder_class.return_value = mock_project_builder
         
         runner = typer.testing.CliRunner()
@@ -75,6 +76,27 @@ class TestCLICommands:
             result = runner.invoke(app, ["run", "full"])
             # May succeed or fail depending on config
             assert result.exit_code in [0, 1]
+            mock_project_builder.run.assert_called_with("full", resume=False)
+        finally:
+            os.chdir(original_cwd)
+
+    @patch('apibackuper.core.ProjectBuilder')
+    def test_run_command_resume(self, mock_project_builder_class, sample_config_ini):
+        """Test run command with resume flag"""
+        mock_project_builder = Mock()
+        mock_project_builder.run = Mock()
+        mock_project_builder.config_format = "yaml"
+        mock_project_builder_class.return_value = mock_project_builder
+
+        runner = typer.testing.CliRunner()
+
+        project_dir = os.path.dirname(sample_config_ini)
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(project_dir)
+            result = runner.invoke(app, ["run", "full", "--resume"])
+            assert result.exit_code in [0, 1]
+            mock_project_builder.run.assert_called_with("full", resume=True)
         finally:
             os.chdir(original_cwd)
     
@@ -87,6 +109,7 @@ class TestCLICommands:
             "configuration": {"page_limit": 10}
         }
         mock_project_builder.info = Mock(return_value=mock_report)
+        mock_project_builder.config_format = "yaml"
         mock_project_builder_class.return_value = mock_project_builder
         
         runner = typer.testing.CliRunner()
@@ -110,6 +133,7 @@ class TestCLICommands:
             "configuration": {"page_limit": 10}
         }
         mock_project_builder.info = Mock(return_value=mock_report)
+        mock_project_builder.config_format = "yaml"
         mock_project_builder_class.return_value = mock_project_builder
         
         runner = typer.testing.CliRunner()
@@ -134,6 +158,7 @@ class TestCLICommands:
         """Test estimate command"""
         mock_project_builder = Mock()
         mock_project_builder.estimate = Mock()
+        mock_project_builder.config_format = "yaml"
         mock_project_builder_class.return_value = mock_project_builder
         
         runner = typer.testing.CliRunner()
@@ -153,6 +178,7 @@ class TestCLICommands:
         """Test export command"""
         mock_project_builder = Mock()
         mock_project_builder.export = Mock()
+        mock_project_builder.config_format = "yaml"
         mock_project_builder_class.return_value = mock_project_builder
         
         runner = typer.testing.CliRunner()
@@ -166,12 +192,38 @@ class TestCLICommands:
             assert result.exit_code in [0, 1]
         finally:
             os.chdir(original_cwd)
+
+    @patch('apibackuper.core.ProjectBuilder')
+    def test_export_command_fields_where(self, mock_project_builder_class, sample_config_ini):
+        """Test export command with fields and where"""
+        mock_project_builder = Mock()
+        mock_project_builder.export = Mock()
+        mock_project_builder.config_format = "yaml"
+        mock_project_builder_class.return_value = mock_project_builder
+
+        runner = typer.testing.CliRunner()
+
+        project_dir = os.path.dirname(sample_config_ini)
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(project_dir)
+            result = runner.invoke(app, ["export", "output.jsonl", "--fields", "id,name", "--where", "id >= 1"])
+            assert result.exit_code in [0, 1]
+            mock_project_builder.export.assert_called_with(
+                "jsonl",
+                "output.jsonl",
+                fields=["id", "name"],
+                where="id >= 1"
+            )
+        finally:
+            os.chdir(original_cwd)
     
     @patch('apibackuper.core.ProjectBuilder')
     def test_validate_config_command(self, mock_project_builder_class, sample_config_ini):
         """Test validate_config command"""
         mock_project_builder = Mock()
         mock_project_builder.validate_config = Mock(return_value=True)
+        mock_project_builder.config_format = "yaml"
         mock_project_builder_class.return_value = mock_project_builder
         
         runner = typer.testing.CliRunner()
@@ -191,6 +243,7 @@ class TestCLICommands:
         """Test validate_config command with invalid config"""
         mock_project_builder = Mock()
         mock_project_builder.validate_config = Mock(return_value=False)
+        mock_project_builder.config_format = "yaml"
         mock_project_builder_class.return_value = mock_project_builder
         
         runner = typer.testing.CliRunner()
@@ -210,6 +263,7 @@ class TestCLICommands:
         """Test follow command"""
         mock_project_builder = Mock()
         mock_project_builder.follow = Mock()
+        mock_project_builder.config_format = "yaml"
         mock_project_builder_class.return_value = mock_project_builder
         
         runner = typer.testing.CliRunner()
@@ -229,6 +283,7 @@ class TestCLICommands:
         """Test getfiles command"""
         mock_project_builder = Mock()
         mock_project_builder.getfiles = Mock()
+        mock_project_builder.config_format = "yaml"
         mock_project_builder_class.return_value = mock_project_builder
         
         runner = typer.testing.CliRunner()
@@ -243,3 +298,42 @@ class TestCLICommands:
         finally:
             os.chdir(original_cwd)
 
+    @patch('apibackuper.core.ProjectBuilder')
+    def test_update_command(self, mock_project_builder_class, sample_config_ini):
+        """Test update command"""
+        mock_project_builder = Mock()
+        mock_project_builder.update = Mock()
+        mock_project_builder.config_format = "yaml"
+        mock_project_builder_class.return_value = mock_project_builder
+
+        runner = typer.testing.CliRunner()
+
+        project_dir = os.path.dirname(sample_config_ini)
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(project_dir)
+            result = runner.invoke(app, ["update"])
+            assert result.exit_code in [0, 1]
+            mock_project_builder.update.assert_called_with(resume=False)
+        finally:
+            os.chdir(original_cwd)
+
+    @patch('apibackuper.core.ProjectBuilder')
+    def test_detect_command(self, mock_project_builder_class, sample_config_ini):
+        """Test detect command"""
+        mock_project_builder = Mock()
+        mock_project_builder.detect = Mock(return_value={"iterate_by": "page"})
+        mock_project_builder.config_format = "yaml"
+        mock_project_builder_class.return_value = mock_project_builder
+
+        runner = typer.testing.CliRunner()
+
+        project_dir = os.path.dirname(sample_config_ini)
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(project_dir)
+            result = runner.invoke(app, ["detect"])
+            assert result.exit_code == 0
+            mock_project_builder.detect.assert_called_with(write_config=False)
+        finally:
+            os.chdir(original_cwd)
