@@ -1,7 +1,7 @@
 # GitHub Pages deployment setup
 
 This document describes how apibackuper documentation is deployed to GitHub
-Pages at `https://ruarxive.github.io/apibackuper/`.
+Pages at `https://ruarxive.org/apibackuper/`.
 
 ## Prerequisites
 
@@ -13,12 +13,12 @@ Pages at `https://ruarxive.github.io/apibackuper/`.
 The documentation is configured in `docs/docusaurus.config.js` for project-site
 deployment from this repository:
 
-- **URL**: `https://ruarxive.github.io`
+- **URL**: `https://ruarxive.org`
 - **Base URL**: `/apibackuper/`
 - **Organization**: `ruarxive`
 - **Project**: `apibackuper`
 
-The published site is available at `https://ruarxive.github.io/apibackuper/`.
+The published site is available at `https://ruarxive.org/apibackuper/`.
 
 ## Setup steps
 
@@ -38,7 +38,7 @@ The published site is available at `https://ruarxive.github.io/apibackuper/`.
 
 3. **Verify deployment**:
    - After the workflow completes, the site is available at
-     `https://ruarxive.github.io/apibackuper/`
+     `https://ruarxive.org/apibackuper/`
    - Deployment typically takes 1–2 minutes
 
 ## Moving to a custom domain or user site

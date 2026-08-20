@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://ruarxive.github.io/apibackuper/sitemap.xml
+Sitemap: https://ruarxive.org/apibackuper/sitemap.xml

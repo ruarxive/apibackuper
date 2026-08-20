@@ -72,7 +72,7 @@ docs/
 ## Deployment
 
 The documentation is deployed to GitHub Pages at
-[ruarxive.github.io/apibackuper](https://ruarxive.github.io/apibackuper/) when
+[ruarxive.org/apibackuper](https://ruarxive.org/apibackuper/) when
 changes are pushed to `master`. The workflow lives in
 `.github/workflows/deploy-docs.yml`.
 

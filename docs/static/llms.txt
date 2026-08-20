@@ -4,35 +4,35 @@ apibackuper commands grouped the same way as the documentation sidebar.
 
 ## Getting started
 
-- [Installation](https://ruarxive.github.io/apibackuper/getting-started/installation)
-- [Quick start](https://ruarxive.github.io/apibackuper/getting-started/quick-start)
-- [When to use](https://ruarxive.github.io/apibackuper/getting-started/when-to-use)
-- [Cookbook](https://ruarxive.github.io/apibackuper/getting-started/cookbook)
-- [Troubleshooting](https://ruarxive.github.io/apibackuper/getting-started/troubleshooting)
+- [Installation](https://ruarxive.org/apibackuper/getting-started/installation)
+- [Quick start](https://ruarxive.org/apibackuper/getting-started/quick-start)
+- [When to use](https://ruarxive.org/apibackuper/getting-started/when-to-use)
+- [Cookbook](https://ruarxive.org/apibackuper/getting-started/cookbook)
+- [Troubleshooting](https://ruarxive.org/apibackuper/getting-started/troubleshooting)
 
 ## Commands
 
-- [Command index](https://ruarxive.github.io/apibackuper/commands/)
-- [create](https://ruarxive.github.io/apibackuper/commands/create)
-- [detect](https://ruarxive.github.io/apibackuper/commands/detect)
-- [estimate](https://ruarxive.github.io/apibackuper/commands/estimate)
-- [run](https://ruarxive.github.io/apibackuper/commands/run)
-- [update](https://ruarxive.github.io/apibackuper/commands/update)
-- [follow](https://ruarxive.github.io/apibackuper/commands/follow)
-- [getfiles](https://ruarxive.github.io/apibackuper/commands/getfiles)
-- [export](https://ruarxive.github.io/apibackuper/commands/export)
-- [info](https://ruarxive.github.io/apibackuper/commands/info)
-- [validate-config](https://ruarxive.github.io/apibackuper/commands/validate-config)
+- [Command index](https://ruarxive.org/apibackuper/commands/)
+- [create](https://ruarxive.org/apibackuper/commands/create)
+- [detect](https://ruarxive.org/apibackuper/commands/detect)
+- [estimate](https://ruarxive.org/apibackuper/commands/estimate)
+- [run](https://ruarxive.org/apibackuper/commands/run)
+- [update](https://ruarxive.org/apibackuper/commands/update)
+- [follow](https://ruarxive.org/apibackuper/commands/follow)
+- [getfiles](https://ruarxive.org/apibackuper/commands/getfiles)
+- [export](https://ruarxive.org/apibackuper/commands/export)
+- [info](https://ruarxive.org/apibackuper/commands/info)
+- [validate-config](https://ruarxive.org/apibackuper/commands/validate-config)
 
 ## Configuration
 
-- [Overview](https://ruarxive.github.io/apibackuper/configuration/)
-- [Pagination](https://ruarxive.github.io/apibackuper/configuration/pagination)
-- [Authentication](https://ruarxive.github.io/apibackuper/configuration/auth)
-- [Storage](https://ruarxive.github.io/apibackuper/configuration/storage)
-- [Full reference](https://ruarxive.github.io/apibackuper/configuration/reference)
+- [Overview](https://ruarxive.org/apibackuper/configuration/)
+- [Pagination](https://ruarxive.org/apibackuper/configuration/pagination)
+- [Authentication](https://ruarxive.org/apibackuper/configuration/auth)
+- [Storage](https://ruarxive.org/apibackuper/configuration/storage)
+- [Full reference](https://ruarxive.org/apibackuper/configuration/reference)
 
 ## Examples
 
-- [Example projects](https://ruarxive.github.io/apibackuper/examples/)
-- [Templates](https://ruarxive.github.io/apibackuper/examples/templates)
+- [Example projects](https://ruarxive.org/apibackuper/examples/)
+- [Templates](https://ruarxive.org/apibackuper/examples/templates)

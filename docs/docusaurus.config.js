@@ -10,7 +10,7 @@ const config = {
   tagline: 'Command-line tool to archive and backup REST APIs',
   favicon: 'img/favicon.svg',
 
-  url: 'https://ruarxive.github.io',
+  url: 'https://ruarxive.org',
   baseUrl: '/apibackuper/',
 
   organizationName: 'ruarxive',
@@ -78,7 +78,7 @@ const config = {
             position: 'left',
           },
           {
-            href: 'https://ruarxive.github.io/apibackuper/llms.txt',
+            href: 'https://ruarxive.org/apibackuper/llms.txt',
             label: 'llms.txt',
             position: 'right',
           },
@@ -122,7 +122,7 @@ const config = {
             items: [
               {
                 label: 'llms.txt',
-                href: 'https://ruarxive.github.io/apibackuper/llms.txt',
+                href: 'https://ruarxive.org/apibackuper/llms.txt',
               },
               {
                 label: 'Cookbook',

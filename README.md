@@ -23,16 +23,16 @@ repeatable, long-running backups rather than one-off HTTP requests.
 ## Documentation
 
 The full documentation site (Docusaurus) lives in [`docs/`](docs/) and is
-published at **[ruarxive.github.io/apibackuper](https://ruarxive.github.io/apibackuper/)**.
+published at **[ruarxive.org/apibackuper](https://ruarxive.org/apibackuper/)**.
 
 | Section | What it covers |
 |---------|----------------|
-| [Getting started](https://ruarxive.github.io/apibackuper/getting-started/installation) | Install, quick start, positioning |
-| [Cookbook](https://ruarxive.github.io/apibackuper/getting-started/cookbook) | Task index by goal |
-| [CLI reference](https://ruarxive.github.io/apibackuper/commands/) | Every command |
-| [Configuration](https://ruarxive.github.io/apibackuper/configuration/) | YAML sections and field reference |
-| [Examples](https://ruarxive.github.io/apibackuper/examples/) | Working projects and templates |
-| [Troubleshooting](https://ruarxive.github.io/apibackuper/getting-started/troubleshooting) | SSL, pagination, rate limits |
+| [Getting started](https://ruarxive.org/apibackuper/getting-started/installation) | Install, quick start, positioning |
+| [Cookbook](https://ruarxive.org/apibackuper/getting-started/cookbook) | Task index by goal |
+| [CLI reference](https://ruarxive.org/apibackuper/commands/) | Every command |
+| [Configuration](https://ruarxive.org/apibackuper/configuration/) | YAML sections and field reference |
+| [Examples](https://ruarxive.org/apibackuper/examples/) | Working projects and templates |
+| [Troubleshooting](https://ruarxive.org/apibackuper/getting-started/troubleshooting) | SSL, pagination, rate limits |
 
 Source pages: [`docs/docs/`](docs/docs/). Changelog: [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -82,7 +82,7 @@ apibackuper export etrust.jsonl
 ```
 
 A worked POST API example is in the
-[quick start](https://ruarxive.github.io/apibackuper/getting-started/quick-start).
+[quick start](https://ruarxive.org/apibackuper/getting-started/quick-start).
 Starter YAML files are in `examples/templates/`.
 
 ## Commands
@@ -107,7 +107,7 @@ apibackuper run --help
 
 ## Contributing
 
-See the [development docs](https://ruarxive.github.io/apibackuper/development/contributing).
+See the [development docs](https://ruarxive.org/apibackuper/development/contributing).
 
 ## License
 
@@ -115,7 +115,7 @@ MIT License — see [LICENSE](LICENSE).
 
 ## Links
 
-- [Documentation](https://ruarxive.github.io/apibackuper/)
+- [Documentation](https://ruarxive.org/apibackuper/)
 - [GitHub](https://github.com/datacoon/apibackuper)
 - [PyPI](https://pypi.org/project/apibackuper/)
 - [Changelog](CHANGELOG.md)

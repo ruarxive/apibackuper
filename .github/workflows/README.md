@@ -75,7 +75,7 @@ Security analysis using GitHub's CodeQL.
 ### 4. Deploy Documentation (`deploy-docs.yml`)
 
 Builds the Docusaurus site in `docs/` and publishes it to GitHub Pages at
-`https://ruarxive.github.io/apibackuper/`.
+`https://ruarxive.org/apibackuper/`.
 
 **Triggers:**
 - Push to `master` or `main` that touches `docs/` or this workflow file

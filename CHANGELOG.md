@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Docs**: Docusaurus documentation site in `docs/`, organized like undatum (getting started, CLI reference, configuration, examples) and ready for GitHub Pages at `https://ruarxive.github.io/apibackuper/`
+- **Docs**: Docusaurus documentation site in `docs/`, organized like undatum (getting started, CLI reference, configuration, examples) and ready for GitHub Pages at `https://ruarxive.org/apibackuper/`
 - **Security**: SSL certificate verification is now configurable in `follow`, `estimate`, and `getfiles` modes (previously hardcoded to disabled)
 - **Security**: Path traversal prevention in filesystem storage
 - **Security**: SQL injection prevention in SQLite storage backend via table name allowlist

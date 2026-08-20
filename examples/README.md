@@ -1,6 +1,6 @@
 # List of examples
 
-See the [examples section](https://ruarxive.github.io/apibackuper/examples/) of
+See the [examples section](https://ruarxive.org/apibackuper/examples/) of
 the documentation site for descriptions and templates.
 
 * budgetreg - registry of budget orgs at budget.gov.ru
