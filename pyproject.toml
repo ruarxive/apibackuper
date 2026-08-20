@@ -71,7 +71,7 @@ dev = [
 
 [project.urls]
 Homepage = "https://github.com/datacoon/apibackuper/"
-Documentation = "https://github.com/datacoon/apibackuper/"
+Documentation = "https://ruarxive.github.io/apibackuper/"
 Repository = "https://github.com/datacoon/apibackuper/"
 Issues = "https://github.com/datacoon/apibackuper/issues"
 Download = "https://github.com/datacoon/apibackuper/"

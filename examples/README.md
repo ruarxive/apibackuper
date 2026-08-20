@@ -1,4 +1,8 @@
 # List of examples
+
+See the [examples section](https://ruarxive.github.io/apibackuper/examples/) of
+the documentation site for descriptions and templates.
+
 * budgetreg - registry of budget orgs at budget.gov.ru
 * budgetrgz - registry of budget tasks from budget.gov.ru
 * budgettofk - list of Federal treasury branches from budget.gov.ru

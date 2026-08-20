@@ -72,7 +72,19 @@ Security analysis using GitHub's CodeQL.
 - Weekly schedule (Sunday at midnight)
 - Manual workflow dispatch
 
-### 4. Dependency Review (`dependency-review.yml`)
+### 4. Deploy Documentation (`deploy-docs.yml`)
+
+Builds the Docusaurus site in `docs/` and publishes it to GitHub Pages at
+`https://ruarxive.github.io/apibackuper/`.
+
+**Triggers:**
+- Push to `master` or `main` that touches `docs/` or this workflow file
+- Manual workflow dispatch
+
+**Setup:** In repository **Settings → Pages**, set **Source** to **GitHub Actions**.
+See `docs/GITHUB_PAGES_SETUP.md`.
+
+### 5. Dependency Review (`dependency-review.yml`)
 
 Reviews dependencies in pull requests for security vulnerabilities.
 
@@ -134,7 +146,7 @@ Now checks will run automatically on `git commit`.
 
 ## Badges
 
-Add these badges to your README.md:
+Add these badges to your README.md (optional):
 
 ```markdown
 ![CI](https://github.com/yourusername/apibackuper/workflows/CI/badge.svg)
