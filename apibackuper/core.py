@@ -190,7 +190,7 @@ def _handle_cli_errors(func):
                     f"  Suggestions:\n"
                     f"    - Export the variable: export {e.name}=...\n"
                     f"    - Or set it in your shell profile / .env file\n"
-                    f"    - Or use \${{{e.name}:-default}} to provide an inline default"
+                    rf"    - Or use ${{{e.name}:-default}} to provide an inline default"
                 )
                 sys.exit(2)
             raise
