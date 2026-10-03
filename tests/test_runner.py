@@ -330,3 +330,41 @@ class TestParseTotalPages:
             page_size_limit=10,
         )
         assert num_pages == DEFAULT_NUMBER_OF_PAGES
+
+    def test_close_progress_handles_exceptions(self):
+        """``close_progress`` swallows exceptions from the bar's close()
+        so a malformed progress bar can't fail the run."""
+        from apibackuper.cmds.runner import fetch_all_pages
+
+        broken_bar = MagicMock()
+        broken_bar.close.side_effect = Exception("tqdm broke")
+
+        # Set up a single-page run with a broken progress bar.
+        def fetch_one(page):
+            return {"status": 200, "content": b"{}", "error": None}
+
+        def on_page(page, content):
+            return True
+
+        storage = MagicMock()
+        storage.save_page = MagicMock()
+
+        # Should not raise despite broken_bar.close() raising.
+        result = fetch_all_pages(
+            pages=[1],
+            parallelism=1,
+            fetch_one=fetch_one,
+            on_page=on_page,
+            should_retry=lambda s: False,
+            retry_max_retries=1,
+            max_consecutive_errors=10,
+            continue_on_error=True,
+            storage_backend=storage,
+            progress_bar=broken_bar,
+            start_timer=0.0,
+            total_pages=1,
+            checkpoint_interval=None,
+            save_checkpoint=lambda x: None,
+        )
+        # close() was attempted (and failed internally — swallowed).
+        broken_bar.close.assert_called_once()
