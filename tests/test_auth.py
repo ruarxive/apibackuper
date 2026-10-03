@@ -263,7 +263,75 @@ class TestAuthHandler:
         mock_session = Mock()
         
         result = handler.refresh_token_if_needed(mock_session)
-        
+
         assert result is False
         mock_session.post.assert_not_called()
+
+    def test_refresh_token_rotates_when_idp_returns_new_one(self):
+        """P2.24: a refresh response with a new ``refresh_token`` field
+        must update ``self.auth_data['refresh_token']`` so the next
+        refresh cycle uses it. Without this, a single-use refresh token
+        would lock the user out after one rotation.
+        """
+        config = configparser.ConfigParser()
+        config.add_section("auth")
+        config.set("auth", "type", "oauth2")
+        config.set("auth", "client_id", "my-client")
+        config.set("auth", "client_secret", "secret")
+        config.set("auth", "refresh_token", "old-refresh-token")
+        config.set("auth", "auth_url", "https://idp.example.com/oauth/token")
+        config.set("auth", "verify_ssl", "true")
+
+        handler = AuthHandler(config)
+        assert handler.auth_type == "oauth2"
+        assert handler.auth_data["refresh_token"] == "old-refresh-token"
+
+        # The IdP returns a new refresh_token alongside the new access_token.
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "access_token": "new-access-token",
+            "refresh_token": "rotated-refresh-token",
+        }
+        mock_response.raise_for_status = Mock()
+
+        mock_session = Mock()
+        mock_session.post.return_value = mock_response
+
+        result = handler.refresh_token_if_needed(mock_session)
+        assert result is True
+        # Both fields updated.
+        assert handler.auth_data["token"] == "new-access-token"
+        assert handler.auth_data["refresh_token"] == "rotated-refresh-token"
+
+    def test_refresh_token_keeps_old_when_idp_omits_new_one(self):
+        """If the IdP does NOT return a new ``refresh_token``, the
+        existing one is reused. Some IdPs (RFC 6749 §6) only return
+        a new refresh token when it actually rotated."""
+        config = configparser.ConfigParser()
+        config.add_section("auth")
+        config.set("auth", "type", "oauth2")
+        config.set("auth", "client_id", "my-client")
+        config.set("auth", "client_secret", "secret")
+        config.set("auth", "refresh_token", "stable-refresh-token")
+        config.set("auth", "auth_url", "https://idp.example.com/oauth/token")
+        config.set("auth", "verify_ssl", "true")
+
+        handler = AuthHandler(config)
+
+        # No refresh_token field in the response.
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "access_token": "new-access-token",
+        }
+        mock_response.raise_for_status = Mock()
+
+        mock_session = Mock()
+        mock_session.post.return_value = mock_response
+
+        handler.refresh_token_if_needed(mock_session)
+        assert handler.auth_data["token"] == "new-access-token"
+        # Old refresh_token preserved.
+        assert handler.auth_data["refresh_token"] == "stable-refresh-token"
 
