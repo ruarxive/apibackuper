@@ -12,7 +12,7 @@
 ## 3. Deprecation
 - [x] 3.1 Add deprecation warnings to `FileStorage`, `ZipFileStorage`, `FilesystemStorage`
 - [ ] 3.2 Update tests to use new backend classes — legacy test classes still exist alongside new ones
-- [ ] 3.3 Document migration path in README — pending
+- [x] 3.3 Document migration path in README
 
 ## 4. Security Fix
 - [x] 4.1 Fix SQL injection pattern in `SqliteStorageBackend` (use allowlist for table names)
