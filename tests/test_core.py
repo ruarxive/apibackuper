@@ -5,6 +5,10 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 import typer.testing
 from apibackuper.core import app, enable_verbose
+from apibackuper.core import (
+    _slugify_project_name,
+    _build_detect_config,
+)
 
 
 class TestCLICommands:
@@ -543,6 +547,78 @@ class TestCliErrorHandler:
             assert "ValueError" in result.output
         finally:
             os.chdir(original_cwd)
+
+
+class TestSlugifyProjectName:
+    """``_slugify_project_name`` strips non-identifier chars from a
+    URL-derived seed."""
+
+    def test_simple_netloc(self):
+        # Dots are NOT in [a-zA-Z0-9_-], so they become '-'.
+        assert _slugify_project_name("api.example.com") == "api-example-com"
+
+    def test_replaces_special_chars_with_dash(self):
+        # path with slash and colon-like chars
+        result = _slugify_project_name("foo/bar:baz")
+        # Non [a-zA-Z0-9_-] → '-'
+        assert "/" not in result
+        assert ":" not in result
+
+    def test_strips_leading_and_trailing_dashes(self):
+        assert _slugify_project_name("---hello---") == "hello"
+
+    def test_empty_input_returns_default(self):
+        # All stripped, falls back to "apibackuper-project".
+        assert _slugify_project_name("") == "apibackuper-project"
+        assert _slugify_project_name("///") == "apibackuper-project"
+
+    def test_unicode_dropped(self):
+        # Only a-zA-Z0-9_- retained; unicode becomes dash → stripped.
+        assert _slugify_project_name("café") == "caf"
+
+
+class TestBuildDetectConfig:
+    """``_build_detect_config`` produces a minimal YAML-ready project
+    stub given just a URL."""
+
+    def test_url_carried_into_project_section(self):
+        cfg = _build_detect_config("https://api.example.com/items")
+        assert cfg["project"]["url"] == "https://api.example.com/items"
+
+    def test_default_http_mode_is_get(self):
+        cfg = _build_detect_config("https://api.example.com/items")
+        assert cfg["project"]["http_mode"] == "GET"
+
+    def test_default_resp_type_is_json(self):
+        cfg = _build_detect_config("https://api.example.com/items")
+        assert cfg["project"]["resp_type"] == "json"
+
+    def test_default_page_size_is_100(self):
+        cfg = _build_detect_config("https://api.example.com/items")
+        assert cfg["params"]["page_size_limit"] == 100
+
+    def test_default_storage_is_zip(self):
+        cfg = _build_detect_config("https://api.example.com/items")
+        assert cfg["storage"]["storage_type"] == "zip"
+
+    def test_settings_name_is_slugified_netloc(self):
+        cfg = _build_detect_config("https://api.example.com/items")
+        # Dots become dashes during slugification.
+        assert cfg["settings"]["name"] == "api-example-com"
+
+    def test_settings_initialized_is_false(self):
+        cfg = _build_detect_config("https://api.example.com/items")
+        assert cfg["settings"]["initialized"] is False
+
+    def test_url_with_path_uses_segment_as_name_seed(self):
+        # When netloc is empty, fall back to first path segment.
+        cfg = _build_detect_config("/api/v1/items")
+        assert cfg["settings"]["name"] == "api"
+
+    def test_url_with_no_netloc_or_path_uses_default_name(self):
+        # Edge case: only a fragment, no useful name.
+        cfg = _build_detect_config("#frag")
+        assert cfg["settings"]["name"] == "apibackuper-project"
 
 
 class TestProfileFlag:
