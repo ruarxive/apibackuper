@@ -489,6 +489,62 @@ class TestUnresolvedEnvVarCliError:
             os.chdir(original_cwd)
 
 
+class TestCliErrorHandler:
+    """The ``_handle_cli_errors`` decorator wraps every command. Each
+    exception class must map to a user-actionable error message and a
+    well-defined exit code."""
+
+    @patch('apibackuper.core.ProjectBuilder')
+    def test_file_not_found_exits_with_suggestions(self, mock_pbc, sample_config_ini):
+        mock_pbc.return_value._load_state.side_effect = FileNotFoundError(
+            "no such file"
+        )
+        runner = typer.testing.CliRunner()
+        project_dir = os.path.dirname(sample_config_ini)
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(project_dir)
+            result = runner.invoke(app, ["run", "full", "--profile"])
+            assert result.exit_code == 1
+            assert "Required file not found" in result.output
+            assert "--projectpath" in result.output
+            assert "apibackuper create" in result.output
+        finally:
+            os.chdir(original_cwd)
+
+    @patch('apibackuper.core.ProjectBuilder')
+    def test_permission_denied_exits_with_suggestions(self, mock_pbc, sample_config_ini):
+        mock_pbc.return_value._load_state.side_effect = PermissionError(
+            "denied"
+        )
+        runner = typer.testing.CliRunner()
+        project_dir = os.path.dirname(sample_config_ini)
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(project_dir)
+            result = runner.invoke(app, ["run", "full", "--profile"])
+            assert result.exit_code == 1
+            assert "Permission denied" in result.output
+            assert "permissions" in result.output
+        finally:
+            os.chdir(original_cwd)
+
+    @patch('apibackuper.core.ProjectBuilder')
+    def test_generic_value_error_exits_with_type(self, mock_pbc, sample_config_ini):
+        mock_pbc.return_value._load_state.side_effect = ValueError("oops")
+        runner = typer.testing.CliRunner()
+        project_dir = os.path.dirname(sample_config_ini)
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(project_dir)
+            result = runner.invoke(app, ["run", "full", "--profile"])
+            assert result.exit_code == 1
+            assert "Operation failed" in result.output
+            assert "ValueError" in result.output
+        finally:
+            os.chdir(original_cwd)
+
+
 class TestProfileFlag:
     """P4 (add-dry-run-mode): ``--profile`` prints a JSON estimate
     sub-dict sourced from ``cmds.profile.compute_profile_estimate``.
