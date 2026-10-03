@@ -418,6 +418,61 @@ class TestCLICommands:
         finally:
             os.chdir(original_cwd)
 
+    @patch('apibackuper.core.ProjectBuilder')
+    def test_detect_with_url_emits_yaml_to_stdout(
+        self, mock_project_builder_class, tmp_path, sample_config_ini
+    ):
+        """``detect --url <URL>`` emits a YAML config scaffold to stdout
+        without writing to disk. Pins the ``else: typer.echo(...)`` branch."""
+        mock_project_builder = Mock()
+        mock_project_builder.detect = Mock(return_value={
+            "iterate_by": "page",
+            "data_key": "items",
+        })
+        mock_project_builder.config_format = "yaml"
+        mock_project_builder_class.return_value = mock_project_builder
+
+        runner = typer.testing.CliRunner()
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(str(tmp_path))
+            result = runner.invoke(app, ["detect", "--url", "https://api.example.com/items"])
+            assert result.exit_code == 0
+            # The scaffold YAML contains the URL we passed in.
+            assert "https://api.example.com/items" in result.stdout
+            # No apibackuper.yaml was written to disk.
+            assert not (tmp_path / "apibackuper.yaml").exists()
+        finally:
+            os.chdir(original_cwd)
+
+    @patch('apibackuper.core.ProjectBuilder')
+    def test_detect_with_url_and_write_config_writes_file(
+        self, mock_project_builder_class, tmp_path, sample_config_ini
+    ):
+        """``detect --url <URL> --write-config`` writes to the project dir.
+        Pins the ``if write_config:`` branch + ``raise RuntimeError`` on
+        existing-file collision."""
+        mock_project_builder = Mock()
+        mock_project_builder.detect = Mock(return_value={})
+        mock_project_builder.config_format = "yaml"
+        mock_project_builder_class.return_value = mock_project_builder
+
+        runner = typer.testing.CliRunner()
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(str(tmp_path))
+            result = runner.invoke(
+                app,
+                ["detect", "--url", "https://api.example.com/items",
+                 "--write-config"],
+            )
+            assert result.exit_code == 0
+            written = tmp_path / "apibackuper.yaml"
+            assert written.exists()
+            assert "https://api.example.com/items" in written.read_text()
+        finally:
+            os.chdir(original_cwd)
+
 
 class TestDryRunFlag:
     """``--dry-run`` is an alias for ``--profile`` on the ``run`` command
