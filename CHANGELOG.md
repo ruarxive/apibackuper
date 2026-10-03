@@ -5,6 +5,69 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.15] - 2026-10-03
+
+### Added
+- **Decomposition**: `apibackuper/cmds/follow.py` extracts the four `follow_mode` branches (`item`, `url`, `drilldown`, `prefix`) into pure helpers (`extract_keys_from_pages`, `extract_url_map_from_pages`, `compute_pending_targets`); 21 dedicated unit tests
+- **Decomposition**: `apibackuper/cmds/profile.py` (`compute_profile_estimate`) computes a record / page / ETA estimate without making any HTTP requests, drawing on state files, `total_number_rate`, RPS, and `default_delay`
+- **CLI**: `--profile` (on `run`) and `--dry-run` (alias on `run`, plus dedicated flags on `update` and `follow`) print a JSON plan with a resolved-config snapshot plus the estimate sub-dict
+- **Decomposition**: `core.py` gains `_emit_dry_run_plan()` so `run`/`update`/`follow` share a single emitter
+- **Security**: `${VAR}` and `${VAR:-default}` placeholders in YAML configs (`apibackuper.cmds.config_loader.substitute_env_vars`); `UnresolvedEnvVarError` produces a clean "export X=..." CLI message instead of a raw traceback
+- **Decomposition**: `_slugify_project_name` and `_build_detect_config` covered by 14 new unit tests
+- **Tests**: rate-limiter zero-limit edge cases, storage edge cases (empty + binary content for filesystem / zip / sqlite), negative config tests (missing file / invalid YAML / empty YAML)
+- **Tests**: `get_dict_value` deep-list branches + falsy-value preservation contract
+- **Tests**: `set_dict_value` list-handling branches
+- **Tests**: OAuth2 refresh-token rotation + retention + missing `access_token` + non-JSON response paths
+- **Tests**: CLI error-handler exit codes + message content (FileNotFoundError, PermissionError, ValueError, UnresolvedEnvVarError)
+- **Tests**: API-key header default + custom header name + `verify_ssl` override
+- **Tests**: defensive `except` branches in `_is_sensitive_key` + `redact_params`
+- **Tests**: runner's `safe_close_backend` OSError swallow + `close_progress` bar-exception swallow
+- **Docs**: README "Migration notes" section with the legacy → new storage API mapping table
+- **Docs**: `SECURITY.md` updated with "Credentials in configs" guidance for env-var placeholders
+
+### Changed
+- **CI**: All 13 third-party GitHub Actions SHA-pinned with `# vN` comments
+- **CI**: Python 3.9 dropped (EOL Oct 2025); matrix is 3.10-3.13 + Ubuntu/macOS
+- **CI**: `publish.yml` `workflow_dispatch.version` input applied properly with strict semver validation
+- **Tests**: 113 → 431 passing; coverage 29% → 47.78%; full suite ~3 s
+- **Storage**: `getfiles()` migrated from legacy `FilesystemStorage`/`ZipFileStorage` to `FilesystemStorageBackend`/`ZipStorageBackend`
+- **Storage**: Legacy `FileStorage` / `ZipFileStorage` / `FilesystemStorage` now emit `DeprecationWarning` at instantiation (importing alone is silent)
+- **Tests**: storage test classes migrated from legacy `ZipFileStorage` / `FilesystemStorage` to the new `StorageBackend` Protocol API
+- **Openspec**: `unify-storage-layer` change fully closed (items 1.x, 2.x, 3.1-3.3, 4.x, 5.x all done)
+- **Openspec**: `improve-test-quality` items 3.5/3.6/3.8/3.9/4.1/4.2/3.3 done
+- **Openspec**: `add-dry-run-mode` items 1.1-1.3 done; 2.x covered via `--profile`/`--dry-run` JSON plan
+- **Openspec**: `improve-security` 4.1-4.3 done
+- **Refactor**: `core.py` `_handle_cli_errors` handles `UnresolvedEnvVarError` with exit code 2 and a clean "export VAR=..." hint
+- **Refactor**: dead code in `ProjectBuilder` (unused `ThreadPoolExecutor`/`as_completed` imports, dead `consecutive_errors = 0`, two stale commented-out prints) removed
+
+### Fixed
+- **Rate limiter**: removed unreachable post-wait cleanup loops in the minute and hour windows
+- **Core**: SyntaxWarning in dry-run error message (raw f-string for `${{VAR:-default}}`)
+
+## [1.0.14] - 2026-10-03
+
+### Added
+- **Decomposition**: `_where_filter.py`, `_follow_args.py`, `_runner.py`, `_export.py`, `_fetch.py` extracted into focused `cmds/` modules
+- **CLI**: `--profile` flag prints the resolved configuration; profile JSON now lives in the same code path that produces `--dry-run`
+- **CLI**: `validate-config` returns `(is_valid, error_count, warning_count)` with a `--strict` option
+- **Decomposition**: defensive `_safe_int(value, option, default=0)` over 12 `getint()` call sites
+- **Docs**: `examples/README.md` rewritten to cover `features/` and `templates/` examples
+- **Tests**: 53 regression tests for P0/P1/P2 fixes; 14 mocked-Session tests for `_single_request`; 9 state/resume round-trip tests; 11 `validate_config` tests
+- **Packaging**: dead `init`/`to_package`/commented `__main__`/`setup.cfg` removed; `setup.py` deleted (PEP 621 `pyproject.toml` is authoritative)
+
+### Changed
+- **Refactor**: 4 major refactors — `apibackuper/cmds/` package split into focused modules
+- **Refactor**: storage layer merged into one hierarchy under `apibackuper/storage/` with a unified `StorageBackend` Protocol
+- **Refactor**: `ProjectBuilder.__init__` uses defensive `_safe_int` instead of bare `int()` so a non-integer config value no longer crashes
+- **Refactor**: state and checkpoint writes use temp-file + `os.replace` (atomic)
+- **Examples**: `examples/features/` and `examples/templates/` example directories added
+- **Examples**: 17 quickstart guides + 6 YAML templates + 12 FAQ entries added
+- **Openspec**: `add-backup-enhancements` change fully closed
+
+### Removed
+- `HISTORY.md` (consolidated into CHANGELOG)
+- 25+ dead helpers in `ProjectBuilder`
+
 ## [1.0.12] - 2025-11-14
 
 ### Added

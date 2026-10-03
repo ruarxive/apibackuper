@@ -12,9 +12,9 @@ try:
     try:
         __version__ = _pkg_version("apibackuper")
     except PackageNotFoundError:
-        __version__ = "1.0.14"
+        __version__ = "1.0.15"
 except ImportError:  # pragma: no cover - py<3.8 (project requires >=3.8)
-    __version__ = "1.0.14"
+    __version__ = "1.0.15"
 
 __author__ = "Ivan Begtin"
 __license__ = "MIT"
