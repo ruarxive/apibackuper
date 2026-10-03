@@ -6,8 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to publish (e.g., 1.0.12)'
-        required: true
+        description: 'Override the package version to publish (e.g. 1.0.14). Leave blank to use pyproject.toml.'
+        required: false
+        default: ''
         type: string
 
 jobs:
@@ -20,31 +21,48 @@ jobs:
     permissions:
       id-token: write  # Required for trusted publishing
       contents: read   # Required for checkout
-    
+
     steps:
-      - uses: actions/checkout@v4
-      
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Apply manual version override
+        if: ${{ inputs.version != '' }}
+        run: |
+          # Sanity-check the input and rewrite pyproject.toml before build.
+          # The release event ignores this input (no manual version override).
+          VERSION="${{ inputs.version }}"
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([a-z0-9\.-]+)?$'; then
+            echo "::error::Invalid version '$VERSION' (expected like 1.0.14)"
+            exit 1
+          fi
+          sed -i.bak -E "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
+          # Bump the runtime user-agent and __version__ fallback to match.
+          sed -i.bak -E "s|^    \"1\.0\.[0-9]+\"$|    \"$VERSION\"|" apibackuper/__init__.py
+          # Verify the change took effect.
+          grep -E "^version = \"" pyproject.toml
+          git diff --stat
+
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
           cache: 'pip'
-      
+
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
           pip install build twine
-      
+
       - name: Build package
         run: |
           python -m build
-      
+
       - name: Check package
         run: |
           twine check dist/*
-      
+
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: dist/
 
