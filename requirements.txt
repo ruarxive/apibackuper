@@ -1,11 +1,17 @@
 # apibackuper - Core Dependencies
-# Python 3.6+ required
 #
-# Install with: pip install -r requirements.txt
-# For development: pip install -r requirements-dev.txt
+# This file is kept for legacy `pip install -r requirements.txt` workflows.
+# The authoritative source of dependency metadata is ``pyproject.toml`` —
+# please update the version pins there first and regenerate this file with
+# ``pip-compile`` (or manually) when dependencies change.
+#
+# Optional dependencies (aria2p, pandas, pyarrow) are intentionally excluded
+# from this file so installing ``-r requirements.txt`` does not pull in
+# transitively huge packages that the package does not require to run.
+# Install them with ``pip install 'apibackuper[recommended]'`` instead.
+#
+# Python 3.8+ required.
 
-# Core required dependencies
-# These are the minimum dependencies needed to run apibackuper
 typer>=0.9.0
 lxml>=4.9.3
 urllib3>=2.0.6
@@ -14,14 +20,4 @@ xmltodict>=0.13.0
 PyYAML>=6.0
 jsonschema>=4.0.0
 tqdm>=4.66.0
-
-# zstandard: Required for Zstandard export format
 zstandard>=0.22.0
-
-# Optional but recommended dependencies
-# These enhance functionality but are not strictly required
-# aria2p: Faster file downloads using aria2
-aria2p>=0.11.3
-# pandas & pyarrow: Required for Parquet export format
-pandas>=2.0.0
-pyarrow>=12.0.0
