@@ -3118,9 +3118,13 @@ class ProjectBuilder:
                     with open(self.config_filename, "r", encoding="utf8") as fobj:
                         yaml_data = yaml.safe_load(fobj)
                     if yaml_data:
-                        yaml_data = substitute_env_vars(
-                            yaml_data, source=self.config_filename,
-                        )
+                        try:
+                            yaml_data = substitute_env_vars(
+                                yaml_data, source=self.config_filename,
+                            )
+                        except UnresolvedEnvVarError as e:
+                            errors.append(str(e))
+                            return False, len(errors), len(warnings)
 
                     if yaml_data:
                         is_valid, validation_errors = validate_yaml_config(yaml_data)

@@ -163,3 +163,22 @@ class TestValidateConfigReturnShape:
         assert errors == 0
         assert warnings >= 1
         assert is_valid is True
+
+    def test_unresolved_env_var_returns_error_not_crash(self, tmp_path, monkeypatch):
+        """Config with an unset ${VAR} must surface a clean error."""
+        monkeypatch.delenv("MY_SECRET_TOKEN", raising=False)
+        yaml_text = (
+            "data:\n"
+            "  url: https://api.example.com/items\n"
+            "  headers:\n"
+            "    Authorization: Bearer ${MY_SECRET_TOKEN}\n"
+        )
+        cfg_path = tmp_path / "apibackuper.yaml"
+        cfg_path.write_text(yaml_text)
+
+        builder = ProjectBuilder(str(tmp_path))
+        is_valid, errors, warnings = builder.validate_config(verbose=False)
+        # The unresolved env var must produce at least one error
+        # without crashing the validator.
+        assert is_valid is False
+        assert errors >= 1

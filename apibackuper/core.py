@@ -177,6 +177,23 @@ def _handle_cli_errors(func):
             logging.error("Error: %s", e)
             print(f"Error: {error_msg}")
             sys.exit(1)
+        except KeyError as e:
+            # UnresolvedEnvVarError is a KeyError subclass — give it a
+            # dedicated, user-actionable message ("you forgot to export X")
+            # rather than the generic ValueError/IOError fallback above.
+            from .cmds.config_loader import UnresolvedEnvVarError
+            if isinstance(e, UnresolvedEnvVarError):
+                print(
+                    f"Error: configuration references unset environment variable\n"
+                    f"  Variable: {e.name}\n"
+                    f"  Source: {e.source or '<unknown>'}\n"
+                    f"  Suggestions:\n"
+                    f"    - Export the variable: export {e.name}=...\n"
+                    f"    - Or set it in your shell profile / .env file\n"
+                    f"    - Or use \${{{e.name}:-default}} to provide an inline default"
+                )
+                sys.exit(2)
+            raise
     return wrapper
 
 
