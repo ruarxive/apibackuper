@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "apibackuper"
-version = "1.0.13"
+version = "1.0.14"
 description = "a command-line tool and python library for API backuping"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -91,7 +91,7 @@ apibackuper = ["schemas/*.json"]
 # Black code formatter configuration
 [tool.black]
 line-length = 100
-target-version = ["py39", "py310", "py311", "py312", "py313"]
+target-version = ["py310", "py311", "py312", "py313"]
 include = '\.pyi?$'
 extend-exclude = '''
 /(
