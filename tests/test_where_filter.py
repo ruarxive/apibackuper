@@ -117,3 +117,28 @@ class TestSelectFields:
     def test_custom_splitter(self):
         result = select_fields({"a": {"b": 5}}, ["a;b"], splitter=";")
         assert result == {"a;b": 5}
+
+
+class TestCompareIncompatibleTypes:
+    """When ``actual`` and ``value`` are incompatible types (e.g. int vs
+    string), the comparison operators raise ``TypeError``. The helper
+    catches this and returns ``False`` (the item does not match the
+    filter) — it must NOT propagate the TypeError."""
+
+    def test_string_greater_than_int(self):
+        # ``parse_where("age > 5")`` produces a parsed dict.
+        # Python 3 raises TypeError when comparing str > int.
+        condition = parse_where("age > 5")
+        assert match_where({"age": "old"}, condition) is False
+
+    def test_int_less_than_string(self):
+        condition = parse_where("age < 5")
+        assert match_where({"age": "young"}, condition) is False
+
+    def test_int_greater_equal_string(self):
+        condition = parse_where("val >= 5")
+        assert match_where({"val": "abc"}, condition) is False
+
+    def test_int_less_equal_string(self):
+        condition = parse_where("val <= 5")
+        assert match_where({"val": "abc"}, condition) is False
