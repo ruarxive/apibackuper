@@ -167,3 +167,67 @@ class TestUpdateDictValues:
         assert result["key2"] == "value2"
         assert result["key3"]["nested"] == "value3"
 
+
+class TestGetDictValueDeepBranches:
+    """Targeted coverage for branches that were historically skipped.
+
+    The helper walks both ``dict`` and ``list`` containers. The
+    list-with-as_array branches take a non-trivial amount of code
+    that the basic tests don't reach — these guard them so the
+    dot-path traversal remains trustworthy."""
+
+    def test_list_of_dicts_with_as_array_at_top_level(self):
+        data = [{"id": 1}, {"id": 2}, {"id": 3}]
+        result = get_dict_value(data, "id", as_array=True)
+        assert result == [1, 2, 3]
+
+    def test_nested_path_into_list_of_dicts(self):
+        # ``a.b.c`` traverses ``{"a": [{"b": [{"c": ...}]}]}``.
+        data = {"a": [{"b": [{"c": "deep"}]}]}
+        assert get_dict_value(data, "a.b.c") == "deep"
+
+    def test_nested_path_into_list_of_dicts_as_array(self):
+        # ``a.b.c`` with as_array=True walks each item in the
+        # intermediate lists.
+        data = {"a": [{"b": [{"c": 1}, {"c": 2}]}, {"b": [{"c": 3}]}]}
+        result = get_dict_value(data, "a.b.c", as_array=True)
+        assert result == [1, 2, 3]
+
+    def test_list_index_zero_when_iterating(self):
+        # First dict in a list with as_array=False returns the
+        # matched value from item 0 only.
+        data = [{"id": "first"}, {"id": "second"}]
+        assert get_dict_value(data, "id") == "first"
+
+    def test_missing_list_index_returns_none(self):
+        # ``prefix[0] in adict[0].keys()`` is False → None.
+        data = [{"name": "alice"}, {"age": 30}]
+        assert get_dict_value(data, "id") is None
+
+    def test_missing_top_level_dict_key_returns_none(self):
+        # The ``prefix[0] not in adict.keys()`` branch.
+        assert get_dict_value({"a": 1}, "z") is None
+
+    def test_path_through_non_dict_returns_none(self):
+        # ``{"a": 5}`` then ``a.b`` — string path not found.
+        assert get_dict_value({"a": 5}, "a.b") is None
+
+    def test_path_through_list_at_root_with_missing_key(self):
+        # ``[{"a": 1}]`` then key ``"z"`` — None.
+        assert get_dict_value([{"a": 1}], "z") is None
+
+    def test_path_through_list_as_array_with_partial_match(self):
+        # ``as_array=True`` skips dicts that don't have the prefix.
+        data = [{"x": 1}, {"x": 2, "y": 100}, {"y": 200}]
+        result = get_dict_value(data, "y", as_array=True)
+        assert result == [100, 200]
+
+    def test_path_with_dotted_key_keeps_falsy_values(self):
+        # The comment at lines 78-80 warns about dropping falsy
+        # values. This pins that the helper preserves them.
+        data = {"count": 0, "enabled": False, "label": "", "items": []}
+        assert get_dict_value(data, "count") == 0
+        assert get_dict_value(data, "enabled") is False
+        assert get_dict_value(data, "label") == ""
+        assert get_dict_value(data, "items") == []
+
