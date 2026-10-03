@@ -110,6 +110,11 @@ from .utils import (
     load_csv_data,
     _url_replacer,
 )
+from .follow import (
+    extract_keys_from_pages,
+    extract_url_map_from_pages,
+    compute_pending_targets,
+)
 
 
 def _safe_int(value: Any, option: str, default: int = 0) -> int:
@@ -2195,43 +2200,29 @@ class ProjectBuilder:
         mzip = ZipFile(self.storage_file, mode="r", compression=ZIP_DEFLATED)
 
         if self.follow_mode == "item":
-            allkeys = []
             logging.info("Extract unique key values from downloaded data")
-            file_list = mzip.namelist()
-            extract_progress = None
-            if len(file_list) > 0:
-                extract_progress = tqdm(total=len(file_list), desc="Extracting keys", unit="file")
-            for fname in file_list:
-                tf = mzip.open(fname, "r")
-                data = json.load(tf)
-                tf.close()
-                try:
-                    for item in get_dict_value(data,
-                                               self.data_key,
-                                               splitter=self.field_splitter):
-                        allkeys.append(item[self.follow_item_key])
-                except (KeyError, TypeError):
-                    logging.info("Data key: %s not found" % (self.data_key))
-                if extract_progress:
-                    extract_progress.update(1)
-            if extract_progress:
-                extract_progress.close()
+            allkeys = extract_keys_from_pages(
+                mzip,
+                mzip.namelist(),
+                data_key=self.data_key,
+                field_splitter=self.field_splitter,
+                item_key=self.follow_item_key,
+            )
             logging.info("%d allkeys to process", len(allkeys))
             if mode == "full":
                 mzip = ZipFile(self.details_storage_file,
                                mode="w",
                                compression=ZIP_DEFLATED)
-                finallist = allkeys
             elif mode == "continue":
                 mzip = ZipFile(self.details_storage_file,
                                mode="a",
                                compression=ZIP_DEFLATED)
-                keys = []
-                filenames = mzip.namelist()
-                for name in filenames:
-                    keys.append(int(name.rsplit(".", 1)[0]))
-                logging.info("%d filenames in zip file", len(keys))
-                finallist = list(set(allkeys) - set(keys))
+                logging.info("%d filenames in zip file", len(mzip.namelist()))
+            finallist, _ = compute_pending_targets(
+                allkeys,
+                dest_zip=mzip,
+                full=(mode == "full"),
+            )
             logging.info("%d keys in final list", len(finallist))
 
             n = 0
@@ -2273,49 +2264,30 @@ class ProjectBuilder:
                 progress_bar.close()
             mzip.close()
         elif self.follow_mode == "url":
-            allkeys = {}
             logging.info("Extract urls to follow from downloaded data")
-            file_list = mzip.namelist()
-            extract_progress = None
-            if len(file_list) > 0:
-                extract_progress = tqdm(total=len(file_list), desc="Extracting URLs", unit="file")
-            for fname in file_list:
-                tf = mzip.open(fname, "r")
-                data = json.load(tf)
-                tf.close()
-                #                logging.info(str(data))
-                try:
-                    for item in get_dict_value(data,
-                                               self.data_key,
-                                               splitter=self.field_splitter):
-                        item_id = item[self.follow_item_key]  # noqa: W0622
-                        allkeys[item_id] = get_dict_value(
-                            item,
-                            self.follow_url_key,
-                            splitter=self.field_splitter)
-                except KeyError:
-                    logging.info("Data key: %s not found" % (self.data_key))
-                if extract_progress:
-                    extract_progress.update(1)
-            if extract_progress:
-                extract_progress.close()
+            allkeys = extract_url_map_from_pages(
+                mzip,
+                mzip.namelist(),
+                data_key=self.data_key,
+                field_splitter=self.field_splitter,
+                item_key=self.follow_item_key,
+                url_key=self.follow_url_key,
+            )
             if mode == "full":
                 mzip = ZipFile(self.details_storage_file,
                                mode="w",
                                compression=ZIP_DEFLATED)
-                finallist = allkeys
-                n = 0
             elif mode == "continue":
                 mzip = ZipFile(self.details_storage_file,
                                mode="a",
                                compression=ZIP_DEFLATED)
-                keys = []
-                filenames = mzip.namelist()
-                for name in filenames:
-                    keys.append(int(name.rsplit(".", 1)[0]))
-                finallist = list(set(allkeys.keys()) - set(keys))
-                n = len(keys)
-            total = len(allkeys.keys())
+            finallist, count_done = compute_pending_targets(
+                list(allkeys.keys()),
+                dest_zip=mzip,
+                full=(mode == "full"),
+            )
+            n = 0 if mode == "full" else count_done
+            total = len(allkeys)
             progress_bar = None
             if len(finallist) > 0:
                 progress_bar = tqdm(total=len(finallist), desc="Following URLs", unit="item")
@@ -2343,46 +2315,27 @@ class ProjectBuilder:
         elif self.follow_mode == "drilldown":
             pass
         elif self.follow_mode == "prefix":
-            allkeys = []
             logging.info("Extract unique key values from downloaded data")
-            file_list = mzip.namelist()
-            extract_progress = None
-            if len(file_list) > 0:
-                extract_progress = tqdm(total=len(file_list), desc="Extracting keys", unit="file")
-            for fname in file_list:
-                tf = mzip.open(fname, "r")
-                data = json.load(tf)
-                tf.close()
-                try:
-                    repeatable_data = get_dict_value(data,
-                                               self.data_key,
-                                               splitter=self.field_splitter) if self.data_key else data
-                    if isinstance(repeatable_data, dict):
-                        if extract_progress:
-                            extract_progress.update(1)
-                        continue
-                    for item in repeatable_data:
-                        allkeys.append(item[self.follow_item_key])
-                except (KeyError, TypeError):
-                    logging.info("Data key: %s not found" % (self.data_key))
-                if extract_progress:
-                    extract_progress.update(1)
-            if extract_progress:
-                extract_progress.close()
+            allkeys = extract_keys_from_pages(
+                mzip,
+                mzip.namelist(),
+                data_key=self.data_key,
+                field_splitter=self.field_splitter,
+                item_key=self.follow_item_key,
+            )
             if mode == "full":
                 mzip = ZipFile(self.details_storage_file,
                                mode="w",
                                compression=ZIP_DEFLATED)
-                finallist = allkeys
             elif mode == "continue":
                 mzip = ZipFile(self.details_storage_file,
                                mode="a",
                                compression=ZIP_DEFLATED)
-                keys = []
-                filenames = mzip.namelist()
-                for name in filenames:
-                    keys.append(name.rsplit(".", 1)[0])
-                finallist = list(set(allkeys) - set(keys))
+            finallist, _ = compute_pending_targets(
+                allkeys,
+                dest_zip=mzip,
+                full=(mode == "full"),
+            )
 
             n = 0
             total = len(finallist)
