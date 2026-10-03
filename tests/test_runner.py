@@ -443,3 +443,50 @@ class TestParseTotalPages:
         )
         # All three pages processed by the parallel branch.
         assert sorted(pages_processed) == [1, 2, 3]
+
+    def test_500_in_should_retry_set_is_counted(self):
+        """When ``should_retry(500)`` is True, a 500 from
+        ``fetch_one`` is counted in ``errors['500']`` and the page is
+        not passed to ``on_page``. This is the contract that
+        ``ProjectBuilder._should_retry`` relies on — see project.py
+        line ~1681 where the retry loop lives INSIDE ``fetch_page``,
+        but the runner still records the error count based on the
+        final status."""
+        from apibackuper.cmds.runner import fetch_all_pages
+        pages_seen = []
+
+        def fetch_one(page):
+            # Page 1: 500 (transient). Page 2: 200 (success).
+            if page == 1:
+                return {"page": 1, "status": 500, "content": b"", "error": None}
+            return {"page": 2, "status": 200, "content": b"{}", "error": None}
+
+        def on_page(p, content):
+            pages_seen.append(p)
+            return True
+
+        storage = MagicMock()
+
+        errors = fetch_all_pages(
+            pages=[1, 2],
+            parallelism=1,
+            fetch_one=fetch_one,
+            on_page=on_page,
+            # ``should_retry(500)`` is True — matches the default
+            # DEFAULT_ERROR_STATUS_CODES = {500, 502, 503, 504}.
+            should_retry=lambda s: s in (500, 502, 503, 504),
+            retry_max_retries=0,
+            max_consecutive_errors=10,
+            continue_on_error=True,
+            storage_backend=storage,
+            progress_bar=None,
+            start_timer=0.0,
+            total_pages=2,
+            checkpoint_interval=None,
+            save_checkpoint=lambda x: None,
+        )
+        # ``on_page`` was called only for the successful page.
+        assert pages_seen == [2]
+        # ``should_retry(500)`` is True, so the 500 page was counted
+        # in the errors dict.
+        assert errors == {"500": 1}
