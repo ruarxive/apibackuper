@@ -142,3 +142,15 @@ class TestCompareIncompatibleTypes:
     def test_int_less_equal_string(self):
         condition = parse_where("val <= 5")
         assert match_where({"val": "abc"}, condition) is False
+
+    def test_unknown_operator_returns_false(self):
+        # Construct a condition dict directly with an operator that
+        # doesn't match any of the comparison branches. The helper
+        # must return False rather than crash.
+        condition = {
+            "field": "val",
+            "op": "??",  # unknown operator
+            "value": 5,
+            "splitter": ".",
+        }
+        assert match_where({"val": 5}, condition) is False
