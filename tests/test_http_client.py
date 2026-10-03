@@ -311,3 +311,45 @@ class TestWrapRequestException:
         )
         msg = str(wrapped)
         assert "https://api.example.com/items" in msg
+
+
+class TestBuildRequestKwargsWithHeaders:
+    """The ``build_request_kwargs`` helper propagates ``headers`` into
+    ``request_kwargs`` for both the flat-params and regular branches.
+    These pin the headers-merging contract."""
+
+    def test_flat_params_branch_includes_headers(self):
+        from apibackuper.cmds.http_client import build_request_kwargs
+        headers = {"X-Tenant": "acme"}
+        (method, kwargs, log_safe), actual_qs = build_request_kwargs(
+            http_mode="GET",
+            url="https://api.example.com/items",
+            params={"page": 1},
+            flatten={"page": "1"},
+            headers=headers,
+            verify_ssl=True,
+            connect_timeout=10,
+            read_timeout=30,
+            allow_redirects=True,
+        )
+        assert method == "get"
+        assert kwargs.get("headers") == headers
+        assert actual_qs is not None  # flat_params branch sets it
+
+    def test_non_flat_branch_includes_headers(self):
+        from apibackuper.cmds.http_client import build_request_kwargs
+        headers = {"X-Tenant": "acme"}
+        (method, kwargs, log_safe), actual_qs = build_request_kwargs(
+            http_mode="GET",
+            url="https://api.example.com/items",
+            params={"page": 1},
+            flatten=None,
+            headers=headers,
+            verify_ssl=True,
+            connect_timeout=10,
+            read_timeout=30,
+            allow_redirects=True,
+        )
+        assert method == "get"
+        assert kwargs.get("headers") == headers
+        assert actual_qs is None  # regular branch
