@@ -107,6 +107,24 @@ untrusted environments.
 (``{pages, objects}``). User-supplied ``kind`` values cannot reach
 ``sqlite3`` as table names.
 
+## Credentials in configs
+
+YAML configs support ``${VAR}`` placeholders that resolve from the
+process environment at load time (see ``substitute_env_vars`` in
+``apibackuper.cmds.config_loader``). Recommended practice:
+
+- Store API tokens, OAuth client secrets, and similar credentials in
+  environment variables, not in the YAML file.
+- Use ``${API_TOKEN}`` for required values (a clear error is raised
+  when the variable is unset, naming the offending config field).
+- Use ``${API_TOKEN:-default-value}`` only for non-sensitive defaults.
+- Ensure the YAML config is not world-readable if it references any
+  secrets inline.
+
+A missing environment variable surfaces as a clear log message and
+the project is not loaded — there is no silent fallback to an empty
+string.
+
 ## Reporting vulnerabilities
 
 Please report security issues to ivan@begtin.tech (or open a private

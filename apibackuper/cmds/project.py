@@ -101,7 +101,9 @@ from .config_loader import (
     load_json_file,
     validate_yaml_config,
     YAMLConfigParser,
-    JSONSCHEMA_AVAILABLE
+    JSONSCHEMA_AVAILABLE,
+    substitute_env_vars,
+    UnresolvedEnvVarError,
 )
 
 from .utils import (
@@ -227,6 +229,16 @@ class ProjectBuilder:
             try:
                 with open(filename, "r", encoding="utf8") as fobj:
                     yaml_data = yaml.safe_load(fobj)
+
+                # Substitute ${VAR} placeholders (improve-security 4.1-4.3).
+                if yaml_data:
+                    try:
+                        yaml_data = substitute_env_vars(
+                            yaml_data, source=filename,
+                        )
+                    except UnresolvedEnvVarError as e:
+                        logging.error("%s", e)
+                        return
 
                 # Validate YAML config against schema
                 if yaml_data:
@@ -3105,6 +3117,10 @@ class ProjectBuilder:
                 if os.path.exists(self.config_filename):
                     with open(self.config_filename, "r", encoding="utf8") as fobj:
                         yaml_data = yaml.safe_load(fobj)
+                    if yaml_data:
+                        yaml_data = substitute_env_vars(
+                            yaml_data, source=self.config_filename,
+                        )
 
                     if yaml_data:
                         is_valid, validation_errors = validate_yaml_config(yaml_data)

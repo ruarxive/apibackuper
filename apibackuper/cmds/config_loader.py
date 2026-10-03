@@ -4,6 +4,7 @@ import configparser
 import json
 import logging
 import os
+import re
 from typing import Optional, Dict, List, Any, Tuple
 
 try:
@@ -19,6 +20,91 @@ except ImportError:
     JSONSCHEMA_AVAILABLE = False
     validate = None
     ValidationError = Exception
+
+
+# Match ${VAR} or ${VAR:-default} placeholders. ``-`` is shell's "use
+# default if unset or empty" operator; ``:-`` follows the POSIX spec.
+# We use two distinct alternatives so we can distinguish "no default"
+# from "empty default" — re-capturing as a single optional group
+# makes them indistinguishable.
+_ENV_VAR_PATTERN = re.compile(
+    r"\$\{"
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)"
+    r"(?:(?::-(?P<default_dash>[^}]*))|(?:=(?P<default_eq>[^}]*)))?"
+    r"\}"
+)
+
+
+class UnresolvedEnvVarError(KeyError):
+    """Raised when a config string references an unset environment variable.
+
+    The CLI catches this and prints a clear "you forgot to export X"
+    message rather than letting a generic ``KeyError`` bubble up.
+    """
+
+    def __init__(self, name: str, source: Optional[str] = None):
+        self.name = name
+        self.source = source
+        suffix = f" in {source}" if source else ""
+        super().__init__(
+            f"environment variable '{name}' is not set{suffix}"
+        )
+
+
+def substitute_env_vars(
+    value: Any,
+    *,
+    source: Optional[str] = None,
+    environ: Optional[Dict[str, str]] = None,
+) -> Any:
+    """Recursively replace ``${VAR}`` placeholders in a parsed config.
+
+    Walks dicts, lists, and strings. Non-string scalars (ints, bools,
+    None) are returned unchanged. When the referenced env var is unset,
+    raises :class:`UnresolvedEnvVarError` so the CLI can surface a
+    user-actionable error.
+
+    A ``${VAR:-default}`` placeholder substitutes ``default`` when the
+    variable is unset or empty (POSIX semantics).
+
+    Parameters
+    ----------
+    value:
+        Parsed YAML/JSON structure (or any sub-tree).
+    source:
+        Optional filename for the error message — only used by the
+        ``UnresolvedEnvVarError``.
+    environ:
+        Subset of ``os.environ`` to read from. Defaults to the real
+        environment. Tests pass an isolated mapping.
+    """
+    env = environ if environ is not None else os.environ
+
+    def _sub_str(text: str) -> str:
+        def _replace(match: "re.Match[str]") -> str:
+            name = match.group("name")
+            # ``default_dash`` covers ``${VAR:-x}`` (POSIX) and
+            # ``default_eq`` covers ``${VAR:=x}``. Either captures ``x``
+            # only when the placeholder actually has a default.
+            default = match.group("default_dash")
+            if default is None:
+                default = match.group("default_eq")
+            has_default = default is not None
+            if name in env and env[name] != "":
+                return env[name]
+            if has_default:
+                return default
+            raise UnresolvedEnvVarError(name, source=source)
+
+        return _ENV_VAR_PATTERN.sub(_replace, text)
+
+    if isinstance(value, dict):
+        return {k: substitute_env_vars(v, source=source, environ=env) for k, v in value.items()}
+    if isinstance(value, list):
+        return [substitute_env_vars(item, source=source, environ=env) for item in value]
+    if isinstance(value, str):
+        return _sub_str(value)
+    return value
 
 
 def load_json_file(filename: str, default: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
