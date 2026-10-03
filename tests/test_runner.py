@@ -331,6 +331,30 @@ class TestParseTotalPages:
         )
         assert num_pages == DEFAULT_NUMBER_OF_PAGES
 
+    def test_pages_number_key_not_found_falls_back(self):
+        # ``pages_number_key`` is configured but absent from the response.
+        num_pages, total = parse_total_pages(
+            {"other": "value"},
+            resp_type="json",
+            total_number_key="",
+            pages_number_key="pagination.pages",
+            page_size_limit=10,
+        )
+        assert num_pages == DEFAULT_NUMBER_OF_PAGES
+        assert total is None
+
+    def test_pages_number_key_garbage_value_falls_back(self):
+        # ``pages_number_key`` is configured but the value is not numeric.
+        num_pages, total = parse_total_pages(
+            {"pagination": {"pages": "not-a-number"}},
+            resp_type="json",
+            total_number_key="",
+            pages_number_key="pagination.pages",
+            page_size_limit=10,
+        )
+        assert num_pages == DEFAULT_NUMBER_OF_PAGES
+        assert total is None
+
     def test_close_progress_handles_exceptions(self):
         """``close_progress`` swallows exceptions from the bar's close()
         so a malformed progress bar can't fail the run."""
