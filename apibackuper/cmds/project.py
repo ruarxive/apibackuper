@@ -841,7 +841,7 @@ class ProjectBuilder:
     def _select_fields(self, item: Dict[str, Any], fields: Optional[List[str]]) -> Dict[str, Any]:
         # P3.31: logic lifted to ``cmds.where_filter`` so it can be tested
         # in isolation. The wrapper preserves the existing call signature.
-        from .where_filter import select_fields
+        from .where_filter import match_where, select_fields
         return select_fields(item, fields, splitter=self.field_splitter)
 
     def _single_request(
@@ -1114,42 +1114,39 @@ class ProjectBuilder:
                                 continue
                             finally:
                                 tf.close()
-                            try:
-                                if self.follow_data_key:
-                                    follow_data = get_dict_value(
-                                        data,
-                                        self.follow_data_key,
-                                        splitter=self.field_splitter)
-                                    if isinstance(follow_data, dict):
-                                        if self._match_where(follow_data, condition):
-                                            follow_data = self._select_fields(follow_data, fields)
-                                            if format == "parquet":
-                                                all_records.append(follow_data)
-                                            else:
-                                                outfile.write(
-                                                    json.dumps(follow_data, ensure_ascii=False) +
-                                                    "\n")
-                                    else:
-                                        for item in follow_data:
-                                            if not self._match_where(item, condition):
-                                                continue
-                                            item = self._select_fields(item, fields)
-                                            if format == "parquet":
-                                                all_records.append(item)
-                                            else:
-                                                outfile.write(
-                                                    json.dumps(item, ensure_ascii=False) +
-                                                    "\n")
-                                else:
-                                    if self._match_where(data, condition):
-                                        data = self._select_fields(data, fields)
-                                        if format == "parquet":
-                                            all_records.append(data)
-                                        else:
-                                            outfile.write(
-                                                json.dumps(data, ensure_ascii=False) + "\n")
-                            except KeyError:
-                                logging.info("Data key: %s not found", self.data_key)
+                            # P3.31: the per-record filter / project / serialise
+                            # pipeline is now in cmds.export.process_record.
+                            # ``match_where`` is the predicate exported from
+                            # cmds.where_filter so the export behaviour stays
+                            # identical to the historical code.
+                            where_pred = (
+                                lambda rec: match_where(rec, condition)
+                            )
+                            if self.follow_data_key:
+                                follow_data = get_dict_value(
+                                    data,
+                                    self.follow_data_key,
+                                    splitter=self.field_splitter,
+                                )
+                                if isinstance(follow_data, dict):
+                                    follow_data = [follow_data]
+                                elif follow_data is None:
+                                    follow_data = []
+                                payload_data_key = None  # already flattened
+                            else:
+                                payload_data_key = self.data_key
+                            matched = process_record(
+                                data if payload_data_key is None else data,
+                                data_key=payload_data_key,
+                                field_splitter=self.field_splitter,
+                                fields=fields,
+                                where=where_pred,
+                            )
+                            if format == "parquet":
+                                all_records.extend(matched)
+                            else:
+                                for record in matched:
+                                    outfile.write(serialize_record(record))
                         except (IOError, OSError, ValueError) as e:
                             logging.warning("Error processing file %s: %s",
                                             fname, e)

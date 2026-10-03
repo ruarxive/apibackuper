@@ -48,18 +48,23 @@ def build_request_kwargs(
 
     if http_mode == "GET":
         if flatten:
+            # Coerce values to str so we can call str.replace on them.
+            str_flatten = {
+                k: (str(v) if not isinstance(v, str) else v)
+                for k, v in flatten.items()
+            }
             # P2.21: redact sensitive keys before logging.
             redacted_flatten = {
                 k: (_REDACTED if _is_sensitive_key(k)
-                     else value.replace("'", '"').replace("True", "true"))
-                for k, value in flatten.items()
+                     else v.replace("'", '"').replace("True", "true"))
+                for k, v in str_flatten.items()
             }
             # P2.23: URL-encode the query so values with ``&``, ``=``, ``#``
             # or whitespace do not corrupt or extend the query.
             query_string = urlencode(redacted_flatten, doseq=True)
             actual_query_string = urlencode(
                 {k: v.replace("'", '"').replace("True", "true")
-                 for k, v in flatten.items()},
+                 for k, v in str_flatten.items()},
                 doseq=True,
             )
             log_safe_url = url + "?" + query_string
