@@ -151,6 +151,10 @@ class YAMLConfigParser:
         """Check if section exists"""
         return section in self._data
 
+    def sections(self) -> List[str]:
+        """Return all section names."""
+        return list(self._data.keys())
+
     def has_option(self, section: str, option: str) -> bool:
         """Check if option exists in section"""
         return self.has_section(section) and option in self._data[section]
@@ -169,6 +173,25 @@ class YAMLConfigParser:
         if value is None:
             return None
         return int(value)
+
+    def getfloat(self, section: str, option: str, fallback: Optional[float] = None) -> Optional[float]:
+        """Get float option value from section.
+
+        YAML natively distinguishes int from float (e.g. ``0.5`` is a float, not
+        an int); calling ``getint`` on a float value raised ``ValueError`` and
+        crashed the config loader. This method accepts both int and float strings
+        and returns a ``float``. See §4.6 of the 2026-10 analysis report.
+        """
+        value = self.get(section, option, fallback)
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            # ``bool`` is a subclass of ``int``; reject it explicitly so a stray
+            # ``True``/``False`` doesn't silently become ``1.0``/``0.0``.
+            raise ValueError(f"Not a float: {value}")
+        if isinstance(value, (int, float)):
+            return float(value)
+        return float(str(value))
 
     def getboolean(self, section: str, option: str, fallback: Optional[bool] = None) -> Optional[bool]:
         """Get boolean option value from section"""

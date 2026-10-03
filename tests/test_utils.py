@@ -145,13 +145,19 @@ class TestUrlReplacer:
         assert "page=1" in result
     
     def test_url_replacer_special_chars(self):
-        """Test URL replacement with special characters in values"""
+        """Test URL replacement with special characters in values.
+
+        P2.23: special characters in query-mode values are now
+        URL-encoded so a value of ``123&456`` cannot extend or
+        corrupt the query string (§5.3 of the 2026-10 analysis report).
+        """
         url = "https://api.example.com/data"
         params = {"query": "test value", "id": "123&456"}
         result = _url_replacer(url, params, query_mode=True)
-        
-        assert "query=test value" in result
-        assert "id=123&456" in result
+
+        # Space → '+'; '&' → '%26' (encoded)
+        assert "query=test+value" in result
+        assert "id=123%26456" in result
     
     def test_url_replacer_numeric_values(self):
         """Test URL replacement with numeric values"""

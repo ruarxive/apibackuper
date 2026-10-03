@@ -1,16 +1,39 @@
-from zipfile import ZipFile, ZIP_DEFLATED
+"""Unified storage backends.
+
+All storage backends live in :mod:`apibackuper.storage.backends` as the
+canonical implementation. This package-level module re-exports the public
+API so callers can write ``from apibackuper.storage import ...``.
+
+Two storage *flavours* are exposed:
+
+- ``StorageBackend`` (Protocol) and its concrete implementations
+  (``ZipStorageBackend``, ``SqliteStorageBackend``, ``FilesystemStorageBackend``)
+  are used by the main backup flow (``ProjectBuilder.run``).
+
+- ``FileStorage`` (legacy) and its concrete implementations
+  (``ZipFileStorage``, ``FilesystemStorage``) are used by the
+  ``getfiles`` flow which predates the unified Protocol.
+
+Both flavours are exported here so callers see one import surface.
+"""
 import os
+from zipfile import ZipFile, ZIP_DEFLATED
 
 from .backends import (
     StorageBackend,
     ZipStorageBackend,
     SqliteStorageBackend,
+    FilesystemStorageBackend,
     build_storage_backend,
+    safe_member_name,
 )
 
 
 class FileStorage:
-    """Base file storage class"""
+    """Base class for the legacy ``getfiles``-flow file storage.
+
+    New code should prefer :class:`StorageBackend` directly.
+    """
 
     def __init__(self):
         """Initialize base file storage"""
@@ -27,6 +50,13 @@ class FileStorage:
 
 
 class ZipFileStorage(FileStorage):
+    """Zip-based storage used by the ``getfiles`` flow.
+
+    Stores files into a single ``.zip`` archive. The newer
+    :class:`ZipStorageBackend` implements the same idea under the unified
+    :class:`StorageBackend` Protocol — when writing new code prefer that
+    class.
+    """
 
     def __init__(self, filename, mode="a", compression=ZIP_DEFLATED):
         FileStorage.__init__(self)
@@ -47,6 +77,12 @@ class ZipFileStorage(FileStorage):
 
 
 class FilesystemStorage(FileStorage):
+    """Filesystem-based storage used by the ``getfiles`` flow.
+
+    Writes files into a directory tree under ``dirpath``. Path traversal
+    is rejected via :meth:`_safe_path`. New code should prefer
+    :class:`FilesystemStorageBackend`.
+    """
 
     def __init__(self, dirpath=os.path.join("storage", "files")):
         FileStorage.__init__(self)
@@ -72,3 +108,16 @@ class FilesystemStorage(FileStorage):
         os.makedirs(os.path.dirname(fullname), exist_ok=True)
         with open(fullname, "wb") as fobj:
             fobj.write(content)
+
+
+__all__ = [
+    "StorageBackend",
+    "ZipStorageBackend",
+    "SqliteStorageBackend",
+    "FilesystemStorageBackend",
+    "build_storage_backend",
+    "safe_member_name",
+    "FileStorage",
+    "ZipFileStorage",
+    "FilesystemStorage",
+]
