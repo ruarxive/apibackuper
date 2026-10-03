@@ -282,6 +282,52 @@ class TestCLICommands:
             assert "failed" in result.stdout.lower()
         finally:
             os.chdir(original_cwd)
+
+    @patch('apibackuper.core.ProjectBuilder')
+    def test_validate_config_strict_with_warnings_exits_1(
+        self, mock_project_builder_class, sample_config_ini
+    ):
+        """With ``--strict`` set, warnings count as errors and the
+        command must exit 1 even though ``is_valid`` is True."""
+        mock_project_builder = Mock()
+        mock_project_builder.validate_config = Mock(return_value=(True, 0, 2))
+        mock_project_builder.config_format = "yaml"
+        mock_project_builder_class.return_value = mock_project_builder
+
+        runner = typer.testing.CliRunner()
+        project_dir = os.path.dirname(sample_config_ini)
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(project_dir)
+            result = runner.invoke(app, ["validate-config", "--strict"])
+            assert result.exit_code == 1, (
+                f"--strict with warnings should exit 1, got {result.exit_code}"
+            )
+            assert "warnings" in result.stdout.lower()
+        finally:
+            os.chdir(original_cwd)
+
+    @patch('apibackuper.core.ProjectBuilder')
+    def test_validate_config_non_strict_with_warnings_exits_0(
+        self, mock_project_builder_class, sample_config_ini
+    ):
+        """Without ``--strict``, a valid config + warnings = exit 0."""
+        mock_project_builder = Mock()
+        mock_project_builder.validate_config = Mock(return_value=(True, 0, 2))
+        mock_project_builder.config_format = "yaml"
+        mock_project_builder_class.return_value = mock_project_builder
+
+        runner = typer.testing.CliRunner()
+        project_dir = os.path.dirname(sample_config_ini)
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(project_dir)
+            result = runner.invoke(app, ["validate-config"])
+            assert result.exit_code == 0, (
+                f"valid + warnings without --strict should exit 0, got {result.exit_code}"
+            )
+        finally:
+            os.chdir(original_cwd)
     
     @patch('apibackuper.core.ProjectBuilder')
     def test_follow_command(self, mock_project_builder_class, sample_config_ini):
