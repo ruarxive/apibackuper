@@ -134,3 +134,18 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# macOS Finder metadata
+.DS_Store
+
+# Editor / agent workspaces
+.idea/
+.vscode/
+.agent/
+.cursor/
+
+# apibackuper state / cache files
+apibackuper_state.json
+apibackuper_checkpoint.json
+*.sqlite
+*.parquet
