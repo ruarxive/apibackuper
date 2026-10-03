@@ -334,3 +334,51 @@ class TestStorageEdgeCases:
         backend.save_object("blob.bin", payload)
         assert backend.get_object("blob.bin", "object") == payload
 
+
+class TestLegacyStorageDeprecation:
+    """Legacy ``FileStorage`` subclasses (ZipFileStorage, FilesystemStorage)
+    are deprecated in favour of the ``StorageBackend`` Protocol. Using them
+    emits a DeprecationWarning pointing at the new class. New code must
+    not instantiate the legacy classes — these tests pin the warning
+    contract so consumers see the migration hint."""
+
+    def test_zip_file_storage_emits_deprecation(self, tmp_path):
+        import warnings as warnings
+        from apibackuper.storage import ZipFileStorage
+        zip_path = os.path.join(str(tmp_path), "store.zip")
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            ZipFileStorage(zip_path, mode="w")
+            deprecation_warnings = [
+                w for w in caught if issubclass(w.category, DeprecationWarning)
+            ]
+        assert len(deprecation_warnings) >= 1
+        assert "ZipFileStorage" in str(deprecation_warnings[0].message)
+        assert "ZipStorageBackend" in str(deprecation_warnings[0].message)
+
+    def test_filesystem_storage_emits_deprecation(self, tmp_path):
+        import warnings as warnings
+        from apibackuper.storage import FilesystemStorage
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            FilesystemStorage(os.path.join(str(tmp_path), "files"))
+            deprecation_warnings = [
+                w for w in caught if issubclass(w.category, DeprecationWarning)
+            ]
+        assert len(deprecation_warnings) >= 1
+        assert "FilesystemStorage" in str(deprecation_warnings[0].message)
+        assert "FilesystemStorageBackend" in str(deprecation_warnings[0].message)
+
+    def test_importing_legacy_classes_is_silent(self):
+        # Just importing should NOT emit the deprecation warning —
+        # the warning is reserved for actual instantiation.
+        import warnings as warnings
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            from apibackuper.storage import ZipFileStorage, FilesystemStorage  # noqa
+            deprecation_warnings = [
+                w for w in caught if issubclass(w.category, DeprecationWarning)
+            ]
+        # No deprecation warnings on import alone.
+        assert deprecation_warnings == []
+

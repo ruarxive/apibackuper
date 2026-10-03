@@ -49,7 +49,11 @@ from ..constants import (
     RETRY_DELAY,
     DEFAULT_NUMBER_OF_PAGES
 )
-from ..storage import FilesystemStorage, ZipFileStorage, build_storage_backend
+from ..storage import (
+    FilesystemStorageBackend,
+    ZipStorageBackend,
+    build_storage_backend,
+)
 from ..auth import AuthHandler
 from ..rate_limiter import RateLimiter
 
@@ -2535,11 +2539,13 @@ class ProjectBuilder:
         else:
             aria2 = None
         if self.file_storage_type == "zip":
-            fstorage = ZipFileStorage(files_storage_file,
-                                      mode="a",
-                                      compression=ZIP_DEFLATED)
+            fstorage = ZipStorageBackend(files_storage_file,
+                                         mode="a",
+                                         compression=ZIP_DEFLATED)
         elif self.file_storage_type == "filesystem":
-            fstorage = FilesystemStorage(os.path.join("storage", "files"))
+            fstorage = FilesystemStorageBackend(
+                os.path.join("storage", "files"), mode="a",
+            )
 
         n = 0
         total_files = len(uniq_ids)
@@ -2590,7 +2596,7 @@ class ProjectBuilder:
                 if self.storage_mode == "filepath":
                     filename = urlparse(url).path
                 logging.info("Processing %s as %s", url, filename)
-                if fstorage.exists(filename):
+                if filename in fstorage.list_objects("object"):
                     logging.info("File %s already stored", filename)
                     if download_progress:
                         download_progress.update(1)
@@ -2599,7 +2605,7 @@ class ProjectBuilder:
                     response = self.http.get(url, headers=headers,
                                              timeout=DEFAULT_TIMEOUT,
                                              verify=self.verify_ssl)
-                    fstorage.store(filename, response.content)
+                    fstorage.save_object(filename, response.content)
                     list_file.write(url + "\n")
                 else:
                     aria2.add_uris(

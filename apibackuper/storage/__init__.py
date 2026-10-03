@@ -18,6 +18,7 @@ Both flavours are exported here so callers see one import surface.
 """
 import os
 from zipfile import ZipFile, ZIP_DEFLATED
+import warnings
 
 from .backends import (
     StorageBackend,
@@ -27,6 +28,22 @@ from .backends import (
     build_storage_backend,
     safe_member_name,
 )
+
+
+def _deprecate_legacy(legacy_name: str, replacement: str) -> None:
+    """Emit a DeprecationWarning when a legacy storage class is instantiated.
+
+    Called from each legacy class's ``__init__`` so importing is silent
+    but using the class produces a one-shot warning pointing users at
+    the new ``StorageBackend`` Protocol implementation.
+    """
+    warnings.warn(
+        f"{legacy_name} is deprecated; use {replacement} from "
+        f"apibackuper.storage.backends instead. See the unify-storage-layer "
+        f"OpenSpec change for the migration path.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
 
 
 class FileStorage:
@@ -59,6 +76,7 @@ class ZipFileStorage(FileStorage):
     """
 
     def __init__(self, filename, mode="a", compression=ZIP_DEFLATED):
+        _deprecate_legacy("ZipFileStorage", "ZipStorageBackend")
         FileStorage.__init__(self)
         self.mzip = ZipFile(filename, mode=mode, compression=compression)
         self.allfiles = self.mzip.namelist()
@@ -85,6 +103,7 @@ class FilesystemStorage(FileStorage):
     """
 
     def __init__(self, dirpath=os.path.join("storage", "files")):
+        _deprecate_legacy("FilesystemStorage", "FilesystemStorageBackend")
         FileStorage.__init__(self)
         self.dirpath = dirpath
 
