@@ -109,6 +109,44 @@ apibackuper run --help
 
 See the [development docs](https://ruarxive.org/apibackuper/development/contributing).
 
+## Migration notes
+
+### Storage backends (since v1.0.15)
+
+The legacy `FileStorage`, `ZipFileStorage`, and `FilesystemStorage` classes
+in `apibackuper.storage` are **deprecated**. New code must use the unified
+`StorageBackend` Protocol implementations from `apibackuper.storage.backends`:
+
+| Legacy class              | Replacement                       |
+| ------------------------- | --------------------------------- |
+| `FileStorage`             | `StorageBackend` (Protocol)       |
+| `ZipFileStorage`          | `ZipStorageBackend`               |
+| `FilesystemStorage`       | `FilesystemStorageBackend`        |
+
+The legacy classes still work for now but emit `DeprecationWarning` on
+instantiation. Importing alone is silent. Mapping the legacy API to the new
+backend API:
+
+```python
+# Before (deprecated)
+storage = ZipFileStorage("pages.zip", mode="w")
+storage.exists("page_1.json")           # -> bool
+storage.store("page_1.json", content)  # -> bytes
+storage.close()
+
+# After (preferred)
+storage = ZipStorageBackend("pages.zip", mode="w")
+"page_1.json" in storage.list_objects("page")   # -> bool
+storage.save_object("page_1.json", content)
+storage.close()
+```
+
+### YAML configuration
+
+The INI config format is deprecated; YAML is the canonical format. A
+YAML config supports `${VAR}` and `${VAR:-default}` placeholders for
+sensitive credentials (see [SECURITY.md](SECURITY.md)).
+
 ## License
 
 MIT License — see [LICENSE](LICENSE).
