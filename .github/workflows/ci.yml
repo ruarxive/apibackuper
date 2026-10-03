@@ -72,8 +72,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+        os: [ubuntu-latest, macos-latest]
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
       
     steps:
       - uses: actions/checkout@v4
@@ -95,6 +95,7 @@ jobs:
           pytest \
             --verbose \
             --doctest-modules \
+            --timeout=60 \
             --cov=apibackuper \
             --cov-report=term-missing \
             --cov-report=xml \

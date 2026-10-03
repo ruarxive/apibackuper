@@ -78,34 +78,34 @@ class TestRateLimiter:
         assert elapsed2 >= 0.4
     
     def test_wait_if_needed_minute_limit(self):
-        """Test wait_if_needed with per-minute limit"""
+        """Test wait_if_needed with per-minute limit.
+
+        The historical version of this test ran for ~60 wall-clock seconds and
+        hung pytest for that long. With ``time.sleep`` mocked we can verify
+        the wait *would* have been triggered without actually sleeping.
+        """
         limiter = RateLimiter(requests_per_minute=2)
-        
-        # First two requests should not wait
-        limiter.wait_if_needed()
-        limiter.wait_if_needed()
-        
-        # Third request should wait
-        start_time = time.time()
-        limiter.wait_if_needed()
-        elapsed = time.time() - start_time
-        # Should wait some time (exact time depends on implementation)
-        assert elapsed >= 0
-    
+
+        # Mock time.sleep so the test runs instantly.
+        with patch('apibackuper.rate_limiter.time.sleep') as mock_sleep:
+            limiter.wait_if_needed()
+            limiter.wait_if_needed()
+            limiter.wait_if_needed()
+            assert mock_sleep.called, "expected time.sleep to be called"
+
     def test_wait_if_needed_hour_limit(self):
-        """Test wait_if_needed with per-hour limit"""
+        """Test wait_if_needed with per-hour limit.
+
+        Same fix as ``test_wait_if_needed_minute_limit``: mock ``time.sleep``
+        so the test runs instantly instead of waiting ~3600 seconds.
+        """
         limiter = RateLimiter(requests_per_hour=2)
-        
-        # First two requests should not wait
-        limiter.wait_if_needed()
-        limiter.wait_if_needed()
-        
-        # Third request should wait
-        start_time = time.time()
-        limiter.wait_if_needed()
-        elapsed = time.time() - start_time
-        # Should wait some time
-        assert elapsed >= 0
+
+        with patch('apibackuper.rate_limiter.time.sleep') as mock_sleep:
+            limiter.wait_if_needed()
+            limiter.wait_if_needed()
+            limiter.wait_if_needed()
+            assert mock_sleep.called, "expected time.sleep to be called"
     
     def test_token_bucket_refill(self):
         """Test that token bucket refills over time"""

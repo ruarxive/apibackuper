@@ -39,6 +39,7 @@ with suppress(ImportError):
     import aria2p
 
 from ..common import get_dict_value, update_dict_values
+from .. import __version__
 from ..constants import (
     DEFAULT_DELAY,
     FIELD_SPLITTER,
@@ -104,7 +105,15 @@ from .config_loader import (
     JSONSCHEMA_AVAILABLE
 )
 
-from .utils import load_file_list, load_csv_data, _url_replacer
+from .utils import (
+    load_file_list,
+    load_csv_data,
+    _url_replacer,
+    redact_params,
+    redact_headers,
+    _is_sensitive_key,
+    _REDACTED,
+)
 
 
 
@@ -153,6 +162,11 @@ class ProjectBuilder:
         fileHandler = logging.FileHandler("{0}".format(self.logfile))
         fileHandler.setFormatter(logFormatter)
         rootLogger.addHandler(fileHandler)
+
+        # Without this, the root logger stays at WARNING and all
+        # ``logging.info(...)`` traces (URLs, page progress, request timings)
+        # silently vanish from the log file — see §4.4 of the 2026-10 report.
+        rootLogger.setLevel(logging.DEBUG)
 
     def __read_config(self, filename: str) -> None:
         self.config = None
@@ -244,7 +258,11 @@ class ProjectBuilder:
             self.update_mode = (self.config.get(
                 "project", "update_mode") if self.config.has_option(
                     "project", "update_mode") else None)
-            self.default_delay = (self.config.getint(
+            # ``default_delay`` is documented as a float (e.g. ``0.5``). Earlier
+            # versions called ``getint`` and crashed on any non-integer delay. The
+            # config-loader now has a dedicated ``getfloat`` (see §4.6 of the
+            # 2026-10 analysis report) — use it.
+            self.default_delay = (self.config.getfloat(
                 "project", "default_delay") if self.config.has_option(
                     "project", "default_delay") else DEFAULT_DELAY)
             self.retry_delay = (self.config.getint(
@@ -385,8 +403,27 @@ class ProjectBuilder:
 
             if self.config.has_section("error_handling"):
                 if self.config.has_option("error_handling", "retry_on_errors"):
-                    codes_str = self.config.get("error_handling", "retry_on_errors")
-                    self.error_retry_codes = [int(c.strip()) for c in codes_str.split(",")]
+                    # Schema-legal values:
+                    #   YAML list  -> ``retry_on_errors: [500, 502]``
+                    #   INI string -> ``retry_on_errors = 500, 502``
+                    # Earlier code called ``int()`` on the raw string, which
+                    # raised ``ValueError: int("[500")`` on the YAML list form
+                    # and crashed the CLI before any command ran (§4.6 of the
+                    # 2026-10 analysis report).
+                    raw = self.config.get("error_handling", "retry_on_errors")
+                    if isinstance(raw, (list, tuple)):
+                        codes_iter = raw
+                    else:
+                        codes_iter = str(raw).split(",")
+                    parsed_codes = []
+                    for c in codes_iter:
+                        try:
+                            parsed_codes.append(int(str(c).strip()))
+                        except (TypeError, ValueError) as e:
+                            raise ValueError(
+                                f"Invalid retry_on_errors entry {c!r}: {e}"
+                            ) from e
+                    self.error_retry_codes = parsed_codes
                 if self.config.has_option("error_handling", "max_consecutive_errors"):
                     self.max_consecutive_errors = self.config.getint("error_handling", "max_consecutive_errors")
                 if self.config.has_option("error_handling", "continue_on_error"):
@@ -397,7 +434,7 @@ class ProjectBuilder:
             self.connect_timeout = 30
             self.read_timeout = DEFAULT_TIMEOUT
             self.verify_ssl = True
-            self.user_agent = "apibackuper/1.0.11"
+            self.user_agent = f"apibackuper/{__version__}"
             self.max_redirects = 5
             self.allow_redirects = True
             self.proxies = None
@@ -676,57 +713,20 @@ class ProjectBuilder:
         return int(min(max(delay, 0), self.retry_max_delay))
 
     def _parse_where(self, where: Optional[str]) -> Optional[Dict[str, Any]]:
-        if not where:
-            return None
-        operators = ["<=", ">=", "!=", "==", ">", "<"]
-        for op in operators:
-            if op in where:
-                left, right = where.split(op, 1)
-                field = left.strip()
-                value = right.strip().strip('"').strip("'")
-                try:
-                    if "." in value:
-                        value = float(value)
-                    else:
-                        value = int(value)
-                except ValueError:
-                    pass
-                return {"field": field, "op": op, "value": value}
-        return None
+        # P3.31: logic lifted to ``cmds.where_filter`` so it can be tested
+        # in isolation. The wrapper preserves the existing call signature.
+        from .where_filter import parse_where
+        return parse_where(where, splitter=self.field_splitter)
 
     def _match_where(self, item: Dict[str, Any], condition: Optional[Dict[str, Any]]) -> bool:
-        if not condition:
-            return True
-        field = condition["field"]
-        op = condition["op"]
-        value = condition["value"]
-        actual = get_dict_value(item, field, splitter=self.field_splitter)
-        if actual is None:
-            return False
-        try:
-            if op == "==":
-                return actual == value
-            if op == "!=":
-                return actual != value
-            if op == ">":
-                return actual > value
-            if op == "<":
-                return actual < value
-            if op == ">=":
-                return actual >= value
-            if op == "<=":
-                return actual <= value
-        except TypeError:
-            return False
-        return False
+        from .where_filter import match_where
+        return match_where(item, condition)
 
     def _select_fields(self, item: Dict[str, Any], fields: Optional[List[str]]) -> Dict[str, Any]:
-        if not fields:
-            return item
-        selected = {}
-        for field in fields:
-            selected[field] = get_dict_value(item, field, splitter=self.field_splitter)
-        return selected
+        # P3.31: logic lifted to ``cmds.where_filter`` so it can be tested
+        # in isolation. The wrapper preserves the existing call signature.
+        from .where_filter import select_fields
+        return select_fields(item, fields, splitter=self.field_splitter)
 
     def _single_request(
         self,
@@ -759,25 +759,41 @@ class ProjectBuilder:
 
             if self.http_mode == "GET":
                 if self.flat_params and len(params.keys()) > 0:
-                    s = []
+                    # P2.21: redact sensitive keys in the flat-params branch so
+                    # token=... never lands in the log file.
+                    redacted_flatten = {}
                     for key, value in flatten.items():
-                        s.append("%s=%s" %
-                                 (key, value.replace("'", '"').replace("True", "true")))
-                    logging.info("url: %s", url + "?" + "&".join(s))
+                        redacted_flatten[key] = (
+                            _REDACTED if _is_sensitive_key(key)
+                            else value.replace("'", '"').replace("True", "true")
+                        )
+                    # P2.23: URL-encode the query so values with ``&``, ``=``,
+                    # ``#`` or whitespace do not corrupt or extend the query.
+                    from urllib.parse import urlencode
+                    query_string = urlencode(redacted_flatten, doseq=True)
+                    actual_query_string = urlencode(
+                        {k: v.replace("'", '"').replace("True", "true")
+                         for k, v in flatten.items()},
+                        doseq=True,
+                    )
+                    logging.info("url: %s", url + "?" + query_string)
                     if headers:
                         request_kwargs["headers"] = headers
-                        response = self.http.get(url + "?" + "&".join(s), **request_kwargs)
+                        response = self.http.get(url + "?" + actual_query_string, **request_kwargs)
                     else:
-                        response = self.http.get(url + "?" + "&".join(s), **request_kwargs)
+                        response = self.http.get(url + "?" + actual_query_string, **request_kwargs)
                 else:
-                    logging.info("url: %s, params: %s", url, str(params))
+                    # P2.21: redact Authorization/token/api_key before they reach
+                    # the log file (§5.1 of the 2026-10 analysis report).
+                    logging.info("url: %s, params: %s", url, redact_params(params))
                     if headers:
                         request_kwargs["headers"] = headers
                     request_kwargs["params"] = params
                     response = self.http.get(url, **request_kwargs)
             else:
-                logging.debug("Request %s, params %s, headers %s",
-                              url, str(params), str(headers))
+                # P2.21: same — redact before logging.
+                logging.debug("Request %s, params: %s, headers: %s",
+                              url, redact_params(params), redact_headers(headers))
                 if headers:
                     request_kwargs["headers"] = headers
                 request_kwargs["json"] = params
@@ -785,18 +801,36 @@ class ProjectBuilder:
 
             # Handle OAuth2 token refresh if needed
             if response.status_code == 401 and self.auth_handler and self.auth_handler.auth_type == "oauth2":
-                if self.auth_handler.refresh_token_if_needed(self.http):
-                    # Retry request with new token
+                # P2.24: propagate the session's TLS verification flag and
+                # timeout to the refresh POST so we never send a refresh-token
+                # over an unverified channel and never block the run indefinitely.
+                if self.auth_handler.refresh_token_if_needed(
+                    self.http,
+                    verify=self.verify_ssl,
+                    timeout=(self.connect_timeout, self.read_timeout),
+                ):
+                    # Retry request with new token. The original code passed
+                    # ``params=params`` (or ``json=params``) as a kwarg to
+                    # ``http.get`` *and* had already set ``request_kwargs["params"]``
+                    # above — ``requests`` raised ``TypeError: got multiple
+                    # values for keyword argument 'params'`` and the OAuth2
+                    # re-authentication path could never succeed (§4.2 of the
+                    # 2026-10 analysis report). Build a clean retry kwargs
+                    # without the body-bearing keys.
                     auth_headers = self.auth_handler.get_headers()
                     if headers:
                         headers.update(auth_headers)
                     else:
                         headers = auth_headers
-                    request_kwargs["headers"] = headers
+                    retry_kwargs = {
+                        k: v for k, v in request_kwargs.items()
+                        if k not in ("params", "json")
+                    }
+                    retry_kwargs["headers"] = headers
                     if self.http_mode == "GET":
-                        response = self.http.get(url, params=params, **request_kwargs)
+                        response = self.http.get(url, params=params, **retry_kwargs)
                     else:
-                        response = self.http.post(url, json=params, **request_kwargs)
+                        response = self.http.post(url, json=params, **retry_kwargs)
 
             return response
         except requests.exceptions.Timeout as e:
@@ -967,24 +1001,6 @@ class ProjectBuilder:
             )
             logging.error("OS error creating project %s: %s", name, e)
             raise RuntimeError(error_msg) from e
-
-    def init(
-        self,
-        url: str,  # noqa: ARG002
-        pagekey: str,  # noqa: ARG002
-        pagesize: str,  # noqa: ARG002
-        datakey: str,  # noqa: ARG002
-        itemkey: str,  # noqa: ARG002
-        changekey: str,  # noqa: ARG002
-        iterateby: str,  # noqa: ARG002
-        http_mode: str,  # noqa: ARG002
-        work_modes: str,  # noqa: ARG002
-    ) -> None:
-        """[TBD] Unfinished method. Don't use it please"""
-        self.__read_config(self.config_filename)
-        if self.config is None:
-            self._raise_config_not_found()
-            return
 
     def export(
         self,
@@ -1699,6 +1715,37 @@ class ProjectBuilder:
                 if len(outdata) == 0:
                     logging.info("Empty results on page %d. Stopped", target_page)
                     return False
+
+                # P1.19: detect "empty" pages by content, not by byte length.
+                # For JSON responses with ``data_key``, count records; for XML
+                # and HTML fall back to a non-empty serialised blob.
+                empty_page = False
+                if self.resp_type == "json" and self.data_key:
+                    try:
+                        items = get_dict_value(page_data, self.data_key,
+                                               splitter=self.field_splitter)
+                    except (TypeError, ValueError):
+                        items = None
+                    if items is None or (isinstance(items, list) and len(items) == 0):
+                        empty_page = True
+                if empty_page:
+                    logging.info(
+                        "Empty results on page %d (data_key=%s). Stopped",
+                        target_page, self.data_key,
+                    )
+                    return False
+
+                # P1.19 (part 2): capture the per-page record count outside
+                # the lock so the size-based early-stop can compare records
+                # to ``page_size_limit`` rather than the previous (buggy)
+                # bytes-vs-records comparison.
+                page_record_count = 0
+                if self.resp_type == "json" and self.data_key and 'items' in locals():
+                    if isinstance(items, list):
+                        page_record_count = len(items)
+                    elif items is not None:
+                        page_record_count = 1
+
                 if storage_backend:
                     storage_backend.save_page("page_%d.json" % (target_page), outdata)
                 with _result_lock:
@@ -1706,8 +1753,8 @@ class ProjectBuilder:
                     pages_processed += 1
                     if page_data is not None:
                         try:
-                            items = get_dict_value(page_data, self.data_key,
-                                                   splitter=self.field_splitter)
+                            # ``items`` was already computed above for the
+                            # empty-page check; reuse it instead of recomputing.
                             if isinstance(items, list):
                                 total_records += len(items)
                             elif items is not None:
@@ -1750,53 +1797,48 @@ class ProjectBuilder:
                             "updated_at": datetime.now(timezone.utc).isoformat()
                         }
                         self._save_checkpoint(checkpoint_payload)
-                if self.page_limit and len(outdata) < int(self.page_limit):
-                    logging.info("Page %d size is %d, less than expected page size %s. Stopped",
-                                 target_page, len(outdata), str(self.page_limit))
+                # P1.19: ``page_limit`` is the configured ``page_size_limit``
+                # (records per page). The historical comparison was
+                # ``len(outdata) < int(self.page_limit)`` — bytes against
+                # records — which never fired for large pages and fired
+                # prematurely for small ones. Compare record counts instead.
+                if self.page_limit and page_record_count < int(self.page_limit):
+                    logging.info(
+                        "Page %d returned %d records, less than expected page size %s. Stopped",
+                        target_page, page_record_count, str(self.page_limit),
+                    )
                     return False
                 return True
 
             pages = list(range(start_page, end_page))
-            if self.parallelism <= 1:
-                for page in pages:
-                    result = fetch_page(page)
-                    if result.get("error") or self._should_retry(result.get("status")):
-                        consecutive_errors += 1
-                        if result.get("status") is not None:
-                            error_counts[str(result.get("status"))] = (
-                                error_counts.get(str(result.get("status")), 0) + 1
-                            )
-                        if consecutive_errors >= self.max_consecutive_errors:
-                            if progress_bar:
-                                progress_bar.close()
-                            if storage_backend:
-                                storage_backend.close()
-                            return
-                        if not self.continue_on_error:
-                            if progress_bar:
-                                progress_bar.close()
-                            if storage_backend:
-                                storage_backend.close()
-                            return
-                        if progress_bar:
-                            progress_bar.update(1)
-                        continue
-                    consecutive_errors = 0
-                    if not handle_success(page, result["content"]):
-                        break
-            else:
-                for offset in range(0, len(pages), self.parallelism):
-                    batch = pages[offset:offset + self.parallelism]
-                    results: Dict[int, Dict[str, Any]] = {}
-                    with ThreadPoolExecutor(max_workers=self.parallelism) as executor:
-                        future_map = {executor.submit(fetch_page, page): page for page in batch}
-                        for future in as_completed(future_map):
-                            result = future.result()
-                            results[result["page"]] = result
-                    for page in batch:
-                        result = results.get(page)
-                        if result is None:
-                            continue
+
+            # P1.12: ensure ``storage_backend.close()`` runs on *every* early-exit
+            # path, including exceptions from ``fetch_page`` itself. The original
+            # parallel branch ``return``ed directly without closing the backend
+            # (sequential branch fell through to line ~1862 which did close),
+            # so a single error during parallel fetch could corrupt the zip
+            # central directory and lose every page that *was* fetched.
+            _run_close = getattr(storage_backend, "close", None)
+
+            def _safe_close_backend() -> None:
+                if _run_close is None:
+                    return
+                try:
+                    _run_close()
+                except (IOError, OSError, ValueError) as e:
+                    logging.error("Error closing storage backend: %s", e)
+
+            def _close_progress() -> None:
+                if progress_bar:
+                    try:
+                        progress_bar.close()
+                    except Exception:
+                        pass
+
+            try:
+                if self.parallelism <= 1:
+                    for page in pages:
+                        result = fetch_page(page)
                         if result.get("error") or self._should_retry(result.get("status")):
                             consecutive_errors += 1
                             if result.get("status") is not None:
@@ -1804,23 +1846,50 @@ class ProjectBuilder:
                                     error_counts.get(str(result.get("status")), 0) + 1
                                 )
                             if consecutive_errors >= self.max_consecutive_errors:
-                                if progress_bar:
-                                    progress_bar.close()
-                                if storage_backend:
-                                    storage_backend.close()
                                 return
                             if not self.continue_on_error:
-                                if progress_bar:
-                                    progress_bar.close()
-                                if storage_backend:
-                                    storage_backend.close()
                                 return
                             if progress_bar:
                                 progress_bar.update(1)
                             continue
                         consecutive_errors = 0
                         if not handle_success(page, result["content"]):
-                            return
+                            break
+                else:
+                    for offset in range(0, len(pages), self.parallelism):
+                        batch = pages[offset:offset + self.parallelism]
+                        results: Dict[int, Dict[str, Any]] = {}
+                        with ThreadPoolExecutor(max_workers=self.parallelism) as executor:
+                            future_map = {executor.submit(fetch_page, page): page for page in batch}
+                            for future in as_completed(future_map):
+                                result = future.result()
+                                results[result["page"]] = result
+                        for page in batch:
+                            result = results.get(page)
+                            if result is None:
+                                continue
+                            if result.get("error") or self._should_retry(result.get("status")):
+                                consecutive_errors += 1
+                                if result.get("status") is not None:
+                                    error_counts[str(result.get("status"))] = (
+                                        error_counts.get(str(result.get("status")), 0) + 1
+                                    )
+                                if consecutive_errors >= self.max_consecutive_errors:
+                                    return
+                                if not self.continue_on_error:
+                                    return
+                                if progress_bar:
+                                    progress_bar.update(1)
+                                continue
+                            consecutive_errors = 0
+                            if not handle_success(page, result["content"]):
+                                break
+                        else:
+                            continue
+                        break
+            finally:
+                _close_progress()
+                _safe_close_backend()
 
             run_end_time = datetime.now(timezone.utc)
             state_payload = {
@@ -1872,8 +1941,6 @@ class ProjectBuilder:
                     progress_bar.close()
                 except Exception:
                     pass
-
-        # pass
 
     def update(self, resume: bool = False) -> None:
         """Run update mode with state tracking."""
@@ -3238,12 +3305,3 @@ class ProjectBuilder:
                     print(f"  WARNING: {warning}")
 
         return len(errors) == 0
-
-    def to_package(self, filename: Optional[str] = None) -> None:  # noqa: ARG002
-        if self.config is None:
-            self._raise_config_not_found()
-            return
-
-        #        if not filename:
-        #            filename = 'package.zip'
-        #        print('Package saved as %s' % filename)

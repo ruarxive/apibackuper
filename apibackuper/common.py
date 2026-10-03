@@ -33,6 +33,11 @@ def etree_to_dict(t, prefix_strip=True):
 
 def get_dict_value(adict, key, prefix=None, as_array=False, splitter="."):
     """Used to get value from hierarhic dicts in python with params with dots as splitter"""
+    if key is None:
+        # A ``None`` key (e.g. an unset ``data_key`` in the project config) is
+        # a legitimate "skip" — return ``None`` rather than crashing on
+        # ``None.split(splitter)`` (§4.6 of the 2026-10 analysis report).
+        return None
     if prefix is None:
         prefix = key.split(splitter)
     if len(prefix) == 1:
@@ -69,7 +74,10 @@ def get_dict_value(adict, key, prefix=None, as_array=False, splitter="."):
                                          key,
                                          prefix=prefix[1:],
                                          as_array=as_array)
-                    if res:
+                    # ``if res:`` would silently drop legitimate falsy
+                    # values (0, False, "", {}, []). For a backup tool
+                    # whose job is faithful capture, we must keep them.
+                    if res is not None:
                         result.extend(res if isinstance(res, list) else [res])
             return result
         if len(adict) > 0 and isinstance(adict[0], dict) and prefix[0] in adict[0].keys():
@@ -104,7 +112,10 @@ def set_dict_value(adict, key, value, prefix=None, splitter="."):
                                      key,
                                      value,
                                      prefix=prefix[1:])
-                if res:
+                # ``if res:`` would silently drop legitimate falsy return
+                # values from ``set_dict_value`` (e.g. an empty dict or list
+                # indicates a real (re-)set, not a no-op).
+                if res is not None:
                     result.append(res)
         return result
     return None

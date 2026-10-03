@@ -22,25 +22,57 @@ try:
 except ImportError:
     YAML_AVAILABLE = False
 
-# Suppress various warnings
-urllib3.disable_warnings()
-warnings.filterwarnings('ignore', category=DeprecationWarning)
-warnings.filterwarnings('ignore', category=PendingDeprecationWarning)
-warnings.filterwarnings('ignore', category=UserWarning, module='urllib3')
+# P2.26: previously this module called ``urllib3.disable_warnings`` and
+# ``logging.basicConfig`` at *import* time. That hijacked the host
+# application's root logger, suppressed ``InsecureRequestWarning`` even when the
+# user opted in to ``verify_ssl = false``, and created ``apibackuper.log`` in
+# whatever directory the host happened to be in. Both side effects now live
+# inside ``_configure_logging_for_cli()`` which ``cli()`` calls (§5.5 of the
+# 2026-10 analysis report).
 
-# Configure logging to file by default, without stdout/stderr output
-log_file = os.path.join(os.getcwd(), "apibackuper.log")
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.DEBUG,
-    handlers=[logging.FileHandler(log_file)])
+
+def _configure_logging_for_cli() -> None:
+    """Initialise file logging and silence noisy warnings for the CLI entry.
+
+    Safe to call multiple times — handlers are reset on each call so importing
+    ``apibackuper.core`` from a host application does *not* have side effects.
+    """
+    log_file = os.path.join(os.getcwd(), "apibackuper.log")
+    root_logger = logging.getLogger()
+
+    # Suppress the noisy warnings only when the CLI is actually running, not
+    # when the package is imported as a library.
+    try:
+        urllib3.disable_warnings()
+    except Exception:
+        pass
+    warnings.filterwarnings('ignore', category=DeprecationWarning)
+    warnings.filterwarnings('ignore', category=PendingDeprecationWarning)
+    warnings.filterwarnings('ignore', category=UserWarning, module='urllib3')
+
+    root_logger.handlers.clear()
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setFormatter(logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    ))
+    root_logger.addHandler(file_handler)
+    root_logger.setLevel(logging.DEBUG)
 
 
 def enable_verbose() -> None:
     """Enable verbose output to console in addition to file logging"""
     root_logger = logging.getLogger()
-    # Only add console handler if it doesn't already exist
-    if not any(isinstance(h, logging.StreamHandler) for h in root_logger.handlers):
+    # Only add a console handler if no console handler already exists.
+    # NOTE: ``logging.FileHandler`` is a subclass of ``StreamHandler``, so a naive
+    # ``isinstance(h, StreamHandler)`` check would falsely treat the file handler
+    # as the console handler and skip installing one — making ``--verbose`` a
+    # silent no-op (see §4.3 of the 2026-10 analysis report).
+    has_console = any(
+        isinstance(h, logging.StreamHandler)
+        and not isinstance(h, logging.FileHandler)
+        for h in root_logger.handlers
+    )
+    if not has_console:
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(
             logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -798,6 +830,8 @@ def validate_config(
 
 def cli() -> None:
     """Main CLI entry point"""
+    # P2.26: configure logging on entry, not at import time (§5.5).
+    _configure_logging_for_cli()
     app()
 
 

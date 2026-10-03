@@ -8,7 +8,7 @@ version = "1.0.13"
 description = "a command-line tool and python library for API backuping"
 readme = "README.md"
 requires-python = ">=3.8"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Ivan Begtin", email = "ivan@begtin.tech"}
 ]
@@ -57,6 +57,7 @@ dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "pytest-mock>=3.12.0",
+    "pytest-timeout>=2.3.0",
     "black>=23.12.0",
     "isort>=5.13.0",
     "flake8>=7.0.0",
@@ -90,7 +91,7 @@ apibackuper = ["schemas/*.json"]
 # Black code formatter configuration
 [tool.black]
 line-length = 100
-target-version = ["py38", "py39", "py310", "py311", "py312"]
+target-version = ["py39", "py310", "py311", "py312", "py313"]
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -164,7 +165,7 @@ addopts = [
     "--cov-report=term-missing",
     "--cov-report=html",
     "--cov-report=xml",
-    "--cov-fail-under=0",
+    "--cov-fail-under=29",
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
@@ -202,20 +203,4 @@ exclude_lines = [
 [tool.bandit]
 exclude_dirs = ["tests", "test_*.py"]
 skips = ["B101", "B601"]  # Skip assert_used and shell_injection_subprocess
-
-# Flake8 configuration (also in setup.cfg, but keeping here for completeness)
-[tool.flake8]
-max-line-length = 100
-extend-ignore = ["E203"]
-exclude = [
-    ".git",
-    "__pycache__",
-    "build",
-    "dist",
-    ".eggs",
-    "*.egg",
-    ".tox",
-    ".venv",
-    ".mypy_cache",
-]
 

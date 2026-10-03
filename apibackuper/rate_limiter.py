@@ -52,18 +52,21 @@ class RateLimiter:
             # Add tokens based on elapsed time
             elapsed = now - self.last_update
             self.tokens = min(self.burst_size, self.tokens + elapsed * self.rate)
-            self.last_update = now
 
             if self.tokens < 1.0:
                 wait_time = (1.0 - self.tokens) / self.rate
                 if wait_time > 0:
                     logging.debug("Rate limit: waiting %.2f seconds", wait_time)
                     time.sleep(wait_time)
-                    self.tokens = 0.0
-                else:
-                    self.tokens = 0.0
+                # Update ``last_update`` *after* the sleep so the next call's
+                # ``elapsed`` doesn't double-count the time we just slept —
+                # otherwise sustained crawling drifts above the configured
+                # ``requests_per_second`` (§4.5 of the 2026-10 analysis report).
+                self.last_update = time.time()
+                self.tokens = 0.0
             else:
                 self.tokens -= 1.0
+                self.last_update = now
 
         # Per-minute rate limiting
         if self.requests_per_minute:

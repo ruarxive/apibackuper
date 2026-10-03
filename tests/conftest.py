@@ -18,10 +18,19 @@ def temp_dir() -> Generator[str, None, None]:
 
 @pytest.fixture
 def sample_config_ini(temp_dir: str) -> str:
-    """Create a sample INI config file"""
+    """Create a sample INI config file matching the schema-driven ProjectBuilder.
+
+    Sections required by ``ProjectBuilder.__read_config`` (lines ~211-260 of
+    ``cmds/project.py``) are now populated. Previously the fixture omitted
+    ``settings``, which crashed the loader with ``NoSectionError``.
+    """
     config_path = os.path.join(temp_dir, "apibackuper.cfg")
     config = configparser.ConfigParser()
-    
+
+    config.add_section("settings")
+    config.set("settings", "name", "test_project")
+    config.set("settings", "initialized", "true")
+
     config.add_section("project")
     config.set("project", "name", "test_project")
     config.set("project", "url", "https://api.example.com/data")
@@ -29,46 +38,57 @@ def sample_config_ini(temp_dir: str) -> str:
     config.set("project", "response_type", "json")
     config.set("project", "storage_type", "zip")
     config.set("project", "storage_path", "storage.zip")
-    
+
     config.add_section("configuration")
     config.set("configuration", "page_limit", "10")
     config.set("configuration", "start_page", "1")
     config.set("configuration", "iterate_by", "page")
     config.set("configuration", "default_delay", "0.5")
     config.set("configuration", "retry_count", "3")
-    
+
     config.add_section("data")
     config.set("data", "data_key", "items")
     config.set("data", "total_number_key", "total")
-    
+
     config.add_section("params")
     config.set("params", "page_number_param", "page")
     config.set("params", "page_size_param", "size")
-    
+    config.set("params", "page_size_limit", "10")
+
+    config.add_section("storage")
+    config.set("storage", "storage_type", "zip")
+    config.set("storage", "storage_path", "storage.zip")
+
     with open(config_path, "w") as f:
         config.write(f)
-    
+
     return config_path
 
 
 @pytest.fixture
 def sample_config_yaml(temp_dir: str) -> str:
-    """Create a sample YAML config file"""
+    """Create a sample YAML config file matching the current ProjectBuilder schema.
+
+    The previous fixture omitted ``settings``, ``storage`` and
+    ``params.page_size_limit``, all of which are now required.
+    """
     config_path = os.path.join(temp_dir, "apibackuper.yaml")
-    yaml_content = """project:
+    yaml_content = """settings:
+  name: test_project
+  initialized: true
+
+project:
   name: test_project
   url: https://api.example.com/data
   http_mode: GET
   response_type: json
-  storage_type: zip
-  storage_path: storage.zip
+  iterate_by: page
+  default_delay: 0.5
+  retry_count: 3
 
 configuration:
   page_limit: 10
   start_page: 1
-  iterate_by: page
-  default_delay: 0.5
-  retry_count: 3
 
 data:
   data_key: items
@@ -77,10 +97,15 @@ data:
 params:
   page_number_param: page
   page_size_param: size
+  page_size_limit: 10
+
+storage:
+  storage_type: zip
+  storage_path: storage.zip
 """
     with open(config_path, "w") as f:
         f.write(yaml_content)
-    
+
     return config_path
 
 
