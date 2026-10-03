@@ -54,8 +54,13 @@ class TestCLICommands:
         try:
             os.chdir(temp_dir)
             result = runner.invoke(app, ["create", "test_project", "--url", "https://api.example.com"])
-            # May exit with 0 or 1 depending on implementation
-            assert result.exit_code in [0, 1]
+            # The create command exits 0 on success, 2 on Typer usage errors.
+            # A bare ``SystemExit(1)`` would mean an uncaught error — that's
+            # the regression we want to catch.
+            assert result.exit_code in (0, 2), (
+                f"create command crashed: exit={result.exit_code}, "
+                f"output={result.output}"
+            )
         finally:
             os.chdir(original_cwd)
     
@@ -75,7 +80,10 @@ class TestCLICommands:
             os.chdir(project_dir)
             result = runner.invoke(app, ["run", "full"])
             # May succeed or fail depending on config
-            assert result.exit_code in [0, 1]
+            assert result.exit_code in (0, 2), (
+                f"command crashed uncaught: exit={result.exit_code}, "
+                f"output={result.output}"
+            )
             mock_project_builder.run.assert_called_with("full", resume=False)
         finally:
             os.chdir(original_cwd)
@@ -95,7 +103,10 @@ class TestCLICommands:
         try:
             os.chdir(project_dir)
             result = runner.invoke(app, ["run", "full", "--resume"])
-            assert result.exit_code in [0, 1]
+            assert result.exit_code in (0, 2), (
+                f"command crashed uncaught: exit={result.exit_code}, "
+                f"output={result.output}"
+            )
             mock_project_builder.run.assert_called_with("full", resume=True)
         finally:
             os.chdir(original_cwd)
@@ -169,7 +180,10 @@ class TestCLICommands:
             os.chdir(project_dir)
             result = runner.invoke(app, ["estimate", "full"])
             # May succeed or fail depending on config
-            assert result.exit_code in [0, 1]
+            assert result.exit_code in (0, 2), (
+                f"command crashed uncaught: exit={result.exit_code}, "
+                f"output={result.output}"
+            )
         finally:
             os.chdir(original_cwd)
     
@@ -189,7 +203,10 @@ class TestCLICommands:
             os.chdir(project_dir)
             result = runner.invoke(app, ["export", "output.jsonl"])
             # May succeed or fail depending on storage
-            assert result.exit_code in [0, 1]
+            assert result.exit_code in (0, 2), (
+                f"command crashed uncaught: exit={result.exit_code}, "
+                f"output={result.output}"
+            )
         finally:
             os.chdir(original_cwd)
 
@@ -208,7 +225,10 @@ class TestCLICommands:
         try:
             os.chdir(project_dir)
             result = runner.invoke(app, ["export", "output.jsonl", "--fields", "id,name", "--where", "id >= 1"])
-            assert result.exit_code in [0, 1]
+            assert result.exit_code in (0, 2), (
+                f"command crashed uncaught: exit={result.exit_code}, "
+                f"output={result.output}"
+            )
             mock_project_builder.export.assert_called_with(
                 "jsonl",
                 "output.jsonl",
@@ -274,7 +294,10 @@ class TestCLICommands:
             os.chdir(project_dir)
             result = runner.invoke(app, ["follow", "full"])
             # May succeed or fail depending on config
-            assert result.exit_code in [0, 1]
+            assert result.exit_code in (0, 2), (
+                f"command crashed uncaught: exit={result.exit_code}, "
+                f"output={result.output}"
+            )
         finally:
             os.chdir(original_cwd)
     
@@ -294,7 +317,10 @@ class TestCLICommands:
             os.chdir(project_dir)
             result = runner.invoke(app, ["getfiles"])
             # May succeed or fail depending on config
-            assert result.exit_code in [0, 1]
+            assert result.exit_code in (0, 2), (
+                f"command crashed uncaught: exit={result.exit_code}, "
+                f"output={result.output}"
+            )
         finally:
             os.chdir(original_cwd)
 
@@ -313,7 +339,10 @@ class TestCLICommands:
         try:
             os.chdir(project_dir)
             result = runner.invoke(app, ["update"])
-            assert result.exit_code in [0, 1]
+            assert result.exit_code in (0, 2), (
+                f"command crashed uncaught: exit={result.exit_code}, "
+                f"output={result.output}"
+            )
             mock_project_builder.update.assert_called_with(resume=False)
         finally:
             os.chdir(original_cwd)
