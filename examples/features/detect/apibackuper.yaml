@@ -1,0 +1,14 @@
+settings:
+  name: hubofdata-ru
+  initialized: false
+project:
+  url: https://hubofdata.ru/api/3/action/package_search
+  http_mode: GET
+  work_modes: full
+  resp_type: json
+params:
+  page_size_limit: 100
+data: {}
+storage:
+  storage_type: zip
+  storage_path: storage

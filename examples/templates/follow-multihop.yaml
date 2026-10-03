@@ -1,0 +1,37 @@
+settings:
+  name: follow-multihop-example
+
+project:
+  url: https://api.example.com/orgs
+  http_mode: GET
+  iterate_by: page
+
+params:
+  page_number_param: page
+  page_size_param: per_page
+  page_size_limit: 50
+
+data:
+  data_key: orgs
+  item_key: id
+
+follow:
+  rules:
+    - name: departments
+      follow_mode: item
+      follow_pattern: "https://api.example.com/orgs/{org_id}/departments"
+      follow_item_key: id
+      follow_param: org_id
+      iterate_by: page
+      params:
+        page_number_param: page
+        page_size_param: per_page
+        page_size_limit: 50
+    - name: employees
+      follow_mode: item
+      follow_pattern: "https://api.example.com/departments/{dept_id}/employees"
+      follow_item_key: id
+      follow_param: dept_id
+
+storage:
+  storage_type: zip

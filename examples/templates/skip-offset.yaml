@@ -1,0 +1,19 @@
+settings:
+  name: skip-offset-example
+
+project:
+  url: https://api.example.com/items
+  http_mode: GET
+  iterate_by: skip
+
+params:
+  count_skip_param: offset
+  page_size_param: limit
+  page_size_limit: 200
+
+data:
+  data_key: results
+  total_number_key: count
+
+storage:
+  storage_type: zip

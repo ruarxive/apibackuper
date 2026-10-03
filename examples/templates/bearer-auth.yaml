@@ -1,0 +1,23 @@
+settings:
+  name: bearer-auth-example
+
+project:
+  url: https://api.example.com/items
+  http_mode: GET
+  iterate_by: page
+
+params:
+  page_number_param: page
+  page_size_param: per_page
+  page_size_limit: 50
+
+data:
+  data_key: data
+  total_number_key: total
+
+auth:
+  type: bearer
+  token: "REPLACE_WITH_TOKEN"
+
+storage:
+  storage_type: zip

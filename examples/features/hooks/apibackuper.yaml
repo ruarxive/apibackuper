@@ -1,0 +1,30 @@
+settings:
+  name: hubofdata-hooks
+
+project:
+  description: Хаб открытых данных datasets
+  url: https://hubofdata.ru/api/3/action/package_search
+  http_mode: GET
+  work_modes: full,incremental,update
+  iterate_by: skip
+
+params:
+  page_size_param: rows
+  page_size_limit: 100
+  count_skip_param: start
+
+data:
+  total_number_key: result.count
+  data_key: result.results
+  item_key: id
+  change_key: metadata_modified
+
+hooks:
+  before_run: hooks/before_run.py
+  before_request: hooks/before_request.py
+  after_response: hooks/after_response.py
+  after_page: hooks/after_page.py
+  after_run: hooks/after_run.py
+
+storage:
+  storage_type: zip

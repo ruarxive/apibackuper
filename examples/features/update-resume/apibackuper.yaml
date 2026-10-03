@@ -1,0 +1,27 @@
+settings:
+  name: hubofdata-update-resume
+  state_file: apibackuper_state.json
+  checkpoint_file: apibackuper_checkpoint.json
+  checkpoint_interval_pages: 5
+
+project:
+  description: Хаб открытых данных datasets
+  url: https://hubofdata.ru/api/3/action/package_search
+  http_mode: GET
+  work_modes: full,incremental,update
+  iterate_by: skip
+  update_mode: by_change_key
+
+params:
+  page_size_param: rows
+  page_size_limit: 100
+  count_skip_param: start
+
+data:
+  total_number_key: result.count
+  data_key: result.results
+  item_key: id
+  change_key: metadata_modified
+
+storage:
+  storage_type: zip
