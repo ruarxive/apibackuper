@@ -144,16 +144,41 @@ class TestRateLimiter:
     def test_hour_window_cleanup(self):
         """Test that old requests are removed from hour window"""
         limiter = RateLimiter(requests_per_hour=10)
-        
+
         # Add some requests
         for _ in range(5):
             limiter.wait_if_needed()
-        
+
         assert len(limiter.hour_requests) == 5
-        
+
         # Simulate time passing
         with patch('time.time', return_value=time.time() + 3700):
             limiter.wait_if_needed()
             # Old requests should be cleaned up
             assert len(limiter.hour_requests) <= 1
+
+    def test_zero_per_second_does_not_divide_by_zero(self):
+        """requests_per_second=0 must not crash the rate limiter."""
+        limiter = RateLimiter(requests_per_second=0)
+        # The constructor accepts 0 — the second_window is never
+        # enabled, so the limiter falls back to no rate-limit at all.
+        assert limiter.requests_per_second == 0
+        # wait_if_needed must not raise (would have raised ZeroDivisionError
+        # in the historical implementation).
+        limiter.wait_if_needed()
+
+    def test_zero_all_limits_disables_limiter(self):
+        """All three limits at 0 = no rate limiting."""
+        limiter = RateLimiter(
+            requests_per_second=0,
+            requests_per_minute=0,
+            requests_per_hour=0,
+        )
+        # All three should be 0 — the limiter is effectively off.
+        assert limiter.requests_per_second == 0
+        assert limiter.requests_per_minute == 0
+        assert limiter.requests_per_hour == 0
+        # And it can be called many times without sleeping.
+        for _ in range(20):
+            limiter.wait_if_needed()
 

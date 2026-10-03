@@ -284,3 +284,53 @@ class TestSqliteStorageBackendSecurity:
 
         backend.close()
 
+
+class TestStorageEdgeCases:
+    """Storage must handle empty and binary payloads without crashing.
+
+    These cover the edge cases called out in §3.8-3.9 of the
+    ``improve-test-quality`` backlog (2026-10 analysis report).
+    """
+
+    def test_filesystem_empty_content(self, temp_dir):
+        """Storing an empty byte string round-trips correctly."""
+        backend = build_storage_backend("filesystem", temp_dir, "w")
+        backend.save_object("empty.json", b"")
+        assert "empty.json" in backend.list_objects("object")
+        assert backend.get_object("empty.json", "object") == b""
+
+    def test_zip_empty_content(self, temp_dir):
+        """Zip backend round-trips empty bytes."""
+        backend = build_storage_backend(
+            "zip", os.path.join(temp_dir, "store.zip"), "w"
+        )
+        backend.save_object("empty.json", b"")
+        assert "empty.json" in backend.list_objects("object")
+        assert backend.get_object("empty.json", "object") == b""
+
+    def test_filesystem_binary_content(self, temp_dir):
+        """Non-UTF-8 binary content round-trips intact."""
+        backend = build_storage_backend("filesystem", temp_dir, "w")
+        # PNG header bytes — definitely not UTF-8.
+        payload = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+        backend.save_object("blob.bin", payload)
+        assert backend.get_object("blob.bin", "object") == payload
+
+    def test_zip_binary_content(self, temp_dir):
+        """Zip backend round-trips binary content."""
+        backend = build_storage_backend(
+            "zip", os.path.join(temp_dir, "store.zip"), "w"
+        )
+        payload = bytes(range(256))  # full byte range
+        backend.save_object("blob.bin", payload)
+        assert backend.get_object("blob.bin", "object") == payload
+
+    def test_sqlite_binary_content(self, temp_dir):
+        """SQLite backend round-trips binary content."""
+        backend = build_storage_backend(
+            "sqlite", os.path.join(temp_dir, "store.db"), "w"
+        )
+        payload = b"\x00\x01\x02\xff\xfe\xfd"
+        backend.save_object("blob.bin", payload)
+        assert backend.get_object("blob.bin", "object") == payload
+
