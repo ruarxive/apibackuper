@@ -368,3 +368,78 @@ class TestParseTotalPages:
         )
         # close() was attempted (and failed internally — swallowed).
         broken_bar.close.assert_called_once()
+
+    def test_safe_close_backend_logs_and_swallows_ioerror(self):
+        """``safe_close_backend`` swallows IOError / OSError /
+        ValueError from the storage backend's ``close()`` so a
+        malfunctioning close at end-of-run doesn't crash the CLI."""
+        from apibackuper.cmds.runner import fetch_all_pages
+
+        broken_storage = MagicMock()
+        broken_storage.close.side_effect = OSError("disk full")
+        broken_storage.save_page = MagicMock()
+
+        def fetch_one(page):
+            return {"status": 200, "content": b"{}", "error": None}
+
+        def on_page(page, content):
+            return True
+
+        # Should not raise despite the storage close() failing.
+        fetch_all_pages(
+            pages=[1],
+            parallelism=1,
+            fetch_one=fetch_one,
+            on_page=on_page,
+            should_retry=lambda s: False,
+            retry_max_retries=1,
+            max_consecutive_errors=10,
+            continue_on_error=True,
+            storage_backend=broken_storage,
+            progress_bar=None,
+            start_timer=0.0,
+            total_pages=1,
+            checkpoint_interval=None,
+            save_checkpoint=lambda x: None,
+        )
+        broken_storage.close.assert_called_once()
+
+    def test_parallel_mode_handles_pages(self):
+        """In parallel mode, the helper dispatches via a
+        ThreadPoolExecutor. Verify it doesn't crash with
+        parallelism > 1."""
+        from apibackuper.cmds.runner import fetch_all_pages
+        pages_processed = []
+
+        def on_page(p, content):
+            pages_processed.append(p)
+            return True
+
+        def fetch_one(page):
+            return {
+                "page": page,
+                "status": 200,
+                "content": b'{"x": 1}',
+                "error": None,
+            }
+
+        storage = MagicMock()
+
+        fetch_all_pages(
+            pages=[1, 2, 3],
+            parallelism=2,
+            fetch_one=fetch_one,
+            on_page=on_page,
+            should_retry=lambda s: False,
+            retry_max_retries=1,
+            max_consecutive_errors=10,
+            continue_on_error=True,
+            storage_backend=storage,
+            progress_bar=None,
+            start_timer=0.0,
+            total_pages=3,
+            checkpoint_interval=None,
+            save_checkpoint=lambda x: None,
+        )
+        # All three pages processed by the parallel branch.
+        assert sorted(pages_processed) == [1, 2, 3]
