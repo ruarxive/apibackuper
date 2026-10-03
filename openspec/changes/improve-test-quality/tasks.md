@@ -17,17 +17,17 @@
 - [x] 3.1 `test_pagination_non_divisible_total()` — total=100, limit=30 → 4 pages (verified by integer division fix)
 - [x] 3.2 `test_url_replacer_non_query_mode_no_question_mark()` — verifies fix
 - [ ] 3.3 `test_retry_on_500()` — mock transient failure then success
-- [ ] 3.4 `test_retry_with_retry_after()` — honor Retry-After header
-- [ ] 3.5 `test_rate_limiter_all_limits()` — all three limits active simultaneously
-- [ ] 3.6 `test_rate_limiter_zero_limit()` — requests_per_second=0
+- [x] 3.4 `test_retry_with_retry_after()` — honor Retry-After header
+- [x] 3.5 `test_rate_limiter_all_limits()` — all three limits active simultaneously
+- [x] 3.6 `test_rate_limiter_zero_limit()` — requests_per_second=0
 - [x] 3.7 `test_filesystem_storage_path_traversal()` — reject `../` in paths
-- [ ] 3.8 `test_storage_empty_content()` — store and retrieve empty bytes
-- [ ] 3.9 `test_storage_binary_content()` — store and retrieve non-UTF-8 data
+- [x] 3.8 `test_storage_empty_content()` — store and retrieve empty bytes
+- [x] 3.9 `test_storage_binary_content()` — store and retrieve non-UTF-8 data
 - [x] 3.10 `test_sqlite_invalid_table_name()` — SQL injection prevention
 
 ## 4. Negative Tests
-- [ ] 4.1 `test_config_file_missing()` — graceful error, non-zero exit
-- [ ] 4.2 `test_config_invalid_yaml()` — parse error handling
+- [x] 4.1 `test_config_file_missing()` — graceful error, non-zero exit
+- [x] 4.2 `test_config_invalid_yaml()` — parse error handling
 - [ ] 4.3 `test_network_timeout()` — connection timeout recovery
 - [ ] 4.4 `test_permission_error()` — cannot write to storage path
 
