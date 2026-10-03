@@ -593,6 +593,18 @@ def run(
             "config_format": acmd.config_format,
             "config_filename": os.path.basename(acmd.config_filename),
         }
+        # P4 (add-dry-run-mode): estimate records + ETA from state /
+        # config without making any HTTP requests.
+        from .cmds.profile import compute_profile_estimate
+        state_payload = acmd._load_state() if hasattr(acmd, "_load_state") else {}
+        profile_data["estimate"] = compute_profile_estimate(
+            page_limit=getattr(acmd, "page_limit", None),
+            iterate_by=getattr(acmd, "iterate_by", None),
+            total_number_key=getattr(acmd, "total_number_key", "") or None,
+            rps=getattr(acmd, "rps", None),
+            default_delay=getattr(acmd, "default_delay", None),
+            state=state_payload,
+        )
         import json as _json
         print(_json.dumps(profile_data, indent=2, default=str))
         return

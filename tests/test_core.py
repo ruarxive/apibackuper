@@ -367,3 +367,127 @@ class TestCLICommands:
             mock_project_builder.detect.assert_called_with(write_config=False)
         finally:
             os.chdir(original_cwd)
+
+
+class TestProfileFlag:
+    """P4 (add-dry-run-mode): ``--profile`` prints a JSON estimate
+    sub-dict sourced from ``cmds.profile.compute_profile_estimate``.
+    These tests guard the wiring through the CLI."""
+
+    @patch('apibackuper.core.ProjectBuilder')
+    def test_profile_flag_emits_estimate_subdict(self, mock_project_builder_class, sample_config_ini):
+        mock_project_builder = Mock()
+        mock_project_builder.config_format = "yaml"
+        mock_project_builder.config_filename = sample_config_ini
+        mock_project_builder.name = "demo"
+        mock_project_builder.start_url = "https://api.example.com/items"
+        mock_project_builder.http_mode = "GET"
+        mock_project_builder.resp_type = "json"
+        mock_project_builder.storage_type = "zip"
+        mock_project_builder.storagedir = "/tmp/store"
+        mock_project_builder.auth_handler = None
+        mock_project_builder.iterate_by = "page"
+        mock_project_builder.page_limit = 50
+        mock_project_builder.start_page = 1
+        mock_project_builder.parallelism = 1
+        mock_project_builder.rps = 5.0
+        mock_project_builder.burst = 1
+        mock_project_builder.total_number_key = "meta.total"
+        mock_project_builder.default_delay = 0.5
+        mock_project_builder._load_state = Mock(return_value={})
+        mock_project_builder_class.return_value = mock_project_builder
+
+        runner = typer.testing.CliRunner()
+        project_dir = os.path.dirname(sample_config_ini)
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(project_dir)
+            result = runner.invoke(app, ["run", "full", "--profile"])
+            assert result.exit_code == 0, (
+                f"--profile crashed: exit={result.exit_code}, output={result.output}"
+            )
+            payload = json.loads(result.stdout)
+            assert "estimate" in payload
+            assert payload["estimate"]["source"] == "config"
+            assert payload["estimate"]["records_estimate"] == 50  # 1 page lower bound
+            assert payload["estimate"]["pages_estimate"] == 1
+            assert payload["estimate"]["eta_seconds"] is not None
+        finally:
+            os.chdir(original_cwd)
+
+    @patch('apibackuper.core.ProjectBuilder')
+    def test_profile_flag_uses_state_when_present(self, mock_project_builder_class, sample_config_ini):
+        mock_project_builder = Mock()
+        mock_project_builder.config_format = "yaml"
+        mock_project_builder.config_filename = sample_config_ini
+        mock_project_builder.name = "demo"
+        mock_project_builder.start_url = "https://api.example.com/items"
+        mock_project_builder.http_mode = "GET"
+        mock_project_builder.resp_type = "json"
+        mock_project_builder.storage_type = "zip"
+        mock_project_builder.storagedir = "/tmp/store"
+        mock_project_builder.auth_handler = None
+        mock_project_builder.iterate_by = "page"
+        mock_project_builder.page_limit = 50
+        mock_project_builder.start_page = 1
+        mock_project_builder.parallelism = 1
+        mock_project_builder.rps = None
+        mock_project_builder.burst = None
+        mock_project_builder.total_number_key = None
+        mock_project_builder.default_delay = None
+        mock_project_builder._load_state = Mock(return_value={
+            "records_processed": 1234,
+            "last_run_start": "2026-10-01T10:00:00+00:00",
+            "last_run_end": "2026-10-01T10:00:42+00:00",
+        })
+        mock_project_builder_class.return_value = mock_project_builder
+
+        runner = typer.testing.CliRunner()
+        project_dir = os.path.dirname(sample_config_ini)
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(project_dir)
+            result = runner.invoke(app, ["run", "full", "--profile"])
+            assert result.exit_code == 0
+            payload = json.loads(result.stdout)
+            assert payload["estimate"]["source"] == "state"
+            assert payload["estimate"]["records_estimate"] == 1234
+            assert payload["estimate"]["eta_seconds"] == 42.0
+        finally:
+            os.chdir(original_cwd)
+
+    @patch('apibackuper.core.ProjectBuilder')
+    def test_profile_flag_unknown_when_no_state_no_key(self, mock_project_builder_class, sample_config_ini):
+        mock_project_builder = Mock()
+        mock_project_builder.config_format = "yaml"
+        mock_project_builder.config_filename = sample_config_ini
+        mock_project_builder.name = "demo"
+        mock_project_builder.start_url = "https://api.example.com/items"
+        mock_project_builder.http_mode = "GET"
+        mock_project_builder.resp_type = "json"
+        mock_project_builder.storage_type = "zip"
+        mock_project_builder.storagedir = "/tmp/store"
+        mock_project_builder.auth_handler = None
+        mock_project_builder.iterate_by = "page"
+        mock_project_builder.page_limit = 50
+        mock_project_builder.start_page = 1
+        mock_project_builder.parallelism = 1
+        mock_project_builder.rps = None
+        mock_project_builder.burst = None
+        mock_project_builder.total_number_key = None
+        mock_project_builder.default_delay = None
+        mock_project_builder._load_state = Mock(return_value={})
+        mock_project_builder_class.return_value = mock_project_builder
+
+        runner = typer.testing.CliRunner()
+        project_dir = os.path.dirname(sample_config_ini)
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(project_dir)
+            result = runner.invoke(app, ["run", "full", "--profile"])
+            assert result.exit_code == 0
+            payload = json.loads(result.stdout)
+            assert payload["estimate"]["source"] == "unknown"
+            assert payload["estimate"]["records_estimate"] is None
+        finally:
+            os.chdir(original_cwd)
