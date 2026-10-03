@@ -182,3 +182,61 @@ class TestValidateConfigReturnShape:
         # without crashing the validator.
         assert is_valid is False
         assert errors >= 1
+
+
+class TestValidateConfigNegativeCases:
+    """Negative tests called out in §4 of improve-test-quality (4.1, 4.2)."""
+
+    def test_config_file_missing_returns_invalid(self, tmp_path):
+        """A directory with no config file at all returns is_valid=False."""
+        builder = ProjectBuilder(str(tmp_path))
+        is_valid, errors, warnings = builder.validate_config(verbose=False)
+        assert is_valid is False
+        assert errors >= 1
+
+    def test_invalid_yaml_does_not_crash(self, tmp_path):
+        """Malformed YAML must surface as a validation error, not a crash."""
+        bad_yaml = (
+            "project:\n"
+            "  url: [unclosed bracket\n"
+            "  http_mode: GET\n"
+        )
+        cfg_path = tmp_path / "apibackuper.yaml"
+        cfg_path.write_text(bad_yaml)
+
+        builder = ProjectBuilder(str(tmp_path))
+        # Either the YAML parse fails during __init__ (logged, builder
+        # has config=None) or the validator reports it. Both are
+        # acceptable; what must NOT happen is an uncaught exception.
+        try:
+            is_valid, errors, warnings = builder.validate_config(verbose=False)
+        except Exception as e:  # noqa: BLE001
+            pytest.fail(
+                f"validate_config crashed on bad YAML: {type(e).__name__}: {e}"
+            )
+        # If we got here, we did not crash. The result should reflect
+        # the missing/broken config.
+        assert is_valid is False or errors >= 1 or builder.config is None
+
+    def test_completely_empty_config(self, tmp_path):
+        """An empty YAML file must not crash the validator."""
+        cfg_path = tmp_path / "apibackuper.yaml"
+        cfg_path.write_text("")
+        # ``ProjectBuilder.__init__`` parses the YAML at construction
+        # time. An empty file may raise a YAMLError / configparser
+        # error there — that's acceptable. What must NOT happen is an
+        # uncaught crash from ``validate_config`` itself.
+        acceptable_init_errors = (
+            "ScannerError", "ParserError", "YAMLError",
+            "NoOptionError", "NoSectionError",
+        )
+        try:
+            builder = ProjectBuilder(str(tmp_path))
+            is_valid, errors, warnings = builder.validate_config(verbose=False)
+        except Exception as e:  # noqa: BLE001
+            if type(e).__name__ in acceptable_init_errors:
+                return
+            import pytest as _pytest
+            _pytest.fail(
+                f"validate_config crashed on empty YAML: {type(e).__name__}: {e}"
+            )
