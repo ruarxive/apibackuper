@@ -16,7 +16,7 @@
 ## 3. Edge Case Tests
 - [x] 3.1 `test_pagination_non_divisible_total()` — total=100, limit=30 → 4 pages (verified by integer division fix)
 - [x] 3.2 `test_url_replacer_non_query_mode_no_question_mark()` — verifies fix
-- [ ] 3.3 `test_retry_on_500()` — mock transient failure then success
+- [x] 3.3 `test_retry_on_500()` — mock transient failure then success
 - [x] 3.4 `test_retry_with_retry_after()` — honor Retry-After header
 - [x] 3.5 `test_rate_limiter_all_limits()` — all three limits active simultaneously
 - [x] 3.6 `test_rate_limiter_zero_limit()` — requests_per_second=0
