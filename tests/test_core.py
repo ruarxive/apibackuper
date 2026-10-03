@@ -369,6 +369,93 @@ class TestCLICommands:
             os.chdir(original_cwd)
 
 
+class TestDryRunFlag:
+    """``--dry-run`` is an alias for ``--profile`` on the ``run`` command
+    and is also wired through ``update`` / ``follow``. None of them
+    may invoke the underlying API method."""
+
+    def _make_mock_builder(self, mock_project_builder_class):
+        m = Mock()
+        m.config_format = "yaml"
+        m.config_filename = "apibackuper.yaml"
+        m.name = "demo"
+        m.start_url = "https://api.example.com/items"
+        m.http_mode = "GET"
+        m.resp_type = "json"
+        m.storage_type = "zip"
+        m.storagedir = "/tmp/store"
+        m.auth_handler = None
+        m.iterate_by = "page"
+        m.page_limit = 50
+        m.start_page = 1
+        m.parallelism = 1
+        m.rps = None
+        m.burst = None
+        m.total_number_key = None
+        m.default_delay = None
+        m._load_state = Mock(return_value={})
+        m.run = Mock()
+        m.update = Mock()
+        m.follow = Mock()
+        m.follow_mode = "item"
+        m.follow_pattern = "https://api.example.com/items/{id}"
+        mock_project_builder_class.return_value = m
+        return m
+
+    @patch('apibackuper.core.ProjectBuilder')
+    def test_run_dry_run_alias_for_profile(self, mock_pbc, sample_config_ini):
+        """--dry-run on `run` exits without invoking run()."""
+        self._make_mock_builder(mock_pbc)
+        runner = typer.testing.CliRunner()
+        project_dir = os.path.dirname(sample_config_ini)
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(project_dir)
+            result = runner.invoke(app, ["run", "full", "--dry-run"])
+            assert result.exit_code == 0
+            payload = json.loads(result.stdout)
+            assert "estimate" in payload
+            mock_pbc.return_value.run.assert_not_called()
+        finally:
+            os.chdir(original_cwd)
+
+    @patch('apibackuper.core.ProjectBuilder')
+    def test_update_dry_run_does_not_invoke_update(self, mock_pbc, sample_config_ini):
+        """--dry-run on `update` prints the plan and exits."""
+        self._make_mock_builder(mock_pbc)
+        runner = typer.testing.CliRunner()
+        project_dir = os.path.dirname(sample_config_ini)
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(project_dir)
+            result = runner.invoke(app, ["update", "--dry-run"])
+            assert result.exit_code == 0
+            payload = json.loads(result.stdout)
+            assert payload["command"] == "update"
+            assert "estimate" in payload
+            mock_pbc.return_value.update.assert_not_called()
+        finally:
+            os.chdir(original_cwd)
+
+    @patch('apibackuper.core.ProjectBuilder')
+    def test_follow_dry_run_does_not_invoke_follow(self, mock_pbc, sample_config_ini):
+        """--dry-run on `follow` prints the plan and exits."""
+        self._make_mock_builder(mock_pbc)
+        runner = typer.testing.CliRunner()
+        project_dir = os.path.dirname(sample_config_ini)
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(project_dir)
+            result = runner.invoke(app, ["follow", "full", "--dry-run"])
+            assert result.exit_code == 0
+            payload = json.loads(result.stdout)
+            assert payload["command"] == "follow"
+            assert "estimate" in payload
+            mock_pbc.return_value.follow.assert_not_called()
+        finally:
+            os.chdir(original_cwd)
+
+
 class TestProfileFlag:
     """P4 (add-dry-run-mode): ``--profile`` prints a JSON estimate
     sub-dict sourced from ``cmds.profile.compute_profile_estimate``.

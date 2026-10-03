@@ -571,18 +571,27 @@ def run(
         False, "--profile",
         help="Print a pre-flight summary of the resolved config + estimated record count, then exit without making any requests.",
     ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run",
+        help="Alias for --profile. Exits without making any HTTP requests.",
+    ),
 ):
     """Executes project, collects data from API.
 
-    With ``--profile``, prints a JSON profile of the resolved configuration
-    (URL, headers, auth, iteration strategy, expected record count) to
-    stdout and exits without making any requests.
+    With ``--profile`` (or its alias ``--dry-run``), prints a JSON
+    profile of the resolved configuration (URL, headers, auth,
+    iteration strategy, expected record count, ETA) to stdout and
+    exits without making any requests.
     """
     if verbose:
         enable_verbose()
     acmd = ProjectBuilder(projectpath)
     if acmd.config_format == "ini":
         print("Warning: INI configuration is deprecated; use YAML instead.")
+    # ``--dry-run`` is an alias for ``--profile`` — the implementation
+    # is identical (no HTTP requests + print the plan).
+    if dry_run and not profile:
+        profile = True
     if profile:
         profile_data = {
             "project": {
@@ -634,6 +643,10 @@ def update(
     projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
     resume: bool = typer.Option(False, "--resume", help="Resume from checkpoint"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output. Print additional info"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run",
+        help="Print the resolved config + estimated record count, then exit without making any requests.",
+    ),
 ):
     """Executes project update mode using stored state"""
     if verbose:
@@ -641,6 +654,40 @@ def update(
     acmd = ProjectBuilder(projectpath)
     if acmd.config_format == "ini":
         print("Warning: INI configuration is deprecated; use YAML instead.")
+    if dry_run:
+        # Reuse the ``--profile`` plan emitter from the ``run`` command.
+        # The helper is pure — it consumes the resolved config and any
+        # state file. Same JSON shape so downstream tooling can parse it.
+        from .cmds.profile import compute_profile_estimate
+        profile_data = {
+            "command": "update",
+            "resume": resume,
+            "project": {
+                "name": getattr(acmd, "name", None),
+                "url": getattr(acmd, "start_url", None),
+                "http_mode": getattr(acmd, "http_mode", None),
+                "response_type": getattr(acmd, "resp_type", None),
+                "storage_type": getattr(acmd, "storage_type", None),
+            },
+            "iteration": {
+                "iterate_by": getattr(acmd, "iterate_by", None),
+                "page_size_limit": getattr(acmd, "page_limit", None),
+                "start_page": getattr(acmd, "start_page", None),
+            },
+            "config_format": acmd.config_format,
+            "config_filename": os.path.basename(acmd.config_filename),
+        }
+        state_payload = acmd._load_state() if hasattr(acmd, "_load_state") else {}
+        profile_data["estimate"] = compute_profile_estimate(
+            page_limit=getattr(acmd, "page_limit", None),
+            iterate_by=getattr(acmd, "iterate_by", None),
+            total_number_key=getattr(acmd, "total_number_key", "") or None,
+            rps=getattr(acmd, "rps", None),
+            default_delay=getattr(acmd, "default_delay", None),
+            state=state_payload,
+        )
+        print(json.dumps(profile_data, indent=2, default=str))
+        return
     acmd.update(resume=resume)
 
 
@@ -863,9 +910,41 @@ def info(
 def follow(
     mode: str = typer.Argument(..., help="Follow mode: full or continue"),
     projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run",
+        help="Print the resolved config + estimated record count, then exit without making any requests.",
+    ),
 ):
     """Follow already extracted data to collect details. Use one of modes: full or continue"""
     acmd = ProjectBuilder(projectpath)
+    if dry_run:
+        from .cmds.profile import compute_profile_estimate
+        profile_data = {
+            "command": "follow",
+            "follow_mode": getattr(acmd, "follow_mode", None),
+            "follow_pattern": getattr(acmd, "follow_pattern", None),
+            "iteration": {
+                "iterate_by": getattr(acmd, "iterate_by", None),
+                "page_size_limit": getattr(acmd, "page_limit", None),
+            },
+            "rate_limit": {
+                "requests_per_second": getattr(acmd, "rps", None),
+                "default_delay": getattr(acmd, "default_delay", None),
+            },
+            "config_format": acmd.config_format,
+            "config_filename": os.path.basename(acmd.config_filename),
+        }
+        state_payload = acmd._load_state() if hasattr(acmd, "_load_state") else {}
+        profile_data["estimate"] = compute_profile_estimate(
+            page_limit=getattr(acmd, "page_limit", None),
+            iterate_by=getattr(acmd, "iterate_by", None),
+            total_number_key=getattr(acmd, "total_number_key", "") or None,
+            rps=getattr(acmd, "rps", None),
+            default_delay=getattr(acmd, "default_delay", None),
+            state=state_payload,
+        )
+        print(json.dumps(profile_data, indent=2, default=str))
+        return
     acmd.follow(mode)
 
 
