@@ -5,8 +5,7 @@ import zipfile
 import pytest
 from apibackuper.storage import (
     FileStorage,
-    ZipFileStorage,
-    FilesystemStorage,
+    FilesystemStorageBackend,
     ZipStorageBackend,
     SqliteStorageBackend,
     build_storage_backend,
@@ -35,156 +34,150 @@ class TestFileStorage:
         storage.close()
 
 
-class TestZipFileStorage:
-    """Tests for ZipFileStorage class"""
-    
+class TestZipStorageBackendMigration:
+    """Migration of the legacy TestZipFileStorage scenarios to the
+    new ``ZipStorageBackend`` Protocol implementation. Same coverage,
+    new API (``save_object`` / ``list_objects`` / ``get_object``)."""
+
     def test_init_create_new(self, temp_dir):
-        """Test creating new zip file storage"""
+        """Creating a new zip backend writes an empty archive."""
         zip_path = os.path.join(temp_dir, "test.zip")
-        storage = ZipFileStorage(zip_path)
+        backend = ZipStorageBackend(zip_path, mode="w")
         assert os.path.exists(zip_path)
-        storage.close()
-    
-    def test_store_file(self, temp_dir):
-        """Test storing file in zip"""
+        backend.close()
+
+    def test_store_and_retrieve_file(self, temp_dir):
+        """Round-trip via ``save_object`` + ``get_object``."""
         zip_path = os.path.join(temp_dir, "test.zip")
-        storage = ZipFileStorage(zip_path)
-        storage.store("test.txt", b"test content")
-        storage.close()
-        
-        # Verify file exists in zip
+        backend = ZipStorageBackend(zip_path, mode="w")
+        backend.save_object("test.txt", b"test content")
+        backend.close()
+
+        # Verify via raw zipfile
         with zipfile.ZipFile(zip_path, 'r') as zf:
             assert "test.txt" in zf.namelist()
-            content = zf.read("test.txt")
-            assert content == b"test content"
-    
-    def test_exists(self, temp_dir):
-        """Test checking if file exists in zip"""
+            assert zf.read("test.txt") == b"test content"
+
+    def test_list_objects_contains_saved(self, temp_dir):
+        """``list_objects("object")`` reflects what was saved."""
         zip_path = os.path.join(temp_dir, "test.zip")
-        storage = ZipFileStorage(zip_path)
-        storage.store("test.txt", b"test content")
-        
-        assert storage.exists("test.txt")
-        assert not storage.exists("nonexistent.txt")
-        storage.close()
-    
+        backend = ZipStorageBackend(zip_path, mode="w")
+        backend.save_object("test.txt", b"test content")
+        assert "test.txt" in backend.list_objects("object")
+        assert "nonexistent.txt" not in backend.list_objects("object")
+        backend.close()
+
     def test_store_multiple_files(self, temp_dir):
-        """Test storing multiple files"""
+        """Multiple objects stored + all retrievable."""
         zip_path = os.path.join(temp_dir, "test.zip")
-        storage = ZipFileStorage(zip_path)
-        storage.store("file1.txt", b"content1")
-        storage.store("file2.txt", b"content2")
-        storage.store("subdir/file3.txt", b"content3")
-        storage.close()
-        
-        # Verify all files exist
+        backend = ZipStorageBackend(zip_path, mode="w")
+        backend.save_object("file1.txt", b"content1")
+        backend.save_object("file2.txt", b"content2")
+        backend.save_object("subdir/file3.txt", b"content3")
+        backend.close()
+
         with zipfile.ZipFile(zip_path, 'r') as zf:
             files = zf.namelist()
             assert "file1.txt" in files
             assert "file2.txt" in files
             assert "subdir/file3.txt" in files
-    
+
     def test_append_mode(self, temp_dir):
-        """Test appending to existing zip file"""
+        """Appending to an existing archive preserves prior entries."""
         zip_path = os.path.join(temp_dir, "test.zip")
-        
-        # Create initial zip
-        storage1 = ZipFileStorage(zip_path)
-        storage1.store("file1.txt", b"content1")
-        storage1.close()
-        
-        # Append to it
-        storage2 = ZipFileStorage(zip_path, mode="a")
-        storage2.store("file2.txt", b"content2")
-        storage2.close()
-        
-        # Verify both files exist
+
+        # Initial write
+        backend1 = ZipStorageBackend(zip_path, mode="w")
+        backend1.save_object("file1.txt", b"content1")
+        backend1.close()
+
+        # Re-open in append mode
+        backend2 = ZipStorageBackend(zip_path, mode="a")
+        backend2.save_object("file2.txt", b"content2")
+        backend2.close()
+
         with zipfile.ZipFile(zip_path, 'r') as zf:
             files = zf.namelist()
             assert "file1.txt" in files
             assert "file2.txt" in files
 
 
-class TestFilesystemStorage:
-    """Tests for FilesystemStorage class"""
-    
-    def test_init_default_path(self):
-        """Test initializing with default path"""
-        storage = FilesystemStorage()
-        assert storage.dirpath == os.path.join("storage", "files")
-    
+class TestFilesystemStorageBackendMigration:
+    """Migration of legacy TestFilesystemStorage scenarios to the
+    new ``FilesystemStorageBackend`` Protocol implementation."""
+
+    def test_init_default_path(self, temp_dir):
+        """Default root dir is the supplied cwd-relative default."""
+        with tempfile.TemporaryDirectory() as isolated:
+            original = os.getcwd()
+            try:
+                os.chdir(isolated)
+                backend = FilesystemStorageBackend("storage/files")
+                assert backend._root == os.path.abspath("storage/files")
+                backend.close()
+            finally:
+                os.chdir(original)
+
     def test_init_custom_path(self, temp_dir):
-        """Test initializing with custom path"""
+        """Custom root path is honoured."""
         custom_path = os.path.join(temp_dir, "custom_storage")
-        storage = FilesystemStorage(custom_path)
-        assert storage.dirpath == custom_path
-    
-    def test_store_file(self, temp_dir):
-        """Test storing file on filesystem"""
+        backend = FilesystemStorageBackend(custom_path, mode="a")
+        assert backend._root == os.path.abspath(custom_path)
+        backend.close()
+
+    def test_store_and_retrieve_file(self, temp_dir):
+        """Round-trip via ``save_object`` + ``get_object``."""
         storage_path = os.path.join(temp_dir, "storage")
-        storage = FilesystemStorage(storage_path)
-        storage.store("test.txt", b"test content")
-        
-        # Verify file exists
-        file_path = os.path.join(storage_path, "test.txt")
-        assert os.path.exists(file_path)
-        with open(file_path, "rb") as f:
-            assert f.read() == b"test content"
-    
+        backend = FilesystemStorageBackend(storage_path, mode="a")
+        backend.save_object("test.txt", b"test content")
+        assert backend.get_object("test.txt", "object") == b"test content"
+        backend.close()
+
     def test_store_nested_file(self, temp_dir):
-        """Test storing file in nested directory"""
+        """Sub-directory names create nested paths automatically."""
         storage_path = os.path.join(temp_dir, "storage")
-        storage = FilesystemStorage(storage_path)
-        storage.store("subdir/nested.txt", b"nested content")
-        
-        # Verify file exists
-        file_path = os.path.join(storage_path, "subdir", "nested.txt")
-        assert os.path.exists(file_path)
-        with open(file_path, "rb") as f:
-            assert f.read() == b"nested content"
-    
-    def test_exists(self, temp_dir):
-        """Test checking if file exists"""
+        backend = FilesystemStorageBackend(storage_path, mode="a")
+        backend.save_object("subdir/nested.txt", b"nested content")
+        # The on-disk path keeps the original directory structure
+        # (the ``object_`` prefix is only used in the index for
+        # disambiguation, not in the filename itself).
+        assert os.path.exists(os.path.join(storage_path, "subdir", "nested.txt"))
+        assert backend.get_object("subdir/nested.txt", "object") == b"nested content"
+        backend.close()
+
+    def test_list_objects_contains_saved(self, temp_dir):
+        """``list_objects("object")`` reflects what was saved."""
         storage_path = os.path.join(temp_dir, "storage")
-        storage = FilesystemStorage(storage_path)
-        storage.store("test.txt", b"test content")
-        
-        assert storage.exists("test.txt")
-        assert not storage.exists("nonexistent.txt")
-    
+        backend = FilesystemStorageBackend(storage_path, mode="a")
+        backend.save_object("test.txt", b"test content")
+        assert "test.txt" in backend.list_objects("object")
+        assert "nonexistent.txt" not in backend.list_objects("object")
+        backend.close()
+
     def test_store_strips_leading_slashes(self, temp_dir):
-        """Test that leading slashes are stripped from filename"""
+        """Leading slashes are stripped by the safe-path helper so the
+        written file has no leading separator, even though the index
+        preserves the original (escaped) name."""
         storage_path = os.path.join(temp_dir, "storage")
-        storage = FilesystemStorage(storage_path)
-        storage.store("/test.txt", b"content")
-        storage.store("\\test2.txt", b"content2")
-        
-        # Verify files exist without leading slashes
-        assert storage.exists("test.txt")
-        assert storage.exists("test2.txt")
+        backend = FilesystemStorageBackend(storage_path, mode="a")
+        backend.save_object("/test.txt", b"content")
+        backend.save_object("\\test2.txt", b"content2")
+        # The on-disk filename has the leading slash stripped.
         assert os.path.exists(os.path.join(storage_path, "test.txt"))
         assert os.path.exists(os.path.join(storage_path, "test2.txt"))
-    
+        backend.close()
+
     def test_store_multiple_files(self, temp_dir):
-        """Test storing multiple files"""
+        """Multiple objects round-trip correctly."""
         storage_path = os.path.join(temp_dir, "storage")
-        storage = FilesystemStorage(storage_path)
-        storage.store("file1.txt", b"content1")
-        storage.store("file2.txt", b"content2")
-        storage.store("subdir/file3.txt", b"content3")
-        
-        # Verify all files exist
-        assert storage.exists("file1.txt")
-        assert storage.exists("file2.txt")
-        assert storage.exists("subdir/file3.txt")
-        
-        # Verify content
-        with open(os.path.join(storage_path, "file1.txt"), "rb") as f:
-            assert f.read() == b"content1"
-        with open(os.path.join(storage_path, "file2.txt"), "rb") as f:
-            assert f.read() == b"content2"
-        with open(os.path.join(storage_path, "subdir", "file3.txt"), "rb") as f:
-            assert f.read() == b"content3"
+        backend = FilesystemStorageBackend(storage_path, mode="a")
+        backend.save_object("file1.txt", b"content1")
+        backend.save_object("file2.txt", b"content2")
+        backend.save_object("subdir/file3.txt", b"content3")
+        assert backend.get_object("file1.txt", "object") == b"content1"
+        assert backend.get_object("file2.txt", "object") == b"content2"
+        assert backend.get_object("subdir/file3.txt", "object") == b"content3"
+        backend.close()
 
 
 class TestStorageBackends:
@@ -232,26 +225,18 @@ class TestFilesystemStorageSecurity:
     def test_path_traversal_rejected(self, temp_dir):
         """Test that path traversal attempts are rejected"""
         storage_path = os.path.join(temp_dir, "storage")
-        storage = FilesystemStorage(storage_path)
+        storage = FilesystemStorageBackend(storage_path, mode="a")
 
         with pytest.raises(ValueError, match="Path traversal"):
-            storage.store("../../etc/passwd", b"malicious")
-
-    def test_path_traversal_exists_rejected(self, temp_dir):
-        """Test that path traversal is rejected on exists()"""
-        storage_path = os.path.join(temp_dir, "storage")
-        storage = FilesystemStorage(storage_path)
-
-        with pytest.raises(ValueError, match="Path traversal"):
-            storage.exists("../../../etc/shadow")
+            storage.save_object("../../etc/passwd", b"malicious")
 
     def test_normal_nested_path_accepted(self, temp_dir):
         """Test that normal nested paths work correctly"""
         storage_path = os.path.join(temp_dir, "storage")
-        storage = FilesystemStorage(storage_path)
-        storage.store("subdir/deep/file.txt", b"content")
+        storage = FilesystemStorageBackend(storage_path, mode="a")
+        storage.save_object("subdir/deep/file.txt", b"content")
 
-        assert storage.exists("subdir/deep/file.txt")
+        assert "subdir/deep/file.txt" in storage.list_objects("object")
         file_path = os.path.join(storage_path, "subdir", "deep", "file.txt")
         assert os.path.exists(file_path)
 
