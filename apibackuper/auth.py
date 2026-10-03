@@ -4,12 +4,15 @@ Authentication handling for apibackuper
 import os
 import base64
 import logging
-from typing import Dict
+from typing import Dict, Any, Optional
 
 try:
     import requests  # noqa: F401, W0611
 except ImportError:
     requests = None
+
+
+_DEFAULT_TIMEOUT = 30  # seconds; OAuth refresh must never hang forever (§5.4)
 
 
 class AuthHandler:
@@ -101,7 +104,13 @@ class AuthHandler:
             }
 
     def get_headers(self) -> Dict[str, str]:
-        """Get authentication headers"""
+        """Get authentication headers.
+
+        P2.25: only emit ``Authorization: Bearer <token>`` when ``token`` is a
+        non-empty string. Previously, an oauth2 config with a missing token
+        would still produce ``Authorization: Bearer None`` (§5.6 of the
+        2026-10 analysis report).
+        """
         headers = {}
 
         if (self.auth_type == "basic" and "username" in self.auth_data and
@@ -111,38 +120,98 @@ class AuthHandler:
             encoded = base64.b64encode(credentials.encode()).decode()
             headers["Authorization"] = f"Basic {encoded}"
 
-        elif self.auth_type == "bearer" and "token" in self.auth_data:
+        elif self.auth_type == "bearer" and self.auth_data.get("token"):
             headers["Authorization"] = f"Bearer {self.auth_data['token']}"
 
-        elif self.auth_type == "apikey" and "api_key" in self.auth_data:
+        elif self.auth_type == "apikey" and self.auth_data.get("api_key"):
             header_name = self.auth_data.get("header", "X-API-Key")
             headers[header_name] = self.auth_data["api_key"]
 
-        elif self.auth_type == "oauth2" and "token" in self.auth_data:
+        elif self.auth_type == "oauth2" and self.auth_data.get("token"):
+            # Was: ``self.auth_data["token"] in self.auth_data`` which evaluates
+            # key *presence*, not truthiness. The truthy check above fixes
+            # ``Bearer None`` (§5.6).
             headers["Authorization"] = f"Bearer {self.auth_data['token']}"
 
         return headers
 
-    def refresh_token_if_needed(self, session):
-        """Refresh OAuth2 token if needed"""
-        if (self.auth_type == "oauth2" and
-                self.auth_data.get("auth_url") and
-                self.auth_data.get("refresh_token")):
+    def refresh_token_if_needed(
+        self,
+        session,
+        timeout: Optional[float] = None,
+        verify: Optional[bool] = None,
+    ) -> bool:
+        """Refresh OAuth2 token if needed.
+
+        P2.24: hardens the previous implementation:
+
+        - Adds a timeout`` argument (default 30 s) so a slow IdP cannot hang
+          the run forever (§5.4 of the 2026-10 analysis report).
+        - Accepts ``verify`` to propagate TLS verification from the parent
+          session (default: inherit from ``session``).
+        - Logs failures (and HTTP error codes) instead of silently returning
+          ``False`` (§5.4).
+        - Captures a rotated ``refresh_token`` from the response if the IdP
+          returns one (RFC 6749 §6).
+        """
+        if not (
+            self.auth_type == "oauth2"
+            and self.auth_data.get("auth_url")
+            and self.auth_data.get("refresh_token")
+        ):
+            return False
+
+        effective_timeout = timeout if timeout is not None else _DEFAULT_TIMEOUT
+        kwargs: Dict[str, Any] = {
+            "data": {
+                "grant_type": "refresh_token",
+                "refresh_token": self.auth_data["refresh_token"],
+            },
+            "timeout": effective_timeout,
+        }
+        if verify is not None:
+            kwargs["verify"] = verify
+
+        try:
+            response = session.post(self.auth_data["auth_url"], **kwargs)
+        except Exception as e:
+            logging.warning(
+                "OAuth2 token refresh raised %s: %s",
+                type(e).__name__, e,
+            )
+            return False
+
+        if response.status_code != 200:
+            # P2.24: log non-200 responses instead of silently returning False.
+            # Coerce the body to str defensively — the test suite uses Mock
+            # objects whose ``text`` attribute is itself a Mock.
             try:
-                response = session.post(
-                    self.auth_data["auth_url"],
-                    data={
-                        "grant_type": "refresh_token",
-                        "refresh_token": self.auth_data["refresh_token"]
-                    }
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    if "access_token" in data:
-                        self.auth_data["token"] = data["access_token"]
-                        logging.info("OAuth2 token refreshed successfully")
-                        return True
-            except Exception as e:
-                logging.warning("Failed to refresh OAuth2 token: %s", e)
-        return False
+                body_preview = str(response.text)[:200]
+            except Exception:
+                body_preview = "<unprintable body>"
+            logging.warning(
+                "OAuth2 token refresh failed: HTTP %s, body=%s",
+                response.status_code, body_preview,
+            )
+            return False
+
+        try:
+            data = response.json()
+        except (ValueError, TypeError):
+            logging.warning("OAuth2 token refresh: response is not JSON")
+            return False
+
+        if not isinstance(data, dict) or "access_token" not in data:
+            logging.warning(
+                "OAuth2 token refresh: response missing 'access_token' field"
+            )
+            return False
+
+        self.auth_data["token"] = data["access_token"]
+        # P2.24: capture rotated refresh token if the IdP returns one.
+        new_refresh = data.get("refresh_token")
+        if new_refresh:
+            self.auth_data["refresh_token"] = new_refresh
+        logging.info("OAuth2 token refreshed successfully")
+        return True
 
