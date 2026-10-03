@@ -220,3 +220,38 @@ class TestYAMLConfigParser:
         assert "project" in sections
         assert "configuration" in sections
         assert "data" in sections
+
+    def test_getboolean_invalid_string_raises(self):
+        # Strings that aren't ``true`` / ``false`` / ``yes`` / ``no`` /
+        # ``on`` / ``off`` / ``1`` / ``0`` raise ``ValueError``.
+        parser = YAMLConfigParser({"config": {"flag": "maybe"}})
+        with pytest.raises(ValueError) as exc_info:
+            parser.getboolean("config", "flag")
+        assert "Not a boolean" in str(exc_info.value)
+
+    def test_getfloat_invalid_string_raises(self):
+        # A string that's not a number raises ``ValueError``.
+        parser = YAMLConfigParser({"config": {"value": "not-a-number"}})
+        with pytest.raises(ValueError):
+            parser.getfloat("config", "value")
+
+    def test_getfloat_returns_native_float(self):
+        # YAML-loaded floats should round-trip as float, not str.
+        parser = YAMLConfigParser({"config": {"delay": 0.5}})
+        assert parser.getfloat("config", "delay") == 0.5
+        assert isinstance(parser.getfloat("config", "delay"), float)
+
+    def test_getboolean_returns_native_bool(self):
+        parser = YAMLConfigParser({"config": {"enabled": True}})
+        result = parser.getboolean("config", "enabled")
+        assert result is True
+        assert isinstance(result, bool)
+
+    def test_getboolean_recognizes_string_yes_no(self):
+        # Configs sometimes use ``yes`` / ``no`` as a human-readable
+        # boolean; getboolean must recognize both.
+        parser = YAMLConfigParser({
+            "config": {"yes_flag": "yes", "no_flag": "no"},
+        })
+        assert parser.getboolean("config", "yes_flag") is True
+        assert parser.getboolean("config", "no_flag") is False
