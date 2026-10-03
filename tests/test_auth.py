@@ -4,7 +4,7 @@ import base64
 import tempfile
 import pytest
 import configparser
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, PropertyMock
 from apibackuper.auth import AuthHandler
 
 
@@ -424,4 +424,36 @@ class TestAuthHandler:
         handler = AuthHandler(config)
         headers = handler.get_headers()
         assert headers == {"X-Custom-Auth": "secret-key"}
+
+    def test_refresh_token_unprintable_body(self):
+        """When ``response.text`` is a Mock that raises on str()
+        conversion, the body_preview fallback must catch and use
+        the ``<unprintable body>`` placeholder."""
+        config = configparser.ConfigParser()
+        config.add_section("auth")
+        config.set("auth", "type", "oauth2")
+        config.set("auth", "client_id", "id")
+        config.set("auth", "client_secret", "secret")
+        config.set("auth", "refresh_token", "old")
+        config.set("auth", "auth_url", "https://idp.example.com/oauth/token")
+        config.set("auth", "verify_ssl", "true")
+
+        handler = AuthHandler(config)
+
+        # Status code != 200 triggers the warning path with body_preview.
+        mock_response = Mock()
+        mock_response.status_code = 500
+        # ``response.text`` is itself a Mock whose str() raises.
+        type(mock_response).text = PropertyMock(
+            side_effect=Exception("boom"),
+        )
+        mock_response.raise_for_status = Mock()
+
+        mock_session = Mock()
+        mock_session.post.return_value = mock_response
+
+        # The ``str(response.text)[:200]`` raises Exception which is
+        # caught — refresh returns False, no crash.
+        result = handler.refresh_token_if_needed(mock_session)
+        assert result is False
 
