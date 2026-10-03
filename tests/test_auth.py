@@ -335,3 +335,93 @@ class TestAuthHandler:
         # Old refresh_token preserved.
         assert handler.auth_data["refresh_token"] == "stable-refresh-token"
 
+    def test_refresh_token_missing_access_token_field(self):
+        """When the IdP returns 200 but no ``access_token`` field,
+        the refresh fails gracefully."""
+        config = configparser.ConfigParser()
+        config.add_section("auth")
+        config.set("auth", "type", "oauth2")
+        config.set("auth", "client_id", "id")
+        config.set("auth", "client_secret", "secret")
+        config.set("auth", "refresh_token", "old")
+        config.set("auth", "auth_url", "https://idp.example.com/oauth/token")
+        config.set("auth", "verify_ssl", "true")
+
+        handler = AuthHandler(config)
+
+        # 200 OK, but no access_token in the body.
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"refresh_token": "new-rt"}
+        mock_response.raise_for_status = Mock()
+
+        mock_session = Mock()
+        mock_session.post.return_value = mock_response
+
+        result = handler.refresh_token_if_needed(mock_session)
+        assert result is False
+        # The stale access token (None) is NOT overwritten.
+        assert handler.auth_data["token"] is None
+
+    def test_refresh_token_response_not_json(self):
+        """When the IdP returns 200 but non-JSON, the refresh fails."""
+        config = configparser.ConfigParser()
+        config.add_section("auth")
+        config.set("auth", "type", "oauth2")
+        config.set("auth", "client_id", "id")
+        config.set("auth", "client_secret", "secret")
+        config.set("auth", "refresh_token", "old")
+        config.set("auth", "auth_url", "https://idp.example.com/oauth/token")
+        config.set("auth", "verify_ssl", "true")
+
+        handler = AuthHandler(config)
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.side_effect = ValueError("not JSON")
+        mock_response.raise_for_status = Mock()
+
+        mock_session = Mock()
+        mock_session.post.return_value = mock_response
+
+        result = handler.refresh_token_if_needed(mock_session)
+        assert result is False
+
+    def test_oauth2_token_from_file(self):
+        """Token can be loaded from a file via ``token_file`` config."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".token", delete=False) as f:
+            f.write("file-loaded-token\n")
+            token_path = f.name
+        try:
+            config = configparser.ConfigParser()
+            config.add_section("auth")
+            config.set("auth", "type", "oauth2")
+            config.set("auth", "client_id", "id")
+            config.set("auth", "client_secret", "secret")
+            config.set("auth", "token_file", token_path)
+            config.set("auth", "auth_url", "https://idp.example.com/oauth/token")
+            config.set("auth", "verify_ssl", "true")
+
+            handler = AuthHandler(config)
+            assert handler.auth_data["token"] == "file-loaded-token"
+        finally:
+            os.unlink(token_path)
+
+    def test_apikey_header_name_default_and_explicit(self):
+        """API key auth uses ``X-API-Key`` header by default; can be overridden."""
+        # Default header name
+        config = configparser.ConfigParser()
+        config.add_section("auth")
+        config.set("auth", "type", "apikey")
+        config.set("auth", "api_key", "secret-key")
+
+        handler = AuthHandler(config)
+        headers = handler.get_headers()
+        assert headers == {"X-API-Key": "secret-key"}
+
+        # Custom header name
+        config.set("auth", "api_key_header", "X-Custom-Auth")
+        handler = AuthHandler(config)
+        headers = handler.get_headers()
+        assert headers == {"X-Custom-Auth": "secret-key"}
+
