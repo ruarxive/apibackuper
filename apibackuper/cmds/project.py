@@ -11,7 +11,6 @@ import subprocess
 import tempfile
 import sys
 from datetime import datetime, timezone
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import zipfile
 import warnings
 from timeit import default_timer as timer
@@ -1527,7 +1526,6 @@ class ProjectBuilder:
                 suggestions = self._detect_suggestions(start_page_data)
                 self._apply_detection(suggestions)
 
-            #        print(json.dumps(start_page_data, ensure_ascii=False))
             end = timer()
 
             try:
@@ -1601,7 +1599,6 @@ class ProjectBuilder:
             if total_pages > 0:
                 progress_bar = tqdm(total=total_pages, desc="Downloading pages", unit="page")
 
-            consecutive_errors = 0
             def fetch_page(target_page: int) -> Dict[str, Any]:
                 local_change_params = dict(change_params)
                 local_params = dict(params)
@@ -2345,7 +2342,6 @@ class ProjectBuilder:
             for key in finallist:
                 n += 1
                 url = self.follow_pattern + str(key)
-                #                print(url)
                 response = self.http.get(url, verify=self.verify_ssl)
                 logging.info("Saving object with id %s. %d of %d" %
                              (key, n, total))
