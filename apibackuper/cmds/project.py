@@ -21,7 +21,7 @@ from urllib.parse import urlparse
 import requests
 from contextlib import suppress
 from runpy import run_path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 # Suppress deprecation warnings
 warnings.filterwarnings('ignore', category=DeprecationWarning)
@@ -115,6 +115,23 @@ from .utils import (
     _REDACTED,
 )
 
+
+def _safe_int(value: Any, option: str, default: int = 0) -> int:
+    """Coerce ``value`` to int, logging a warning and falling back on failure.
+
+    Used by ``ProjectBuilder.__init__`` so a non-integer value in a config
+    field does not crash the constructor with ``ValueError: invalid literal
+    for int()``. The schema validator will still surface the underlying
+    problem as a proper error.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        logging.warning(
+            "%s must be an integer; falling back to %s",
+            option, default,
+        )
+        return default
 
 
 class ProjectBuilder:
@@ -234,9 +251,14 @@ class ProjectBuilder:
                 "settings", "state_file") else os.path.join(self.project_path, "apibackuper_state.json"))
             self.checkpoint_file = (self.config.get("settings", "checkpoint_file") if self.config.has_option(
                 "settings", "checkpoint_file") else os.path.join(self.project_path, "apibackuper_checkpoint.json"))
-            self.checkpoint_interval_pages = (self.config.getint(
-                "settings", "checkpoint_interval_pages") if self.config.has_option(
-                    "settings", "checkpoint_interval_pages") else 0)
+            self.checkpoint_interval_pages = _safe_int(
+                self.config.get(
+                    "settings", "checkpoint_interval_pages"
+                ) if self.config.has_option(
+                    "settings", "checkpoint_interval_pages") else 0,
+                "settings.checkpoint_interval_pages",
+                0,
+            )
             self.data_key = self.config.get("data", "data_key") if self.config.has_option('data', 'data_key') else None
             self.change_key = self.config.get("data", "change_key") if self.config.has_option('data', 'change_key') else None
             self.storage_type = self.config.get("storage", "storage_type")
@@ -245,7 +267,12 @@ class ProjectBuilder:
                 "project", "description") if self.config.has_option(
                     "project", "description") else None)
             self.start_url = self.config.get("project", "url")
-            self.page_limit = self.config.getint("params", "page_size_limit")
+            self.page_limit = _safe_int(
+                self.config.get("params", "page_size_limit") if self.config.has_option(
+                    "params", "page_size_limit") else 0,
+                "params.page_size_limit",
+                0,
+            )
             self.resp_type = (self.config.get("project",
                                        "resp_type") if self.config.has_option(
                                            "project", "resp_type") else "json")
@@ -265,18 +292,33 @@ class ProjectBuilder:
             self.default_delay = (self.config.getfloat(
                 "project", "default_delay") if self.config.has_option(
                     "project", "default_delay") else DEFAULT_DELAY)
-            self.retry_delay = (self.config.getint(
-                "project", "retry_delay") if self.config.has_option(
-                    "project", "retry_delay") else RETRY_DELAY)
+            self.retry_delay = _safe_int(
+                self.config.get(
+                    "project", "retry_delay"
+                ) if self.config.has_option(
+                    "project", "retry_delay") else RETRY_DELAY,
+                "project.retry_delay",
+                RETRY_DELAY,
+            )
             self.force_retry = (self.config.getboolean(
                 "project", "force_retry") if self.config.has_option(
                     "project", "force_retry") else False)
-            self.retry_count = (self.config.getint(
-                "project", "retry_count") if self.config.has_option(
-                    "project", "retry_count") else DEFAULT_RETRY_COUNT)
+            self.retry_count = _safe_int(
+                self.config.get(
+                    "project", "retry_count"
+                ) if self.config.has_option(
+                    "project", "retry_count") else DEFAULT_RETRY_COUNT,
+                "project.retry_count",
+                DEFAULT_RETRY_COUNT,
+            )
 
-            self.start_page = (self.config.getint("params", "start_page") if
-                               self.config.has_option("params", "start_page") else 1)
+            self.start_page = _safe_int(
+                self.config.get(
+                    "params", "start_page"
+                ) if self.config.has_option("params", "start_page") else 1,
+                "params.start_page",
+                1,
+            )
             self.query_mode = (self.config.get(
                 "params", "query_mode") if self.config.has_option(
                     "params", "query_mode") else "query")
@@ -386,13 +428,25 @@ class ProjectBuilder:
                     rph = None
                     burst = 5
                     if self.config.has_option("rate_limit", "requests_per_second"):
-                        rps = float(self.config.get("rate_limit", "requests_per_second"))
+                        try:
+                            rps = float(self.config.get("rate_limit", "requests_per_second"))
+                        except (TypeError, ValueError):
+                            logging.warning("rate_limit.rps must be a number; ignored")
                     if self.config.has_option("rate_limit", "requests_per_minute"):
-                        rpm = self.config.getint("rate_limit", "requests_per_minute")
+                        rpm = _safe_int(
+                            self.config.get("rate_limit", "requests_per_minute"),
+                            "rate_limit.requests_per_minute", 0,
+                        )
                     if self.config.has_option("rate_limit", "requests_per_hour"):
-                        rph = self.config.getint("rate_limit", "requests_per_hour")
+                        rph = _safe_int(
+                            self.config.get("rate_limit", "requests_per_hour"),
+                            "rate_limit.requests_per_hour", 0,
+                        )
                     if self.config.has_option("rate_limit", "burst_size"):
-                        burst = self.config.getint("rate_limit", "burst_size")
+                        burst = _safe_int(
+                            self.config.get("rate_limit", "burst_size"),
+                            "rate_limit.burst_size", 5,
+                        )
                     self.rate_limiter = RateLimiter(rps, rpm, rph, burst)
             self._rate_lock = threading.Lock()
 
@@ -425,7 +479,10 @@ class ProjectBuilder:
                             ) from e
                     self.error_retry_codes = parsed_codes
                 if self.config.has_option("error_handling", "max_consecutive_errors"):
-                    self.max_consecutive_errors = self.config.getint("error_handling", "max_consecutive_errors")
+                    self.max_consecutive_errors = _safe_int(
+                        self.config.get("error_handling", "max_consecutive_errors"),
+                        "error_handling.max_consecutive_errors", 10,
+                    )
                 if self.config.has_option("error_handling", "continue_on_error"):
                     self.continue_on_error = self.config.getboolean("error_handling", "continue_on_error")
 
@@ -448,17 +505,30 @@ class ProjectBuilder:
 
             if self.config.has_section("request"):
                 if self.config.has_option("request", "timeout"):
-                    self.request_timeout = self.config.getint("request", "timeout")
+                    self.request_timeout = _safe_int(
+                    self.config.get("request", "timeout"),
+                    "request.timeout",
+                    DEFAULT_TIMEOUT,
+                )
                 if self.config.has_option("request", "connect_timeout"):
-                    self.connect_timeout = self.config.getint("request", "connect_timeout")
+                    self.connect_timeout = _safe_int(
+                        self.config.get("request", "connect_timeout"),
+                        "request.connect_timeout", 30,
+                    )
                 if self.config.has_option("request", "read_timeout"):
-                    self.read_timeout = self.config.getint("request", "read_timeout")
+                    self.read_timeout = _safe_int(
+                        self.config.get("request", "read_timeout"),
+                        "request.read_timeout", DEFAULT_TIMEOUT,
+                    )
                 if self.config.has_option("request", "verify_ssl"):
                     self.verify_ssl = self.config.getboolean("request", "verify_ssl")
                 if self.config.has_option("request", "user_agent"):
                     self.user_agent = self.config.get("request", "user_agent")
                 if self.config.has_option("request", "max_redirects"):
-                    self.max_redirects = self.config.getint("request", "max_redirects")
+                    self.max_redirects = _safe_int(
+                        self.config.get("request", "max_redirects"),
+                        "request.max_redirects", 5,
+                    )
                 if self.config.has_option("request", "allow_redirects"):
                     self.allow_redirects = self.config.getboolean("request", "allow_redirects")
                 # Proxies - for YAML, this would be a dict, for INI it's a string
@@ -493,18 +563,39 @@ class ProjectBuilder:
                                 self.retry_on_status = retry_on
 
                 if self.config.has_option("request", "retry_max_retries"):
-                    self.retry_max_retries = self.config.getint("request", "retry_max_retries")
+                    self.retry_max_retries = _safe_int(
+                        self.config.get("request", "retry_max_retries"),
+                        "request.retry_max_retries", 0,
+                    )
                 if self.config.has_option("request", "retry_backoff_strategy"):
                     self.retry_backoff_strategy = self.config.get("request", "retry_backoff_strategy")
                 if self.config.has_option("request", "retry_initial_delay"):
-                    self.retry_initial_delay = self.config.getint("request", "retry_initial_delay")
+                    self.retry_initial_delay = _safe_int(
+                        self.config.get("request", "retry_initial_delay"),
+                        "request.retry_initial_delay", 0,
+                    )
                 if self.config.has_option("request", "retry_max_delay"):
-                    self.retry_max_delay = self.config.getint("request", "retry_max_delay")
+                    self.retry_max_delay = _safe_int(
+                        self.config.get("request", "retry_max_delay"),
+                        "request.retry_max_delay", 0,
+                    )
                 if self.config.has_option("request", "retry_on_status"):
                     codes_str = self.config.get("request", "retry_on_status")
-                    self.retry_on_status = [int(c.strip()) for c in codes_str.split(",")]
+                    parsed_codes = []
+                    for c in str(codes_str).split(","):
+                        try:
+                            parsed_codes.append(int(c.strip()))
+                        except (TypeError, ValueError):
+                            logging.warning(
+                                "request.retry_on_status entry %r is not an integer",
+                                c,
+                            )
+                    self.retry_on_status = parsed_codes
                 if self.config.has_option("request", "parallelism"):
-                    self.parallelism = max(1, self.config.getint("request", "parallelism"))
+                    self.parallelism = max(1, _safe_int(
+                        self.config.get("request", "parallelism"),
+                        "request.parallelism", 1,
+                    ))
 
             # Logging configuration
             if self.config.has_section("logging"):
@@ -3182,14 +3273,23 @@ class ProjectBuilder:
 
         return report
 
-    def validate_config(self, verbose: bool = False) -> bool:
-        """Validate project configuration"""
+    def validate_config(
+        self,
+        verbose: bool = False,
+    ) -> Tuple[bool, int, int]:
+        """Validate project configuration.
+
+        Returns a tuple ``(is_valid, error_count, warning_count)`` so callers
+        can distinguish "valid with warnings" from "valid clean" without
+        re-reading the printed output. ``is_valid`` is ``True`` iff there are
+        no errors (warnings do not invalidate).
+        """
         errors = []
         warnings = []
 
         if self.config is None:
             errors.append("Configuration file not found")
-            return False
+            return False, len(errors), len(warnings)
 
         if self.config_format == "ini":
             warnings.append("INI configuration is deprecated; use YAML instead")
@@ -3229,16 +3329,22 @@ class ProjectBuilder:
             if not self.config.has_option("project", "url"):
                 errors.append("Missing required option: project.url")
             else:
-                url = self.config.get("project", "url")
-                if not url.startswith(("http://", "https://")):
-                    errors.append(f"Invalid URL format: {url}")
+                try:
+                    url = self.config.get("project", "url")
+                    if not url.startswith(("http://", "https://")):
+                        errors.append(f"Invalid URL format: {url}")
+                except (configparser.NoOptionError, configparser.NoSectionError):
+                    errors.append("Invalid or missing project.url")
 
             if not self.config.has_option("project", "http_mode"):
                 errors.append("Missing required option: project.http_mode")
             else:
-                http_mode = self.config.get("project", "http_mode")
-                if http_mode not in ["GET", "POST"]:
-                    errors.append(f"Invalid http_mode: {http_mode} (must be GET or POST)")
+                try:
+                    http_mode = self.config.get("project", "http_mode")
+                    if http_mode not in ["GET", "POST"]:
+                        errors.append(f"Invalid http_mode: {http_mode} (must be GET or POST)")
+                except (configparser.NoOptionError, configparser.NoSectionError):
+                    errors.append("Invalid or missing project.http_mode")
 
         # Validate params section
         if self.config.has_section("params"):
@@ -3249,7 +3355,7 @@ class ProjectBuilder:
                     limit = self.config.getint("params", "page_size_limit")
                     if limit <= 0:
                         errors.append("page_size_limit must be greater than 0")
-                except ValueError:
+                except (ValueError, configparser.NoOptionError, configparser.NoSectionError):
                     errors.append("page_size_limit must be an integer")
 
         # Validate data section
@@ -3304,4 +3410,5 @@ class ProjectBuilder:
                 for warning in warnings:
                     print(f"  WARNING: {warning}")
 
-        return len(errors) == 0
+        is_valid = len(errors) == 0
+        return is_valid, len(errors), len(warnings)

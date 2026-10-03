@@ -816,16 +816,31 @@ def getfiles(
 def validate_config(
     projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
+    strict: bool = typer.Option(
+        False, "--strict",
+        help="Treat warnings as errors (exit 1 if any warnings, not just errors).",
+    ),
 ):
-    """Validate project configuration"""
+    """Validate project configuration against the JSON schema and project-specific rules.
+
+    Exit codes:
+        0 - configuration is valid (and has no warnings, when --strict is set)
+        1 - configuration has errors (or warnings when --strict is set)
+        2 - configuration could not be loaded (missing config file)
+    """
     acmd = ProjectBuilder(projectpath)
-    result = acmd.validate_config(verbose=verbose)
+    result, error_count, warning_count = acmd.validate_config(verbose=verbose)
+    if error_count > 0:
+        print("Configuration validation failed")
+        sys.exit(1)
+    if strict and warning_count > 0:
+        print("Configuration has warnings (--strict)")
+        sys.exit(1)
     if result:
         print("Configuration is valid")
         sys.exit(0)
-    else:
-        print("Configuration validation failed")
-        sys.exit(1)
+    print("Configuration has warnings (use --strict to fail)")
+    sys.exit(0)
 
 
 def cli() -> None:

@@ -240,41 +240,42 @@ class TestCLICommands:
     
     @patch('apibackuper.core.ProjectBuilder')
     def test_validate_config_command(self, mock_project_builder_class, sample_config_ini):
-        """Test validate_config command"""
+        """Test validate_config command with a valid config"""
         mock_project_builder = Mock()
-        mock_project_builder.validate_config = Mock(return_value=True)
+        # New return shape: (is_valid, error_count, warning_count)
+        mock_project_builder.validate_config = Mock(return_value=(True, 0, 0))
         mock_project_builder.config_format = "yaml"
         mock_project_builder_class.return_value = mock_project_builder
-        
+
         runner = typer.testing.CliRunner()
-        
+
         project_dir = os.path.dirname(sample_config_ini)
         original_cwd = os.getcwd()
         try:
             os.chdir(project_dir)
             result = runner.invoke(app, ["validate-config"])
-            assert result.exit_code == 0
+            assert result.exit_code == 0, f"unexpected exit: {result.exit_code}\n{result.stdout}"
             assert "valid" in result.stdout.lower()
         finally:
             os.chdir(original_cwd)
-    
+
     @patch('apibackuper.core.ProjectBuilder')
     def test_validate_config_command_invalid(self, mock_project_builder_class, sample_config_ini):
-        """Test validate_config command with invalid config"""
+        """Test validate_config command with an invalid config (errors > 0 -> exit 1)."""
         mock_project_builder = Mock()
-        mock_project_builder.validate_config = Mock(return_value=False)
+        mock_project_builder.validate_config = Mock(return_value=(False, 2, 0))
         mock_project_builder.config_format = "yaml"
         mock_project_builder_class.return_value = mock_project_builder
-        
+
         runner = typer.testing.CliRunner()
-        
+
         project_dir = os.path.dirname(sample_config_ini)
         original_cwd = os.getcwd()
         try:
             os.chdir(project_dir)
             result = runner.invoke(app, ["validate-config"])
-            assert result.exit_code == 1
-            assert "failed" in result.stdout.lower() or "invalid" in result.stdout.lower()
+            assert result.exit_code == 1, f"unexpected exit: {result.exit_code}\n{result.stdout}"
+            assert "failed" in result.stdout.lower()
         finally:
             os.chdir(original_cwd)
     

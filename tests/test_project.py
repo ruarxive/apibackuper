@@ -96,18 +96,22 @@ class TestProjectBuilder:
 
     @patch('apibackuper.cmds.project.ProjectBuilder._ProjectBuilder__read_config')
     def test_validate_config_method(self, mock_read_config, sample_config_ini):
-        """Test validate_config method"""
+        """Test validate_config method returns (is_valid, error_count, warning_count)."""
         project_dir = os.path.dirname(sample_config_ini)
         builder = ProjectBuilder(project_dir)
 
         builder.config = None
         builder.config_format = "ini"
 
-        # Mock validation logic
         with patch('apibackuper.cmds.project.validate_yaml_config', return_value=(True, [])):
             result = builder.validate_config(verbose=False)
-            # Result depends on actual validation logic
-            assert isinstance(result, bool)
+            # ``builder.config is None`` short-circuits with one error.
+            assert isinstance(result, tuple)
+            assert len(result) == 3
+            is_valid, error_count, warning_count = result
+            assert is_valid is False
+            assert error_count == 1
+            assert warning_count == 0
 
     def test_project_path_normalization(self, sample_config_ini):
         """Test that project path is normalized correctly"""
