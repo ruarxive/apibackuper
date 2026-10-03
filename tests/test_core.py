@@ -844,3 +844,66 @@ class TestProfileFlag:
             assert payload["estimate"]["records_estimate"] is None
         finally:
             os.chdir(original_cwd)
+
+
+class TestPrintProjectInfoText:
+    """``_print_project_info_text`` formats a report dict for human
+    consumption. Pins the boolean ("yes"/"no") and list (", "-joined)
+    coercion paths so a future refactor doesn't lose the formatting."""
+
+    def test_bool_value_renders_as_yes_no(self, capsys):
+        from apibackuper.core import _print_project_info_text
+        # ``request.verify_ssl`` is a real boolean field in the report.
+        report = {
+            "request": {"verify_ssl": True},
+            "request_2": {"verify_ssl": False},
+        }
+        # Different keys map to different sections; passing the same
+        # field with different values exercises both branches.
+        report = {
+            "request": {"verify_ssl": True},
+            "project": {},
+            "configuration": {},
+        }
+        _print_project_info_text(report)
+        out = capsys.readouterr().out
+        # ``verify_ssl=True`` becomes "yes" via the bool coercion.
+        assert "yes" in out
+
+    def test_bool_false_renders_as_no(self, capsys):
+        from apibackuper.core import _print_project_info_text
+        report = {
+            "request": {"verify_ssl": False},
+        }
+        _print_project_info_text(report)
+        out = capsys.readouterr().out
+        # ``verify_ssl=False`` becomes "no" via the bool coercion.
+        assert "no" in out
+
+    def test_list_value_renders_as_comma_joined(self, capsys):
+        from apibackuper.core import _print_project_info_text
+        # The request section's ``user_agent`` field can be a list
+        # when multiple headers are configured.
+        report = {
+            "request": {"user_agent": ["alpha", "beta", "gamma"]},
+        }
+        _print_project_info_text(report)
+        out = capsys.readouterr().out
+        assert "alpha, beta, gamma" in out
+
+    def test_empty_list_renders_as_none(self, capsys):
+        from apibackuper.core import _print_project_info_text
+        report = {
+            "request": {"user_agent": []},
+        }
+        _print_project_info_text(report)
+        out = capsys.readouterr().out
+        assert "none" in out
+
+    def test_empty_report_does_not_raise(self, capsys):
+        from apibackuper.core import _print_project_info_text
+        # All sections default to ``{}`` and aren't raised when missing.
+        _print_project_info_text({})
+        out = capsys.readouterr().out
+        # Empty sections emit no lines.
+        assert out == ""
