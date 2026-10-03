@@ -197,6 +197,74 @@ def _handle_cli_errors(func):
     return wrapper
 
 
+def _emit_dry_run_plan(
+    acmd: "ProjectBuilder",
+    *,
+    command: str,
+    extra: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Print a JSON dry-run plan and exit. Shared by ``--profile`` /
+    ``--dry-run`` on the run / update / follow commands.
+
+    The helper is kwargs-only and side-effectful (prints + exits).
+    It composes:
+
+    * the command-specific ``extra`` block (callers pass resume flag,
+      follow_mode, etc.)
+    * the shared ``iteration`` / ``config`` fields pulled from
+      ``acmd`` via ``getattr`` (so a missing attribute surfaces as
+      ``None`` rather than crashing)
+    * the ``estimate`` sub-dict from ``cmds.profile.compute_profile_estimate``
+    * the resulting dict is dumped as JSON
+
+    A blank line separates ``extra`` from the shared fields for
+    human readability.
+    """
+    from .cmds.profile import compute_profile_estimate
+
+    plan: Dict[str, Any] = {
+        "command": command,
+        "project": {
+            "name": getattr(acmd, "name", None),
+            "url": getattr(acmd, "start_url", None),
+            "http_mode": getattr(acmd, "http_mode", None),
+            "response_type": getattr(acmd, "resp_type", None),
+            "storage_type": getattr(acmd, "storage_type", None),
+            "storage_path": getattr(acmd, "storagedir", None),
+        },
+        "iteration": {
+            "iterate_by": getattr(acmd, "iterate_by", None),
+            "page_size_limit": getattr(acmd, "page_limit", None),
+            "start_page": getattr(acmd, "start_page", None),
+            "parallelism": getattr(acmd, "parallelism", None),
+        },
+        "rate_limit": {
+            "requests_per_second": getattr(acmd, "rps", None),
+            "burst_size": getattr(acmd, "burst", None),
+            "default_delay": getattr(acmd, "default_delay", None),
+        },
+        "auth": {
+            "type": getattr(acmd, "auth_handler", None)
+            and acmd.auth_handler.auth_type or "none",
+        },
+        "config_format": acmd.config_format,
+        "config_filename": os.path.basename(acmd.config_filename),
+    }
+    if extra:
+        plan.update(extra)
+
+    state_payload = acmd._load_state() if hasattr(acmd, "_load_state") else {}
+    plan["estimate"] = compute_profile_estimate(
+        page_limit=getattr(acmd, "page_limit", None),
+        iterate_by=getattr(acmd, "iterate_by", None),
+        total_number_key=getattr(acmd, "total_number_key", "") or None,
+        rps=getattr(acmd, "rps", None),
+        default_delay=getattr(acmd, "default_delay", None),
+        state=state_payload,
+    )
+    print(json.dumps(plan, indent=2, default=str))
+
+
 def _print_project_info_text(report: Dict[str, Any]) -> None:
     """Print project information in a human-readable text format."""
 
@@ -593,46 +661,11 @@ def run(
     if dry_run and not profile:
         profile = True
     if profile:
-        profile_data = {
-            "project": {
-                "name": getattr(acmd, "name", None),
-                "url": getattr(acmd, "start_url", None),
-                "http_mode": getattr(acmd, "http_mode", None),
-                "response_type": getattr(acmd, "resp_type", None),
-                "storage_type": getattr(acmd, "storage_type", None),
-                "storage_path": getattr(acmd, "storagedir", None),
-            },
-            "auth": {
-                "type": getattr(acmd, "auth_handler", None)
-                and acmd.auth_handler.auth_type or "none",
-            },
-            "iteration": {
-                "iterate_by": getattr(acmd, "iterate_by", None),
-                "page_size_limit": getattr(acmd, "page_limit", None),
-                "start_page": getattr(acmd, "start_page", None),
-                "parallelism": getattr(acmd, "parallelism", None),
-            },
-            "rate_limit": {
-                "requests_per_second": getattr(acmd, "rps", None),
-                "burst_size": getattr(acmd, "burst", None),
-            },
-            "config_format": acmd.config_format,
-            "config_filename": os.path.basename(acmd.config_filename),
-        }
-        # P4 (add-dry-run-mode): estimate records + ETA from state /
-        # config without making any HTTP requests.
-        from .cmds.profile import compute_profile_estimate
-        state_payload = acmd._load_state() if hasattr(acmd, "_load_state") else {}
-        profile_data["estimate"] = compute_profile_estimate(
-            page_limit=getattr(acmd, "page_limit", None),
-            iterate_by=getattr(acmd, "iterate_by", None),
-            total_number_key=getattr(acmd, "total_number_key", "") or None,
-            rps=getattr(acmd, "rps", None),
-            default_delay=getattr(acmd, "default_delay", None),
-            state=state_payload,
+        _emit_dry_run_plan(
+            acmd,
+            command="run",
+            extra={"resume": resume, "mode": mode},
         )
-        import json as _json
-        print(_json.dumps(profile_data, indent=2, default=str))
         return
     acmd.run(mode, resume=resume)
 
@@ -655,38 +688,11 @@ def update(
     if acmd.config_format == "ini":
         print("Warning: INI configuration is deprecated; use YAML instead.")
     if dry_run:
-        # Reuse the ``--profile`` plan emitter from the ``run`` command.
-        # The helper is pure — it consumes the resolved config and any
-        # state file. Same JSON shape so downstream tooling can parse it.
-        from .cmds.profile import compute_profile_estimate
-        profile_data = {
-            "command": "update",
-            "resume": resume,
-            "project": {
-                "name": getattr(acmd, "name", None),
-                "url": getattr(acmd, "start_url", None),
-                "http_mode": getattr(acmd, "http_mode", None),
-                "response_type": getattr(acmd, "resp_type", None),
-                "storage_type": getattr(acmd, "storage_type", None),
-            },
-            "iteration": {
-                "iterate_by": getattr(acmd, "iterate_by", None),
-                "page_size_limit": getattr(acmd, "page_limit", None),
-                "start_page": getattr(acmd, "start_page", None),
-            },
-            "config_format": acmd.config_format,
-            "config_filename": os.path.basename(acmd.config_filename),
-        }
-        state_payload = acmd._load_state() if hasattr(acmd, "_load_state") else {}
-        profile_data["estimate"] = compute_profile_estimate(
-            page_limit=getattr(acmd, "page_limit", None),
-            iterate_by=getattr(acmd, "iterate_by", None),
-            total_number_key=getattr(acmd, "total_number_key", "") or None,
-            rps=getattr(acmd, "rps", None),
-            default_delay=getattr(acmd, "default_delay", None),
-            state=state_payload,
+        _emit_dry_run_plan(
+            acmd,
+            command="update",
+            extra={"resume": resume},
         )
-        print(json.dumps(profile_data, indent=2, default=str))
         return
     acmd.update(resume=resume)
 
@@ -918,32 +924,15 @@ def follow(
     """Follow already extracted data to collect details. Use one of modes: full or continue"""
     acmd = ProjectBuilder(projectpath)
     if dry_run:
-        from .cmds.profile import compute_profile_estimate
-        profile_data = {
-            "command": "follow",
-            "follow_mode": getattr(acmd, "follow_mode", None),
-            "follow_pattern": getattr(acmd, "follow_pattern", None),
-            "iteration": {
-                "iterate_by": getattr(acmd, "iterate_by", None),
-                "page_size_limit": getattr(acmd, "page_limit", None),
+        _emit_dry_run_plan(
+            acmd,
+            command="follow",
+            extra={
+                "follow_mode": getattr(acmd, "follow_mode", None),
+                "follow_pattern": getattr(acmd, "follow_pattern", None),
+                "follow_mode_arg": mode,
             },
-            "rate_limit": {
-                "requests_per_second": getattr(acmd, "rps", None),
-                "default_delay": getattr(acmd, "default_delay", None),
-            },
-            "config_format": acmd.config_format,
-            "config_filename": os.path.basename(acmd.config_filename),
-        }
-        state_payload = acmd._load_state() if hasattr(acmd, "_load_state") else {}
-        profile_data["estimate"] = compute_profile_estimate(
-            page_limit=getattr(acmd, "page_limit", None),
-            iterate_by=getattr(acmd, "iterate_by", None),
-            total_number_key=getattr(acmd, "total_number_key", "") or None,
-            rps=getattr(acmd, "rps", None),
-            default_delay=getattr(acmd, "default_delay", None),
-            state=state_payload,
         )
-        print(json.dumps(profile_data, indent=2, default=str))
         return
     acmd.follow(mode)
 
