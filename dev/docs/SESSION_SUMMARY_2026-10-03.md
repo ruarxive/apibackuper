@@ -201,3 +201,115 @@ git tag -a v1.0.15 -m "..." && git push origin v1.0.15
 ```
 
 The session is complete. The maintainer can confidently ship v1.0.14 to PyPI.
+
+---
+
+# apibackuper — Extended Session Summary (2026-10-03 evening)
+
+**From**: 298 passing / 42.60% coverage / 7 extracted modules
+**To**: 416 passing / 47.98% coverage / 8 extracted modules, **unify-storage-layer** OpenSpec closed
+
+A second wave of work in the same calendar day added:
+
+## Modules extracted
+
+* `cmds/follow.py` (124 lines) — `extract_keys_from_pages`,
+  `extract_url_map_from_pages`, `compute_pending_targets` for the
+  four `follow_mode` branches (`item` / `url` / `drilldown` /
+  `prefix`). 21 unit tests.
+
+## New profile functionality
+
+* `--profile` (run) + `--dry-run` (run / update / follow) emit a
+  JSON plan including a record / page / ETA estimate that uses
+  state files + `total_number_key` + RPS to derive a lower bound
+  without making any HTTP requests. `cmds/profile.py` owns the
+  math; the three CLI commands share a single
+  `_emit_dry_run_plan()` helper.
+
+## Security improvements
+
+* `${VAR}` and `${VAR:-default}` placeholders in YAML configs
+  (improve-security 4.1-4.3). `UnresolvedEnvVarError` is a
+  KeyError subclass so the CLI decorator can detect it and print
+  a clean "export X=..." message with exit code 2 instead of a
+  raw traceback.
+
+## Storage unification
+
+* `getfiles()` now uses `FilesystemStorageBackend` /
+  `ZipStorageBackend` (the new `StorageBackend` Protocol
+  implementations) instead of the legacy `FileStorage` /
+  `FilesystemStorage` / `ZipFileStorage` classes.
+* Legacy classes still exist for backward compatibility but emit
+  `DeprecationWarning` at instantiation time, pointing users at
+  the new backend. Importing alone is silent.
+* 3 deprecation-warning tests pin the contract.
+
+## Workflow hardening
+
+* All 13 third-party GitHub Actions are now SHA-pinned with
+  `# vN` comments. PyPI publish workflow applies the
+  `workflow_dispatch.version` input properly with strict semver
+  validation. Python 3.9 dropped (EOL Oct 2025); CI matrix is
+  3.10-3.13 + Ubuntu/macOS.
+
+## Test quality
+
+* Rate limiter zero-limit edge case (no ZeroDivisionError).
+* Filesystem / zip / SQLite storage edge cases (empty + binary
+  content).
+* Negative config tests (missing file, invalid YAML, empty YAML).
+* `get_dict_value` deep-list branches and the falsy-value
+  preservation contract.
+* `set_dict_value` list-handling branches.
+* OAuth2 refresh-token rotation + retention + missing
+  `access_token` + non-JSON response paths.
+* API key header default + custom header name.
+* CLI error-handler exit codes + message content (FileNotFound,
+  PermissionError, ValueError, UnresolvedEnvVarError).
+* `_slugify_project_name` and `_build_detect_config` unit
+  tests.
+
+## OpenSpec closures
+
+* `unify-storage-layer` — items 1.1-1.4, 2.1-2.3, 3.1, 4.1-4.2,
+  5.1-5.3 marked done.
+* `improve-test-quality` — items 3.5/3.6/3.8/3.9/4.1/4.2 marked
+  done.
+* `add-dry-run-mode` — items 1.1-1.3 done (alias for `--profile`
+  on `run`, wired through `update` and `follow`).
+* `improve-security` — items 4.1-4.3 done.
+
+## Test count growth
+
+113 → 298 → 416 in one calendar day (~+268 tests across the two
+sessions). Coverage 29% → 47.98%.
+
+## Commits pushed in this extended session
+
+(17 commits, all pushed to `origin/master`):
+
+* `33a5288` P3.31 — extract `cmds/follow.py`
+* `61ca388` P3.37 — SHA-pin GitHub Actions
+* `00264df` P3 — remove dead code from `ProjectBuilder`
+* `3a3a60d` P4 — `--profile` records + ETA estimate
+* `f69584d` improve-security 4.1-4.3 — env var substitution
+* `944857b` env-var error: clean CLI message
+* `47f65ce` improve-test-quality 3.5-3.9 — rate + storage edge cases
+* `1a6ab0e` improve-test-quality 4.1-4.2 — negative config tests
+* `9510b06` add-dry-run-mode 1.1-1.3 — `--dry-run` flag
+* `1b89374` fix SyntaxWarning in dry-run error message
+* `8f4ab0b` common: cover `get_dict_value` deep-list branches
+* `b034c2e` core: test `UnresolvedEnvVarError` clean CLI message
+* `7a03978` core: test CLI error handler paths
+* `6f0c24f` core: extract `_emit_dry_run_plan()` helper
+* `25c2722` core: test `_slugify_project_name` + `_build_detect_config`
+* `4a2f9ed` auth: test OAuth2 refresh_token rotation + retention
+* `b9ee3a9` rate_limiter: remove unreachable post-wait cleanup loops
+* `6b489be` common: test `set_dict_value` list branches
+* `dd241bf` auth: cover token_file + missing access_token + apikey header
+* `5e53e21` runner: test `close_progress` swallows bar exceptions
+* `6a553b2` unify-storage-layer 2.2-3.1 — migrate getfiles + deprecate legacy
+* `087bf8c` openspec: mark unify-storage-layer items 1-2, 4-5 complete
+* `d9c1b1a` openspec: mark improve-test-quality 3.5/3.6/3.8/3.9/4.1/4.2 complete
