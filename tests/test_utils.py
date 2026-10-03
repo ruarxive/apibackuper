@@ -188,3 +188,25 @@ class TestUrlReplacer:
         assert "?" not in result
         assert result.startswith(url + ";")
 
+
+class TestUtilsEdgeCases:
+    """Defensive else-branches in helpers."""
+
+    def test_is_sensitive_key_returns_false_when_str_raises(self):
+        # When ``str(key)`` raises, ``_is_sensitive_key`` must return False
+        # rather than propagating the exception.
+        from apibackuper.cmds.utils import _is_sensitive_key
+        class Weird:
+            def __str__(self):
+                raise RuntimeError("nope")
+        assert _is_sensitive_key(Weird()) is False
+
+    def test_redact_params_passes_through_non_dict(self):
+        # Non-dict params are returned unchanged.
+        from apibackuper.cmds.utils import redact_params
+        assert redact_params("token=abc") == "token=abc"
+        assert redact_params(None) is None
+        assert redact_params(42) == 42
+        # List is also not a dict — passthrough.
+        assert redact_params([("token", "abc")]) == [("token", "abc")]
+
