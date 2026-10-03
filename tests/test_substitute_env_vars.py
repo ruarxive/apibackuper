@@ -204,3 +204,34 @@ class TestRealWorldConfig:
         assert result["data"]["headers"]["Authorization"] == "Bearer secret-xyz"
         assert result["data"]["headers"]["X-Tenant"] == "default-tenant"
         assert result["storage"]["path"] == "/tmp/backups"
+
+
+class TestUnresolvedEnvVarErrorMessage:
+    """``UnresolvedEnvVarError.__init__`` formats the message with
+    the variable name and an optional ``" in <source>"`` suffix."""
+
+    def test_message_without_source(self):
+        from apibackuper.cmds.config_loader import UnresolvedEnvVarError
+        err = UnresolvedEnvVarError("MY_VAR")
+        assert err.name == "MY_VAR"
+        assert err.source is None
+        assert "MY_VAR" in str(err)
+        assert "not set" in str(err)
+        # No "in <source>" suffix when source is None.
+        assert " in " not in str(err)
+
+    def test_message_with_source(self):
+        from apibackuper.cmds.config_loader import UnresolvedEnvVarError
+        err = UnresolvedEnvVarError("MY_VAR", source="apibackuper.yaml")
+        assert err.source == "apibackuper.yaml"
+        assert "MY_VAR" in str(err)
+        assert "apibackuper.yaml" in str(err)
+        assert " in " in str(err)
+
+    def test_subclass_of_keyerror(self):
+        from apibackuper.cmds.config_loader import UnresolvedEnvVarError
+        err = UnresolvedEnvVarError("X")
+        # Caller code can still treat it as a KeyError.
+        assert isinstance(err, KeyError)
+        with pytest.raises(KeyError):
+            raise err
