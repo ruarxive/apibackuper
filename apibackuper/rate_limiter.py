@@ -80,10 +80,6 @@ class RateLimiter:
                     logging.debug("Rate limit: waiting %.2f seconds (minute limit)",
                                   wait_time)
                     time.sleep(wait_time)
-                    # Clean up again after waiting
-                    while (self.minute_requests and
-                           self.minute_requests[0] < time.time() - 60):
-                        self.minute_requests.popleft()
 
             self.minute_requests.append(time.time())
 
@@ -99,10 +95,6 @@ class RateLimiter:
                     logging.warning("Rate limit: waiting %.2f seconds (hour limit)",
                                     wait_time)
                     time.sleep(wait_time)
-                    # Clean up again after waiting
-                    while (self.hour_requests and
-                           self.hour_requests[0] < time.time() - 3600):
-                        self.hour_requests.popleft()
 
             self.hour_requests.append(time.time())
 
