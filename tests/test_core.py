@@ -456,6 +456,39 @@ class TestDryRunFlag:
             os.chdir(original_cwd)
 
 
+class TestUnresolvedEnvVarCliError:
+    """When a config references an unset environment variable, the CLI
+    prints a clean "you forgot to export X" message instead of a
+    generic KeyError traceback."""
+
+    @patch('apibackuper.core.ProjectBuilder')
+    def test_unresolved_env_var_exits_with_clean_message(
+        self, mock_pbc, sample_config_ini, monkeypatch,
+    ):
+        from apibackuper.cmds.config_loader import UnresolvedEnvVarError
+
+        monkeypatch.delenv("MISSING_API_KEY", raising=False)
+
+        def _raise(*args, **kwargs):
+            raise UnresolvedEnvVarError("MISSING_API_KEY", source="project.yaml")
+
+        mock_pbc.return_value._load_state.side_effect = _raise
+
+        runner = typer.testing.CliRunner()
+        project_dir = os.path.dirname(sample_config_ini)
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(project_dir)
+            result = runner.invoke(app, ["run", "full", "--profile"])
+            assert result.exit_code == 2
+            assert "MISSING_API_KEY" in result.output
+            assert "configuration references unset environment variable" in result.output
+            assert "export MISSING_API_KEY" in result.output
+            assert "project.yaml" in result.output
+        finally:
+            os.chdir(original_cwd)
+
+
 class TestProfileFlag:
     """P4 (add-dry-run-mode): ``--profile`` prints a JSON estimate
     sub-dict sourced from ``cmds.profile.compute_profile_estimate``.
