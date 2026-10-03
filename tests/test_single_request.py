@@ -25,6 +25,8 @@ def _make_builder():
     builder.flat_params = False
     builder.rate_limiter = None
     builder._rate_lock = threading.Lock()
+    builder.default_delay = 0.5
+    builder.logfile = "apibackuper.log"
     return builder
 
 

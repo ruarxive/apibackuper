@@ -109,10 +109,6 @@ from .utils import (
     load_file_list,
     load_csv_data,
     _url_replacer,
-    redact_params,
-    redact_headers,
-    _is_sensitive_key,
-    _REDACTED,
 )
 
 
@@ -855,14 +851,28 @@ class ProjectBuilder:
         params: Dict[str, Any],
         flatten: Optional[Dict[str, str]] = None
     ) -> requests.Response:
-        """Single http/https request with authentication and rate limiting"""
+        """Single http/https request with authentication and rate limiting.
+
+        Thin wrapper around ``apibackuper.cmds.http_client`` — that module
+        owns the request-building, the retry-kwargs filtering, and the
+        actionable error wrapping; this method owns the OAuth2 refresh
+        trigger and the rate-limiter ordering.
+        """
+        from .http_client import (
+            build_request_kwargs,
+            build_retry_kwargs,
+            wrap_request_exception,
+        )
+
         try:
-            # Apply rate limiting
+            # Apply rate limiting first — no point making the request if
+            # we'd be violating the configured limit.
             if self.rate_limiter:
                 with self._rate_lock:
                     self.rate_limiter.wait_if_needed()
 
-            # Merge auth headers
+            # Merge auth headers (the auth handler is the source of truth
+            # for whatever the upstream service expects).
             if self.auth_handler:
                 auth_headers = self.auth_handler.get_headers()
                 if headers:
@@ -870,203 +880,69 @@ class ProjectBuilder:
                 else:
                     headers = auth_headers
 
-            # Prepare request kwargs
-            request_kwargs = {
-                "verify": self.verify_ssl,
-                "timeout": (self.connect_timeout, self.read_timeout),
-                "allow_redirects": self.allow_redirects
-            }
+            (method, request_kwargs, log_safe_url), actual_query_string = (
+                build_request_kwargs(
+                    http_mode=self.http_mode,
+                    url=url,
+                    params=params,
+                    flatten=flatten if self.flat_params else None,
+                    headers=headers,
+                    verify_ssl=self.verify_ssl,
+                    connect_timeout=self.connect_timeout,
+                    read_timeout=self.read_timeout,
+                    allow_redirects=self.allow_redirects,
+                )
+            )
+            # The flat-params branch returns an extra actual_query_string;
+            # the regular branches return None and we use ``url`` directly.
+            logging.info("url: %s", log_safe_url)
 
-            if self.http_mode == "GET":
-                if self.flat_params and len(params.keys()) > 0:
-                    # P2.21: redact sensitive keys in the flat-params branch so
-                    # token=... never lands in the log file.
-                    redacted_flatten = {}
-                    for key, value in flatten.items():
-                        redacted_flatten[key] = (
-                            _REDACTED if _is_sensitive_key(key)
-                            else value.replace("'", '"').replace("True", "true")
-                        )
-                    # P2.23: URL-encode the query so values with ``&``, ``=``,
-                    # ``#`` or whitespace do not corrupt or extend the query.
-                    from urllib.parse import urlencode
-                    query_string = urlencode(redacted_flatten, doseq=True)
-                    actual_query_string = urlencode(
-                        {k: v.replace("'", '"').replace("True", "true")
-                         for k, v in flatten.items()},
-                        doseq=True,
-                    )
-                    logging.info("url: %s", url + "?" + query_string)
-                    if headers:
-                        request_kwargs["headers"] = headers
-                        response = self.http.get(url + "?" + actual_query_string, **request_kwargs)
-                    else:
-                        response = self.http.get(url + "?" + actual_query_string, **request_kwargs)
-                else:
-                    # P2.21: redact Authorization/token/api_key before they reach
-                    # the log file (§5.1 of the 2026-10 analysis report).
-                    logging.info("url: %s, params: %s", url, redact_params(params))
-                    if headers:
-                        request_kwargs["headers"] = headers
-                    request_kwargs["params"] = params
-                    response = self.http.get(url, **request_kwargs)
+            session_method = getattr(self.http, method)
+            if actual_query_string is not None:
+                response = session_method(url + actual_query_string, **request_kwargs)
+            elif self.http_mode == "GET":
+                response = session_method(url, **request_kwargs)
             else:
-                # P2.21: same — redact before logging.
-                logging.debug("Request %s, params: %s, headers: %s",
-                              url, redact_params(params), redact_headers(headers))
-                if headers:
-                    request_kwargs["headers"] = headers
-                request_kwargs["json"] = params
-                response = self.http.post(url, **request_kwargs)
+                response = session_method(url, **request_kwargs)
 
-            # Handle OAuth2 token refresh if needed
-            if response.status_code == 401 and self.auth_handler and self.auth_handler.auth_type == "oauth2":
+            # Handle OAuth2 token refresh if needed.
+            if (
+                response.status_code == 401
+                and self.auth_handler
+                and self.auth_handler.auth_type == "oauth2"
+            ):
                 # P2.24: propagate the session's TLS verification flag and
-                # timeout to the refresh POST so we never send a refresh-token
-                # over an unverified channel and never block the run indefinitely.
+                # timeout to the refresh POST.
                 if self.auth_handler.refresh_token_if_needed(
                     self.http,
                     verify=self.verify_ssl,
                     timeout=(self.connect_timeout, self.read_timeout),
                 ):
-                    # Retry request with new token. The original code passed
-                    # ``params=params`` (or ``json=params``) as a kwarg to
-                    # ``http.get`` *and* had already set ``request_kwargs["params"]``
-                    # above — ``requests`` raised ``TypeError: got multiple
-                    # values for keyword argument 'params'`` and the OAuth2
-                    # re-authentication path could never succeed (§4.2 of the
-                    # 2026-10 analysis report). Build a clean retry kwargs
-                    # without the body-bearing keys.
+                    # Retry request with new token. The build_retry_kwargs
+                    # helper produces a kwargs dict that is safe to spread
+                    # alongside an explicit params=... argument (P1.13).
                     auth_headers = self.auth_handler.get_headers()
                     if headers:
                         headers.update(auth_headers)
                     else:
                         headers = auth_headers
-                    retry_kwargs = {
-                        k: v for k, v in request_kwargs.items()
-                        if k not in ("params", "json")
-                    }
-                    retry_kwargs["headers"] = headers
+                    retry_kwargs = build_retry_kwargs(request_kwargs, headers)
                     if self.http_mode == "GET":
                         response = self.http.get(url, params=params, **retry_kwargs)
                     else:
                         response = self.http.post(url, json=params, **retry_kwargs)
 
             return response
-        except requests.exceptions.Timeout as e:
-            timeout_info = f"Connect timeout: {self.connect_timeout}s, Read timeout: {self.read_timeout}s"
-            error_msg = (
-                f"Request timeout while connecting to {url}\n"
-                f"  Current timeout settings: {timeout_info}\n"
-                f"  Error details: {str(e)}\n"
-                "  Suggestions:\n"
-                f"    - Increase timeout values in [request] section:\n"
-                f"      connect_timeout = {self.connect_timeout * 2}\n"
-                f"      read_timeout = {self.read_timeout * 2}\n"
-                "    - Check network connectivity and API server status\n"
-                "    - Verify the URL is correct and accessible"
+        except (requests.exceptions.RequestException, ValueError, RuntimeError, IOError) as e:
+            wrapped = wrap_request_exception(
+                e,
+                url=url,
+                connect_timeout=self.connect_timeout,
+                read_timeout=self.read_timeout,
+                default_delay=self.default_delay,
+                logfile=getattr(self, "logfile", None),
             )
-            logging.error("Request timeout for URL %s: %s", url, e)
-            raise RuntimeError(error_msg) from e
-        except requests.exceptions.SSLError as e:
-            error_msg = (
-                f"SSL certificate verification failed for {url}\n"
-                f"  Error details: {str(e)}\n"
-                "  Suggestions:\n"
-                "    - If this is a trusted server, disable SSL verification in [request] section:\n"
-                "      verify_ssl = False\n"
-                "    - Or provide a path to a trusted certificate bundle:\n"
-                "      verify_ssl = /path/to/certificate.pem\n"
-                "    - Update your system's certificate store\n"
-                "    - Check if the server's certificate has expired"
-            )
-            logging.error("SSL error for URL %s: %s", url, e)
-            raise RuntimeError(error_msg) from e
-        except requests.exceptions.ConnectionError as e:
-            error_msg = (
-                f"Failed to connect to {url}\n"
-                f"  Error details: {str(e)}\n"
-                "  Suggestions:\n"
-                "    - Check your internet connection\n"
-                f"    - Verify the URL is correct: {url}\n"
-                "    - Check if the API server is running and accessible\n"
-                "    - If using a proxy, verify proxy settings in [request] section\n"
-                "    - Check firewall settings"
-            )
-            logging.error("Connection error for URL %s: %s", url, e)
-            raise RuntimeError(error_msg) from e
-        except requests.exceptions.HTTPError as e:
-            status_code = e.response.status_code if hasattr(e, 'response') and e.response else "unknown"
-            error_msg = (
-                f"HTTP error {status_code} for {url}\n"
-                f"  Error details: {str(e)}\n"
-            )
-            if hasattr(e, 'response') and e.response:
-                error_msg += f"  Response status: {e.response.status_code}\n"
-                if e.response.status_code == 401:
-                    error_msg += (
-                        "  Suggestions:\n"
-                        "    - Check authentication credentials in [auth] section\n"
-                        "    - Verify API key or token is valid and not expired\n"
-                        "    - Check if authentication type matches API requirements"
-                    )
-                elif e.response.status_code == 403:
-                    error_msg += (
-                        "  Suggestions:\n"
-                        "    - Check if your account has permission to access this resource\n"
-                        "    - Verify API key has required permissions\n"
-                        "    - Check rate limiting or quota restrictions"
-                    )
-                elif e.response.status_code == 404:
-                    error_msg += (
-                        f"  Suggestions:\n"
-                        f"    - Verify the URL is correct: {url}\n"
-                        "    - Check if the API endpoint exists\n"
-                        "    - Review API documentation for correct endpoint path"
-                    )
-                elif e.response.status_code == 429:
-                    error_msg += (
-                        "  Suggestions:\n"
-                        "    - You are being rate limited. Wait before retrying\n"
-                        "    - Configure rate limiting in [rate_limit] section\n"
-                        f"    - Increase delays between requests in [project] section:\n"
-                        f"      default_delay = {self.default_delay * 2}"
-                    )
-                elif e.response.status_code >= 500:
-                    error_msg += (
-                        "  Suggestions:\n"
-                        "    - This is a server error. The API may be temporarily unavailable\n"
-                        "    - Wait a few minutes and try again\n"
-                        "    - Check API status page if available\n"
-                        "    - Increase retry settings in [project] section"
-                    )
-            logging.error("HTTP error for URL %s: %s", url, e)
-            raise RuntimeError(error_msg) from e
-        except requests.exceptions.RequestException as e:
-            error_msg = (
-                f"Request failed for {url}\n"
-                f"  Error details: {str(e)}\n"
-                f"  Suggestions:\n"
-                f"    - Check network connectivity\n"
-                f"    - Verify URL and request parameters\n"
-                f"    - Review configuration settings\n"
-                f"    - Check logs for more details: {self.logfile if hasattr(self, 'logfile') else 'apibackuper.log'}"
-            )
-            logging.error("Request error for URL %s: %s", url, e)
-            raise RuntimeError(error_msg) from e
-        except (ValueError, RuntimeError, IOError) as e:
-            error_msg = (
-                f"Unexpected error while requesting {url}\n"
-                f"  Error details: {str(e)}\n"
-                f"  Error type: {type(e).__name__}\n"
-                f"  Suggestions:\n"
-                f"    - Check logs for more details: {self.logfile if hasattr(self, 'logfile') else 'apibackuper.log'}\n"
-                f"    - Verify configuration is correct\n"
-                f"    - Try running with --verbose flag for more information"
-            )
-            logging.error("Unexpected error in request to %s: %s", url, e,
-                          exc_info=True)
-            raise RuntimeError(error_msg) from e
+            raise wrapped from e
 
     @staticmethod
     def create(name: str) -> None:
