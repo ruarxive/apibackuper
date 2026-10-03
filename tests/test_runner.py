@@ -1,0 +1,332 @@
+"""Tests for the extracted ``cmds.runner`` module.
+
+These cover the orchestration logic in isolation: sequential vs parallel
+loops, retry exhaustion, consecutive-error abort, storage close on
+every exit path, and the page-count parser.
+"""
+from unittest.mock import MagicMock
+import pytest
+
+from apibackuper.cmds.runner import fetch_all_pages, parse_total_pages
+from apibackuper.constants import DEFAULT_NUMBER_OF_PAGES
+
+
+class TestFetchAllPagesSequential:
+    def test_runs_all_pages_sequentially(self):
+        calls = []
+
+        def fetch_one(page):
+            calls.append(page)
+            return {"page": page, "status": 200, "content": b"{}"}
+
+        def on_page(page, content):
+            return True
+
+        errors = fetch_all_pages(
+            pages=[1, 2, 3],
+            parallelism=1,
+            fetch_one=fetch_one,
+            on_page=on_page,
+            should_retry=lambda s: False,
+            retry_max_retries=0,
+            max_consecutive_errors=10,
+            continue_on_error=True,
+            storage_backend=None,
+            progress_bar=None,
+            start_timer=0.0,
+            total_pages=3,
+            checkpoint_interval=0,
+            save_checkpoint=lambda c: None,
+        )
+        assert calls == [1, 2, 3]
+        assert errors == {}
+
+    def test_storage_backend_closed_after_success(self):
+        backend = MagicMock()
+        fetch_all_pages(
+            pages=[1],
+            parallelism=1,
+            fetch_one=lambda p: {"page": p, "status": 200, "content": b""},
+            on_page=lambda p, c: True,
+            should_retry=lambda s: False,
+            retry_max_retries=0,
+            max_consecutive_errors=10,
+            continue_on_error=True,
+            storage_backend=backend,
+            progress_bar=None,
+            start_timer=0.0,
+            total_pages=1,
+            checkpoint_interval=0,
+            save_checkpoint=lambda c: None,
+        )
+        assert backend.close.called
+
+    def test_storage_backend_closed_when_on_page_returns_false(self):
+        backend = MagicMock()
+        fetch_all_pages(
+            pages=[1, 2, 3],
+            parallelism=1,
+            fetch_one=lambda p: {"page": p, "status": 200, "content": b""},
+            on_page=lambda p, c: False,  # early-stop after first page
+            should_retry=lambda s: False,
+            retry_max_retries=0,
+            max_consecutive_errors=10,
+            continue_on_error=True,
+            storage_backend=backend,
+            progress_bar=None,
+            start_timer=0.0,
+            total_pages=3,
+            checkpoint_interval=0,
+            save_checkpoint=lambda c: None,
+        )
+        assert backend.close.called
+
+    def test_storage_backend_closed_when_fetch_raises(self):
+        backend = MagicMock()
+
+        def fetch_one(page):
+            raise RuntimeError("network down")
+
+        with pytest.raises(RuntimeError):
+            fetch_all_pages(
+                pages=[1],
+                parallelism=1,
+                fetch_one=fetch_one,
+                on_page=lambda p, c: True,
+                should_retry=lambda s: False,
+                retry_max_retries=0,
+                max_consecutive_errors=10,
+                continue_on_error=True,
+                storage_backend=backend,
+                progress_bar=None,
+                start_timer=0.0,
+                total_pages=1,
+                checkpoint_interval=0,
+                save_checkpoint=lambda c: None,
+            )
+        # Even on exception, the finally clause must close the backend.
+        assert backend.close.called
+
+
+class TestFetchAllPagesErrors:
+    def test_consecutive_errors_trigger_abort(self):
+        backend = MagicMock()
+        errors = fetch_all_pages(
+            pages=[1, 2, 3, 4, 5],
+            parallelism=1,
+            fetch_one=lambda p: {"page": p, "status": 503, "content": b""},
+            on_page=lambda p, c: True,
+            should_retry=lambda s: s == 503,
+            retry_max_retries=0,
+            max_consecutive_errors=2,
+            continue_on_error=True,
+            storage_backend=backend,
+            progress_bar=None,
+            start_timer=0.0,
+            total_pages=5,
+            checkpoint_interval=0,
+            save_checkpoint=lambda c: None,
+        )
+        # 503 errors accumulate; abort after 2 consecutive.
+        assert errors == {"503": 2}
+
+    def test_continue_on_error_false_aborts_on_first_failure(self):
+        backend = MagicMock()
+        errors = fetch_all_pages(
+            pages=[1, 2, 3],
+            parallelism=1,
+            fetch_one=lambda p: {"page": p, "status": 503, "content": b""},
+            on_page=lambda p, c: True,
+            should_retry=lambda s: s == 503,
+            retry_max_retries=0,
+            max_consecutive_errors=10,
+            continue_on_error=False,
+            storage_backend=backend,
+            progress_bar=None,
+            start_timer=0.0,
+            total_pages=3,
+            checkpoint_interval=0,
+            save_checkpoint=lambda c: None,
+        )
+        assert errors == {"503": 1}
+
+    def test_transport_error_counted_separately(self):
+        backend = MagicMock()
+        errors = fetch_all_pages(
+            pages=[1, 2, 3],
+            parallelism=1,
+            fetch_one=lambda p: {"page": p, "error": "Timeout", "status": None},
+            on_page=lambda p, c: True,
+            should_retry=lambda s: False,
+            retry_max_retries=0,
+            max_consecutive_errors=10,
+            continue_on_error=True,
+            storage_backend=backend,
+            progress_bar=None,
+            start_timer=0.0,
+            total_pages=3,
+            checkpoint_interval=0,
+            save_checkpoint=lambda c: None,
+        )
+        assert errors == {"transport": 3}
+
+
+class TestFetchAllPagesParallel:
+    def test_parallelism_two_processes_in_batches(self):
+        pages_processed = []
+
+        def on_page(p, content):
+            pages_processed.append(p)
+            return True
+
+        backend = MagicMock()
+        errors = fetch_all_pages(
+            pages=[1, 2, 3, 4, 5],
+            parallelism=2,
+            fetch_one=lambda p: {"page": p, "status": 200, "content": b""},
+            on_page=on_page,
+            should_retry=lambda s: False,
+            retry_max_retries=0,
+            max_consecutive_errors=10,
+            continue_on_error=True,
+            storage_backend=backend,
+            progress_bar=None,
+            start_timer=0.0,
+            total_pages=5,
+            checkpoint_interval=0,
+            save_checkpoint=lambda c: None,
+        )
+        assert sorted(pages_processed) == [1, 2, 3, 4, 5]
+        assert errors == {}
+        assert backend.close.called
+
+    def test_parallel_storage_close_on_on_page_returns_false(self):
+        pages_processed = []
+
+        def on_page(p, content):
+            pages_processed.append(p)
+            return p < 3  # early-stop after page 3
+
+        backend = MagicMock()
+        fetch_all_pages(
+            pages=[1, 2, 3, 4, 5],
+            parallelism=3,
+            fetch_one=lambda p: {"page": p, "status": 200, "content": b""},
+            on_page=on_page,
+            should_retry=lambda s: False,
+            retry_max_retries=0,
+            max_consecutive_errors=10,
+            continue_on_error=True,
+            storage_backend=backend,
+            progress_bar=None,
+            start_timer=0.0,
+            total_pages=5,
+            checkpoint_interval=0,
+            save_checkpoint=lambda c: None,
+        )
+        assert backend.close.called
+
+
+class TestFetchAllPagesCheckpoint:
+    def test_checkpoint_saved_every_n_pages(self):
+        saved = []
+        fetch_all_pages(
+            pages=[1, 2, 3, 4, 5],
+            parallelism=1,
+            fetch_one=lambda p: {"page": p, "status": 200, "content": b""},
+            on_page=lambda p, c: True,
+            should_retry=lambda s: False,
+            retry_max_retries=0,
+            max_consecutive_errors=10,
+            continue_on_error=True,
+            storage_backend=None,
+            progress_bar=None,
+            start_timer=0.0,
+            total_pages=5,
+            checkpoint_interval=2,
+            save_checkpoint=lambda c: saved.append(c),
+        )
+        # Checkpoints saved at pages 2 and 4 (every 2 pages).
+        assert len(saved) == 2
+        assert saved[0]["last_page"] == 2
+        assert saved[1]["last_page"] == 4
+
+    def test_checkpoint_disabled_when_interval_zero(self):
+        saved = []
+        fetch_all_pages(
+            pages=[1, 2, 3],
+            parallelism=1,
+            fetch_one=lambda p: {"page": p, "status": 200, "content": b""},
+            on_page=lambda p, c: True,
+            should_retry=lambda s: False,
+            retry_max_retries=0,
+            max_consecutive_errors=10,
+            continue_on_error=True,
+            storage_backend=None,
+            progress_bar=None,
+            start_timer=0.0,
+            total_pages=3,
+            checkpoint_interval=0,
+            save_checkpoint=lambda c: saved.append(c),
+        )
+        assert saved == []
+
+
+class TestParseTotalPages:
+    def test_total_number_key_with_divide(self):
+        # total=105, page_limit=10 -> 11 pages
+        num_pages, total = parse_total_pages(
+            {"meta": {"total_records": 105}},
+            resp_type="json",
+            total_number_key="meta.total_records",
+            pages_number_key="",
+            page_size_limit=10,
+        )
+        assert num_pages == 11
+        assert total == 105
+
+    def test_total_number_key_exact_multiple(self):
+        # total=100, page_limit=10 -> 10 pages (no remainder page)
+        num_pages, total = parse_total_pages(
+            {"meta": {"total_records": 100}},
+            resp_type="json",
+            total_number_key="meta.total_records",
+            pages_number_key="",
+            page_size_limit=10,
+        )
+        assert num_pages == 10
+        assert total == 100
+
+    def test_pages_number_key_inference(self):
+        # When ``pages_number_key`` is set, ``total`` is computed from pages * limit
+        num_pages, total = parse_total_pages(
+            {"pagination": {"pages": 7}},
+            resp_type="json",
+            total_number_key="",
+            pages_number_key="pagination.pages",
+            page_size_limit=10,
+        )
+        assert num_pages == 7
+        assert total == 70
+
+    def test_no_metadata_keys_falls_back_to_default(self):
+        num_pages, total = parse_total_pages(
+            {},
+            resp_type="json",
+            total_number_key="",
+            pages_number_key="",
+            page_size_limit=10,
+        )
+        assert num_pages == DEFAULT_NUMBER_OF_PAGES
+        assert total is None
+
+    def test_total_garbage_value_falls_back_to_default(self):
+        # If total_number_key is set but the value is not numeric, fall back.
+        num_pages, total = parse_total_pages(
+            {"meta": {"total_records": "not-a-number"}},
+            resp_type="json",
+            total_number_key="meta.total_records",
+            pages_number_key="",
+            page_size_limit=10,
+        )
+        assert num_pages == DEFAULT_NUMBER_OF_PAGES

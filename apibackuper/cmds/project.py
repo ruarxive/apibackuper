@@ -1808,84 +1808,37 @@ class ProjectBuilder:
 
             pages = list(range(start_page, end_page))
 
-            # P1.12: ensure ``storage_backend.close()`` runs on *every* early-exit
-            # path, including exceptions from ``fetch_page`` itself. The original
-            # parallel branch ``return``ed directly without closing the backend
-            # (sequential branch fell through to line ~1862 which did close),
-            # so a single error during parallel fetch could corrupt the zip
-            # central directory and lose every page that *was* fetched.
-            _run_close = getattr(storage_backend, "close", None)
+            # P3.31: the page-fetch loop itself moved to ``cmds.runner`` so
+            # it can be unit-tested in isolation and so future changes
+            # (async via httpx) replace this one module instead of rewriting
+            # the rest of the project. The orchestrator handles storage
+            # close, retry exhaustion, consecutive-error counting, and the
+            # parallelism branch — all of the things the historical code
+            # duplicated across sequential vs parallel paths (P1.12).
+            from .runner import fetch_all_pages
 
-            def _safe_close_backend() -> None:
-                if _run_close is None:
-                    return
-                try:
-                    _run_close()
-                except (IOError, OSError, ValueError) as e:
-                    logging.error("Error closing storage backend: %s", e)
+            def fetch_one(target_page: int) -> Dict[str, Any]:
+                return fetch_page(target_page)
 
-            def _close_progress() -> None:
-                if progress_bar:
-                    try:
-                        progress_bar.close()
-                    except Exception:
-                        pass
+            def on_page_success(target_page: int, content: bytes) -> bool:
+                return handle_success(target_page, content)
 
-            try:
-                if self.parallelism <= 1:
-                    for page in pages:
-                        result = fetch_page(page)
-                        if result.get("error") or self._should_retry(result.get("status")):
-                            consecutive_errors += 1
-                            if result.get("status") is not None:
-                                error_counts[str(result.get("status"))] = (
-                                    error_counts.get(str(result.get("status")), 0) + 1
-                                )
-                            if consecutive_errors >= self.max_consecutive_errors:
-                                return
-                            if not self.continue_on_error:
-                                return
-                            if progress_bar:
-                                progress_bar.update(1)
-                            continue
-                        consecutive_errors = 0
-                        if not handle_success(page, result["content"]):
-                            break
-                else:
-                    for offset in range(0, len(pages), self.parallelism):
-                        batch = pages[offset:offset + self.parallelism]
-                        results: Dict[int, Dict[str, Any]] = {}
-                        with ThreadPoolExecutor(max_workers=self.parallelism) as executor:
-                            future_map = {executor.submit(fetch_page, page): page for page in batch}
-                            for future in as_completed(future_map):
-                                result = future.result()
-                                results[result["page"]] = result
-                        for page in batch:
-                            result = results.get(page)
-                            if result is None:
-                                continue
-                            if result.get("error") or self._should_retry(result.get("status")):
-                                consecutive_errors += 1
-                                if result.get("status") is not None:
-                                    error_counts[str(result.get("status"))] = (
-                                        error_counts.get(str(result.get("status")), 0) + 1
-                                    )
-                                if consecutive_errors >= self.max_consecutive_errors:
-                                    return
-                                if not self.continue_on_error:
-                                    return
-                                if progress_bar:
-                                    progress_bar.update(1)
-                                continue
-                            consecutive_errors = 0
-                            if not handle_success(page, result["content"]):
-                                break
-                        else:
-                            continue
-                        break
-            finally:
-                _close_progress()
-                _safe_close_backend()
+            error_counts = fetch_all_pages(
+                pages=pages,
+                parallelism=self.parallelism,
+                fetch_one=fetch_one,
+                on_page=on_page_success,
+                should_retry=self._should_retry,
+                retry_max_retries=self.retry_max_retries,
+                max_consecutive_errors=self.max_consecutive_errors,
+                continue_on_error=self.continue_on_error,
+                storage_backend=storage_backend,
+                progress_bar=progress_bar,
+                start_timer=start,
+                total_pages=len(pages),
+                checkpoint_interval=self.checkpoint_interval_pages,
+                save_checkpoint=self._save_checkpoint,
+            )
 
             run_end_time = datetime.now(timezone.utc)
             state_payload = {
