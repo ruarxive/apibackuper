@@ -206,10 +206,36 @@ class TestAuthHandler:
         mock_session.post.return_value = mock_response
         
         result = handler.refresh_token_if_needed(mock_session)
-        
+
         assert result is True
         assert handler.auth_data["token"] == "new_token"
         mock_session.post.assert_called_once()
+
+    def test_refresh_token_oauth2_verify_override(self):
+        """When ``verify_ssl`` is explicitly False in config, the
+        ``verify=False`` kwarg is forwarded to requests.post."""
+        config = configparser.ConfigParser()
+        config.add_section("auth")
+        config.set("auth", "type", "oauth2")
+        config.set("auth", "auth_url", "https://auth.example.com/token")
+        config.set("auth", "refresh_token", "rt")
+        config.set("auth", "token", "old")
+        config.set("auth", "verify_ssl", "false")  # explicit override
+
+        handler = AuthHandler(config)
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"access_token": "new"}
+        mock_session = Mock()
+        mock_session.post.return_value = mock_response
+
+        result = handler.refresh_token_if_needed(mock_session, verify=False)
+        assert result is True
+
+        # The ``verify`` kwarg was passed with the configured value.
+        call_kwargs = mock_session.post.call_args.kwargs
+        assert call_kwargs.get("verify") is False
     
     def test_refresh_token_oauth2_failure(self):
         """Test refreshing OAuth2 token with failure"""
