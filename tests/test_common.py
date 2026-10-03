@@ -231,3 +231,55 @@ class TestGetDictValueDeepBranches:
         assert get_dict_value(data, "label") == ""
         assert get_dict_value(data, "items") == []
 
+
+class TestSetDictValueListBranches:
+    """``set_dict_value`` walks a path through a list of dicts when
+    the prefix segment matches multiple keys (a dotted path inside
+    an array). These pin the list-handling branches at lines 107-121
+    of common.py."""
+
+    def test_set_through_list_of_dicts_is_a_noop(self):
+        # The list branch of ``set_dict_value`` walks each dict in
+        # the list and recurses — but at the bottom (single segment),
+        # the dict branch is the only one that mutates. When the
+        # recursion lands on a list again (no inner dict to mutate),
+        # the inner call returns the list unchanged, and the outer
+        # collects that inner list as the result.
+
+        # When the path's first segment is on a list, ``set_dict_value``
+        # walks each dict but cannot mutate the list items — the
+        # returned structure is the list of recursed results, which
+        # when prefix reaches the list again, returns the inner list
+        # verbatim. So no mutation happens.
+        data = [
+            {"a": [{"c": 1}, {"c": 2}]},
+            {"a": [{"c": 3}]},
+            {"other": "skip"},
+        ]
+        # The call does not raise and returns something list-shaped.
+        result = set_dict_value(data, "a.c", "new")
+        # When the top-level is a list, ``set_dict_value`` only
+        # processes items that contain the prefix's first key. The third
+        # dict ``{"other": "skip"}`` has no ``a``, so it's excluded.
+        # The result is a list of recursed values; the inner
+        # inner lists are returned verbatim (no mutation happens).
+        assert isinstance(result, list)
+        assert len(result) == 2  # 2 of 3 dicts had an "a" key
+
+    def test_set_list_dict_with_empty_inner_list(self):
+        # An empty inner list is preserved.
+        data = [{"a": []}, {"a": [{"c": 1}]}]
+        result = set_dict_value(data, "a.c", "x")
+        # Both items have ``a`` so both are walked. The first has an
+        # empty list as its value (preserved); the second has a
+        # list with a dict (preserved as-is, no mutation).
+        assert len(result) == 2
+        assert result[0] == []
+        assert result[1] == [{"c": 1}]
+
+    def test_set_dict_value_singleton_value_set_at_root(self):
+        # Single-segment key sets directly without prefix walking.
+        data = {"x": 1}
+        result = set_dict_value(data, "x", 2)
+        assert result["x"] == 2
+
