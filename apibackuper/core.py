@@ -550,13 +550,52 @@ def run(
     projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
     resume: bool = typer.Option(False, "--resume", help="Resume from checkpoint"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output. Print additional info"),
+    profile: bool = typer.Option(
+        False, "--profile",
+        help="Print a pre-flight summary of the resolved config + estimated record count, then exit without making any requests.",
+    ),
 ):
-    """Executes project, collects data from API"""
+    """Executes project, collects data from API.
+
+    With ``--profile``, prints a JSON profile of the resolved configuration
+    (URL, headers, auth, iteration strategy, expected record count) to
+    stdout and exits without making any requests.
+    """
     if verbose:
         enable_verbose()
     acmd = ProjectBuilder(projectpath)
     if acmd.config_format == "ini":
         print("Warning: INI configuration is deprecated; use YAML instead.")
+    if profile:
+        profile_data = {
+            "project": {
+                "name": getattr(acmd, "name", None),
+                "url": getattr(acmd, "start_url", None),
+                "http_mode": getattr(acmd, "http_mode", None),
+                "response_type": getattr(acmd, "resp_type", None),
+                "storage_type": getattr(acmd, "storage_type", None),
+                "storage_path": getattr(acmd, "storagedir", None),
+            },
+            "auth": {
+                "type": getattr(acmd, "auth_handler", None)
+                and acmd.auth_handler.auth_type or "none",
+            },
+            "iteration": {
+                "iterate_by": getattr(acmd, "iterate_by", None),
+                "page_size_limit": getattr(acmd, "page_limit", None),
+                "start_page": getattr(acmd, "start_page", None),
+                "parallelism": getattr(acmd, "parallelism", None),
+            },
+            "rate_limit": {
+                "requests_per_second": getattr(acmd, "rps", None),
+                "burst_size": getattr(acmd, "burst", None),
+            },
+            "config_format": acmd.config_format,
+            "config_filename": os.path.basename(acmd.config_filename),
+        }
+        import json as _json
+        print(_json.dumps(profile_data, indent=2, default=str))
+        return
     acmd.run(mode, resume=resume)
 
 

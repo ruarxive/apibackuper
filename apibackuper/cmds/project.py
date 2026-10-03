@@ -134,6 +134,27 @@ def _safe_int(value: Any, option: str, default: int = 0) -> int:
         return default
 
 
+def _atomic_write_json(path: str, payload: Dict[str, Any]) -> None:
+    """Write ``payload`` to ``path`` atomically.
+
+    Writes to a sibling ``.tmp`` file, flushes + fsyncs, then ``os.replace()``
+    swaps it onto the target path. On POSIX, ``os.replace`` is atomic, so a
+    crash mid-write leaves either the previous content or the new content
+    intact — never a half-written file (§P3 of the 2026-10 analysis report).
+    """
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf8") as fobj:
+        json.dump(payload, fobj, ensure_ascii=False, indent=2)
+        fobj.flush()
+        try:
+            os.fsync(fobj.fileno())
+        except (OSError, AttributeError):
+            # Some filesystems (e.g. tmpfs on some Linux configs) don't
+            # support fsync; skip it rather than fail the write.
+            pass
+    os.replace(tmp_path, path)
+
+
 class ProjectBuilder:
     """Project builder"""
 
@@ -681,15 +702,19 @@ class ProjectBuilder:
             return {}
 
     def _save_state(self, state: Dict[str, Any]) -> None:
-        """Persist run state to disk."""
+        """Persist run state to disk atomically.
+
+        Writes to ``state_file + ".tmp"`` first, fsync, then ``os.replace()``
+        onto the final path so a crash mid-write cannot corrupt the live
+        state file (§P3 atomic writes of the 2026-10 analysis report).
+        """
         if not self.state_file:
             return
         try:
             state_dir = os.path.dirname(self.state_file)
             if state_dir and not os.path.exists(state_dir):
                 os.makedirs(state_dir)
-            with open(self.state_file, "w", encoding="utf8") as fobj:
-                json.dump(state, fobj, ensure_ascii=False, indent=2)
+            _atomic_write_json(self.state_file, state)
         except (IOError, OSError, ValueError) as e:
             logging.warning("Failed to write state file %s: %s", self.state_file, e)
 
@@ -706,15 +731,19 @@ class ProjectBuilder:
             return {}
 
     def _save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
-        """Persist checkpoint to disk."""
+        """Persist checkpoint to disk atomically.
+
+        Same atomic-write pattern as :meth:`_save_state` so a crashed run
+        does not leave a half-written checkpoint file that subsequent
+        resumes cannot parse.
+        """
         if not self.checkpoint_file:
             return
         try:
             checkpoint_dir = os.path.dirname(self.checkpoint_file)
             if checkpoint_dir and not os.path.exists(checkpoint_dir):
                 os.makedirs(checkpoint_dir)
-            with open(self.checkpoint_file, "w", encoding="utf8") as fobj:
-                json.dump(checkpoint, fobj, ensure_ascii=False, indent=2)
+            _atomic_write_json(self.checkpoint_file, checkpoint)
         except (IOError, OSError, ValueError) as e:
             logging.warning("Failed to write checkpoint file %s: %s",
                             self.checkpoint_file, e)

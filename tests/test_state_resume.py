@@ -136,3 +136,39 @@ class TestResumeEndToEnd:
             assert loaded["records_processed"] == 8500
             # The caller should resume from page 18.
             assert loaded["last_page"] + 1 == 18
+
+
+class TestAtomicWrite:
+    """P3 atomic writes: ``_save_state`` / ``_save_checkpoint`` must not
+    leave a half-written file when interrupted."""
+
+    def test_save_state_no_tmp_file_left(self, tmp_path):
+        state_file = tmp_path / "state.json"
+        builder = _builder_with_state_paths(str(state_file), "")
+        builder._save_state({"last_page": 5})
+        # The .tmp sidecar must be cleaned up after the atomic rename.
+        assert not (tmp_path / "state.json.tmp").exists()
+        assert state_file.exists()
+
+    def test_save_checkpoint_no_tmp_file_left(self, tmp_path):
+        ck_file = tmp_path / "ck.json"
+        builder = _builder_with_state_paths("", str(ck_file))
+        builder._save_checkpoint({"last_page": 7})
+        assert not (tmp_path / "ck.json.tmp").exists()
+        assert ck_file.exists()
+
+    def test_overwrite_replaces_atomically(self, tmp_path):
+        state_file = tmp_path / "state.json"
+        builder = _builder_with_state_paths(str(state_file), "")
+        builder._save_state({"last_page": 1, "note": "first"})
+        builder._save_state({"last_page": 2, "note": "second"})
+        loaded = builder._load_state()
+        assert loaded == {"last_page": 2, "note": "second"}
+
+    def test_atomic_write_creates_parent_dirs(self, tmp_path):
+        # State file path is several directories deep; the atomic writer
+        # must create the parent directory before writing.
+        state_file = tmp_path / "a" / "b" / "c" / "state.json"
+        builder = _builder_with_state_paths(str(state_file), "")
+        builder._save_state({"last_page": 1})
+        assert state_file.exists()
