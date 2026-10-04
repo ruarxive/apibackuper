@@ -33,10 +33,12 @@ jobs:
           # Stylistic ignores — accumulated technical debt over the
           # project's history. Critical real-bug categories remain on:
           # F4xx pyflakes (undefined name, unused import, …), F5xx
-          # f-string bugs, B008 function-call defaults (genuine bug),
-          # F841 unused local, F541 f-string without placeholders, etc.
+          # f-string bugs, F841 unused local, F541 f-string without
+          # placeholders, etc. B008 is disabled because the codebase
+          # uses Typer's typer.Option / typer.Argument factory calls
+          # in argument defaults, which B008 flags as false positives.
           flake8 apibackuper --max-line-length=100 \
-            --extend-ignore=E203,E501,E402,E122,E128,E111,E117,E127,E303,W292,W391,B014,B042,D
+            --extend-ignore=E203,E501,E402,E122,E128,E111,E117,E127,E303,W292,W391,B008,B014,B042,D
       
       - name: Run bandit security check
         run: |
