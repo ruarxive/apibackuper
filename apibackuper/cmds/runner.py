@@ -29,17 +29,15 @@ Those responsibilities remain in ``ProjectBuilder.run`` because they
 depend on config schema and hooks; only the per-page loop body lives
 here.
 """
+
 from __future__ import annotations
 
-import json
 import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
-
-import requests
 
 from ..common import get_dict_value
 from ..constants import DEFAULT_NUMBER_OF_PAGES
@@ -142,10 +140,12 @@ def fetch_all_pages(
             elapsed = max(1e-6, time.time() - start_timer)
             speed = current / elapsed
             eta_seconds = int((total_pages - current) / speed) if speed else 0
-            progress_bar.set_postfix({
-                "speed_p/s": f"{speed:.2f}",
-                "eta_s": eta_seconds,
-            })
+            progress_bar.set_postfix(
+                {
+                    "speed_p/s": f"{speed:.2f}",
+                    "eta_s": eta_seconds,
+                }
+            )
 
     pages_processed_local = [initial_pages_processed]  # mutable container
     total_records_local = [initial_records_processed]
@@ -165,12 +165,14 @@ def fetch_all_pages(
         with _result_lock:
             current_processed = pages_processed_local[0]
         if current_processed > 0 and current_processed % checkpoint_interval == 0:
-            save_checkpoint({
-                "last_page": current_page,
-                "records_processed": total_records_local[0],
-                "storage_bytes": total_bytes_local[0],
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            })
+            save_checkpoint(
+                {
+                    "last_page": current_page,
+                    "records_processed": total_records_local[0],
+                    "storage_bytes": total_bytes_local[0],
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
 
     def _run_sequential() -> bool:
         nonlocal consecutive_errors
@@ -201,7 +203,7 @@ def fetch_all_pages(
     def _run_parallel() -> bool:
         nonlocal consecutive_errors
         for offset in range(0, len(pages), parallelism):
-            batch = pages[offset:offset + parallelism]
+            batch = pages[offset : offset + parallelism]
             results: Dict[int, Dict[str, Any]] = {}
             with ThreadPoolExecutor(max_workers=parallelism) as executor:
                 future_map = {executor.submit(fetch_one, page): page for page in batch}

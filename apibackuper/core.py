@@ -1,23 +1,25 @@
 #!/usr/bin/env python
 # -*- coding: utf8 -*-
 """Core CLI module for apibackuper"""
+import functools
 import json
 import logging
 import os
-import sys
-import warnings
-import tempfile
 import re
-from typing import Optional, List, Tuple, Dict, Any
+import sys
+import tempfile
+import warnings
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
-import functools
 import typer
 import urllib3
 
 from .cmds.project import ProjectBuilder
+
 try:
     import yaml
+
     YAML_AVAILABLE = True
 except ImportError:
     YAML_AVAILABLE = False
@@ -46,15 +48,15 @@ def _configure_logging_for_cli() -> None:
         urllib3.disable_warnings()
     except Exception:
         pass
-    warnings.filterwarnings('ignore', category=DeprecationWarning)
-    warnings.filterwarnings('ignore', category=PendingDeprecationWarning)
-    warnings.filterwarnings('ignore', category=UserWarning, module='urllib3')
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
+    warnings.filterwarnings("ignore", category=UserWarning, module="urllib3")
 
     root_logger.handlers.clear()
     file_handler = logging.FileHandler(log_file)
-    file_handler.setFormatter(logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    ))
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    )
     root_logger.addHandler(file_handler)
     root_logger.setLevel(logging.DEBUG)
 
@@ -68,8 +70,7 @@ def enable_verbose() -> None:
     # as the console handler and skip installing one — making ``--verbose`` a
     # silent no-op (see §4.3 of the 2026-10 analysis report).
     has_console = any(
-        isinstance(h, logging.StreamHandler)
-        and not isinstance(h, logging.FileHandler)
+        isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
         for h in root_logger.handlers
     )
     if not has_console:
@@ -95,24 +96,11 @@ def _build_detect_config(url: str) -> Dict[str, Any]:
     name_seed = parsed.netloc or parsed.path.strip("/").split("/")[0] or "apibackuper-project"
     project_name = _slugify_project_name(name_seed)
     return {
-        "settings": {
-            "name": project_name,
-            "initialized": False
-        },
-        "project": {
-            "url": url,
-            "http_mode": "GET",
-            "work_modes": "full",
-            "resp_type": "json"
-        },
-        "params": {
-            "page_size_limit": 100
-        },
+        "settings": {"name": project_name, "initialized": False},
+        "project": {"url": url, "http_mode": "GET", "work_modes": "full", "resp_type": "json"},
+        "params": {"page_size_limit": 100},
         "data": {},
-        "storage": {
-            "storage_type": "zip",
-            "storage_path": "storage"
-        }
+        "storage": {"storage_type": "zip", "storage_path": "storage"},
     }
 
 
@@ -131,6 +119,7 @@ def _apply_detect_suggestions(config_data: Dict[str, Any], suggestions: Dict[str
 
 def _handle_cli_errors(func):
     """Decorator that handles common CLI exceptions with consistent error messages."""
+
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         try:
@@ -182,6 +171,7 @@ def _handle_cli_errors(func):
             # dedicated, user-actionable message ("you forgot to export X")
             # rather than the generic ValueError/IOError fallback above.
             from .cmds.config_loader import UnresolvedEnvVarError
+
             if isinstance(e, UnresolvedEnvVarError):
                 print(
                     f"Error: configuration references unset environment variable\n"
@@ -194,6 +184,7 @@ def _handle_cli_errors(func):
                 )
                 sys.exit(2)
             raise
+
     return wrapper
 
 
@@ -244,8 +235,7 @@ def _emit_dry_run_plan(
             "default_delay": getattr(acmd, "default_delay", None),
         },
         "auth": {
-            "type": getattr(acmd, "auth_handler", None)
-            and acmd.auth_handler.auth_type or "none",
+            "type": getattr(acmd, "auth_handler", None) and acmd.auth_handler.auth_type or "none",
         },
         "config_format": acmd.config_format,
         "config_filename": os.path.basename(acmd.config_filename),
@@ -268,7 +258,9 @@ def _emit_dry_run_plan(
 def _print_project_info_text(report: Dict[str, Any]) -> None:
     """Print project information in a human-readable text format."""
 
-    def _print_section(title: str, data: Optional[Dict[str, Any]], field_labels: List[Tuple[str, str]]) -> None:
+    def _print_section(
+        title: str, data: Optional[Dict[str, Any]], field_labels: List[Tuple[str, str]]
+    ) -> None:
         if not data:
             return
         typer.echo(title)
@@ -530,33 +522,50 @@ def _print_project_info_text(report: Dict[str, Any]) -> None:
 def create(
     name: str = typer.Argument(..., help="Project name"),
     url: Optional[str] = typer.Option(
-        None, "--url", "-u", help="API URL (optional, for initialization)"),
+        None, "--url", "-u", help="API URL (optional, for initialization)"
+    ),
     config: Optional[str] = typer.Option(  # noqa: ARG001
-        None, "--config", "-c", help="Configuration file name"),
+        None, "--config", "-c", help="Configuration file name"
+    ),
     pagekey: Optional[str] = typer.Option(  # noqa: ARG001
-        None, "--pagekey", "-k", help="Page/iteration key for API"),
+        None, "--pagekey", "-k", help="Page/iteration key for API"
+    ),
     pagesize: Optional[str] = typer.Option(  # noqa: ARG001
-        None, "--pagesize", "-s", help="Page size for iteration"),
+        None, "--pagesize", "-s", help="Page size for iteration"
+    ),
     datakey: Optional[str] = typer.Option(  # noqa: ARG001
-        None, "--datakey", "-d",
-        help="Data field with object items in API responses"),
+        None, "--datakey", "-d", help="Data field with object items in API responses"
+    ),
     itemkey: Optional[str] = typer.Option(  # noqa: ARG001
-        None, "--itemkey", "-i",
-        help=("Item unique key to identify unique items. "
-              "Multiple keys separated with comma could be used too.")),
+        None,
+        "--itemkey",
+        "-i",
+        help=(
+            "Item unique key to identify unique items. "
+            "Multiple keys separated with comma could be used too."
+        ),
+    ),
     changekey: Optional[str] = typer.Option(  # noqa: ARG001
-        None, "--changekey", "-e", help="Field to identify data change"),
+        None, "--changekey", "-e", help="Field to identify data change"
+    ),
     iterateby: str = typer.Option(  # noqa: ARG001
-        "page", "--iterateby", "-b",
-        help="Way to iterate API. By 'page' or 'number'"),
+        "page", "--iterateby", "-b", help="Way to iterate API. By 'page' or 'number'"
+    ),
     http_mode: str = typer.Option(  # noqa: ARG001
-        "GET", "--http-mode", "-m", help="API mode: 'GET' or 'POST'"),
+        "GET", "--http-mode", "-m", help="API mode: 'GET' or 'POST'"
+    ),
     work_modes: str = typer.Option(  # noqa: ARG001
-        "full", "--work-modes", "-w",
-        help=("Download modes supported by this API, could be 'full', "
-              "'incremental' or 'update'. Multiple modes could be used")),
+        "full",
+        "--work-modes",
+        "-w",
+        help=(
+            "Download modes supported by this API, could be 'full', "
+            "'incremental' or 'update'. Multiple modes could be used"
+        ),
+    ),
     verbose: bool = typer.Option(
-        False, "--verbose", "-v", help="Verbose output. Print additional info"),
+        False, "--verbose", "-v", help="Verbose output. Print additional info"
+    ),
 ):
     """Creates a new project. Optionally initializes it with API configuration if URL is provided."""
     try:
@@ -574,12 +583,16 @@ def create(
             if verbose:
                 logging.info(
                     "Project '%s' created. URL provided but auto-initialization "
-                    "is not yet fully implemented.", name)
+                    "is not yet fully implemented.",
+                    name,
+                )
                 logging.info(
-                    "Please edit the config file manually or use the init "
-                    "command separately.")
-            print(f"Project '{name}' created. To initialize with API settings, "
-                  "please edit the config file manually.")
+                    "Please edit the config file manually or use the init " "command separately."
+                )
+            print(
+                f"Project '{name}' created. To initialize with API settings, "
+                "please edit the config file manually."
+            )
         else:
             print(f"Project '{name}' created successfully.")
             print("Edit the config file to configure API settings.")
@@ -622,8 +635,7 @@ def create(
             f"    - Try running with --verbose flag for more information\n"
             f"    - Verify you have necessary permissions"
         )
-        logging.error("Error creating project '%s': %s", name, e,
-                      exc_info=verbose)
+        logging.error("Error creating project '%s': %s", name, e, exc_info=verbose)
         print(f"Error: {error_msg}")
         sys.exit(1)
 
@@ -634,13 +646,17 @@ def run(
     mode: str = typer.Argument("full", help="Run mode"),
     projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
     resume: bool = typer.Option(False, "--resume", help="Resume from checkpoint"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output. Print additional info"),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Verbose output. Print additional info"
+    ),
     profile: bool = typer.Option(
-        False, "--profile",
+        False,
+        "--profile",
         help="Print a pre-flight summary of the resolved config + estimated record count, then exit without making any requests.",
     ),
     dry_run: bool = typer.Option(
-        False, "--dry-run",
+        False,
+        "--dry-run",
         help="Alias for --profile. Exits without making any HTTP requests.",
     ),
 ):
@@ -675,9 +691,12 @@ def run(
 def update(
     projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
     resume: bool = typer.Option(False, "--resume", help="Resume from checkpoint"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output. Print additional info"),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Verbose output. Print additional info"
+    ),
     dry_run: bool = typer.Option(
-        False, "--dry-run",
+        False,
+        "--dry-run",
         help="Print the resolved config + estimated record count, then exit without making any requests.",
     ),
 ):
@@ -701,9 +720,14 @@ def update(
 def detect(
     projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
     url: Optional[str] = typer.Option(
-        None, "--url", "-u", help="API URL to detect and generate config for"),
-    write_config: bool = typer.Option(False, "--write-config", help="Write suggestions to YAML config"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output. Print additional info"),
+        None, "--url", "-u", help="API URL to detect and generate config for"
+    ),
+    write_config: bool = typer.Option(
+        False, "--write-config", help="Write suggestions to YAML config"
+    ),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Verbose output. Print additional info"
+    ),
 ):
     """Detect pagination and data keys for a project"""
     try:
@@ -770,17 +794,24 @@ def estimate(
 def export(
     filename: str = typer.Argument(..., help="Output filename"),
     format: Optional[str] = typer.Option(  # noqa: A002, W0622
-        None, "--format", "-f",
-        help=("Export format (jsonl, gzip, zstd, or parquet). "
-              "If not specified, will be guessed from file extension")),
+        None,
+        "--format",
+        "-f",
+        help=(
+            "Export format (jsonl, gzip, zstd, or parquet). "
+            "If not specified, will be guessed from file extension"
+        ),
+    ),
     fields: Optional[str] = typer.Option(
-        None, "--fields", help="Comma-separated list of fields to export"),
+        None, "--fields", help="Comma-separated list of fields to export"
+    ),
     where: Optional[str] = typer.Option(
-        None, "--where", help="Simple filter expression, e.g. \"updated_at >= 2024-01-01\""),
-    projectpath: Optional[str] = typer.Option(
-        None, "--projectpath", "-p", help="Project path"),
+        None, "--where", help='Simple filter expression, e.g. "updated_at >= 2024-01-01"'
+    ),
+    projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
     verbose: bool = typer.Option(
-        False, "--verbose", "-v", help="Verbose output. Print additional info"),
+        False, "--verbose", "-v", help="Verbose output. Print additional info"
+    ),
 ):
     """Exports data as jsonl, gzip, zstd, or parquet file"""
     try:
@@ -790,21 +821,22 @@ def export(
         # Auto-detect format from filename extension if not specified
         if format is None:
             filename_lower = filename.lower()
-            if filename_lower.endswith('.parquet'):
-                format = 'parquet'
-            elif filename_lower.endswith('.zst'):
-                format = 'zstd'
-            elif filename_lower.endswith('.gz') or filename_lower.endswith('.gzip'):
-                format = 'gzip'
-            elif filename_lower.endswith('.jsonl') or filename_lower.endswith('.json'):
-                format = 'jsonl'
+            if filename_lower.endswith(".parquet"):
+                format = "parquet"
+            elif filename_lower.endswith(".zst"):
+                format = "zstd"
+            elif filename_lower.endswith(".gz") or filename_lower.endswith(".gzip"):
+                format = "gzip"
+            elif filename_lower.endswith(".jsonl") or filename_lower.endswith(".json"):
+                format = "jsonl"
             else:
                 # Default to jsonl if extension is not recognized
-                format = 'jsonl'  # noqa: A001
+                format = "jsonl"  # noqa: A001
                 if verbose:
                     logging.info(
                         "Format not specified and could not be detected from "
-                        "extension, defaulting to jsonl")
+                        "extension, defaulting to jsonl"
+                    )
 
         acmd = ProjectBuilder(projectpath)
         fields_list = [f.strip() for f in fields.split(",")] if fields else None
@@ -917,7 +949,8 @@ def follow(
     mode: str = typer.Argument(..., help="Follow mode: full or continue"),
     projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
     dry_run: bool = typer.Option(
-        False, "--dry-run",
+        False,
+        "--dry-run",
         help="Print the resolved config + estimated record count, then exit without making any requests.",
     ),
 ):
@@ -953,7 +986,8 @@ def validate_config(
     projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
     strict: bool = typer.Option(
-        False, "--strict",
+        False,
+        "--strict",
         help="Treat warnings as errors (exit 1 if any warnings, not just errors).",
     ),
 ):
@@ -984,5 +1018,3 @@ def cli() -> None:
     # P2.26: configure logging on entry, not at import time (§5.5).
     _configure_logging_for_cli()
     app()
-
-

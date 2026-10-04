@@ -5,15 +5,16 @@ the request-construction logic and the error-message templates can be
 unit-tested in isolation, and so future changes (e.g. async via httpx)
 touch one file instead of a 3,000-line god module.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 from urllib.parse import urlencode
 
 import requests
 
-from .utils import _is_sensitive_key, _REDACTED, redact_headers, redact_params
+from .utils import _REDACTED, _is_sensitive_key, redact_headers, redact_params
 
 
 def build_request_kwargs(
@@ -49,22 +50,21 @@ def build_request_kwargs(
     if http_mode == "GET":
         if flatten:
             # Coerce values to str so we can call str.replace on them.
-            str_flatten = {
-                k: (str(v) if not isinstance(v, str) else v)
-                for k, v in flatten.items()
-            }
+            str_flatten = {k: (str(v) if not isinstance(v, str) else v) for k, v in flatten.items()}
             # P2.21: redact sensitive keys before logging.
             redacted_flatten = {
-                k: (_REDACTED if _is_sensitive_key(k)
-                     else v.replace("'", '"').replace("True", "true"))
+                k: (
+                    _REDACTED
+                    if _is_sensitive_key(k)
+                    else v.replace("'", '"').replace("True", "true")
+                )
                 for k, v in str_flatten.items()
             }
             # P2.23: URL-encode the query so values with ``&``, ``=``, ``#``
             # or whitespace do not corrupt or extend the query.
             query_string = urlencode(redacted_flatten, doseq=True)
             actual_query_string = urlencode(
-                {k: v.replace("'", '"').replace("True", "true")
-                 for k, v in str_flatten.items()},
+                {k: v.replace("'", '"').replace("True", "true") for k, v in str_flatten.items()},
                 doseq=True,
             )
             log_safe_url = url + "?" + query_string
@@ -79,10 +79,7 @@ def build_request_kwargs(
         return ("get", request_kwargs, log_safe_url), None
 
     # POST
-    log_safe_url = (
-        f"{url} params={redact_params(params)} "
-        f"headers={redact_headers(headers)}"
-    )
+    log_safe_url = f"{url} params={redact_params(params)} " f"headers={redact_headers(headers)}"
     if headers:
         request_kwargs["headers"] = headers
     request_kwargs["json"] = params
@@ -101,10 +98,7 @@ def build_retry_kwargs(
     kwargs dict that is safe to spread alongside an explicit
     ``params=...`` (P1.13).
     """
-    retry_kwargs = {
-        k: v for k, v in request_kwargs.items()
-        if k not in ("params", "json")
-    }
+    retry_kwargs = {k: v for k, v in request_kwargs.items() if k not in ("params", "json")}
     retry_kwargs["headers"] = headers
     return retry_kwargs
 
@@ -126,10 +120,7 @@ def wrap_request_exception(
     log_file_hint = logfile or "apibackuper.log"
 
     if isinstance(exc, requests.exceptions.Timeout):
-        timeout_info = (
-            f"Connect timeout: {connect_timeout}s, "
-            f"Read timeout: {read_timeout}s"
-        )
+        timeout_info = f"Connect timeout: {connect_timeout}s, " f"Read timeout: {read_timeout}s"
         error_msg = (
             f"Request timeout while connecting to {url}\n"
             f"  Current timeout settings: {timeout_info}\n"
@@ -175,14 +166,9 @@ def wrap_request_exception(
 
     if isinstance(exc, requests.exceptions.HTTPError):
         status_code = (
-            exc.response.status_code
-            if hasattr(exc, "response") and exc.response
-            else "unknown"
+            exc.response.status_code if hasattr(exc, "response") and exc.response else "unknown"
         )
-        error_msg = (
-            f"HTTP error {status_code} for {url}\n"
-            f"  Error details: {str(exc)}\n"
-        )
+        error_msg = f"HTTP error {status_code} for {url}\n" f"  Error details: {str(exc)}\n"
         if hasattr(exc, "response") and exc.response:
             error_msg += f"  Response status: {exc.response.status_code}\n"
             if exc.response.status_code == 401:
@@ -249,7 +235,9 @@ def wrap_request_exception(
         "    - Try running with --verbose flag for more information"
     )
     logging.error(
-        "Unexpected error in request to %s: %s", url, exc,
+        "Unexpected error in request to %s: %s",
+        url,
+        exc,
         exc_info=True,
     )
     return RuntimeError(error_msg)

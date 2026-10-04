@@ -1,10 +1,11 @@
 """
 Authentication handling for apibackuper
 """
-import os
+
 import base64
 import logging
-from typing import Dict, Any, Optional
+import os
+from typing import Any, Dict, Optional
 
 try:
     import requests  # noqa: F401, W0611
@@ -97,11 +98,7 @@ class AuthHandler:
             else:
                 refresh_token = None
 
-            self.auth_data = {
-                "token": token,
-                "auth_url": auth_url,
-                "refresh_token": refresh_token
-            }
+            self.auth_data = {"token": token, "auth_url": auth_url, "refresh_token": refresh_token}
 
     def get_headers(self) -> Dict[str, str]:
         """Get authentication headers.
@@ -113,10 +110,12 @@ class AuthHandler:
         """
         headers = {}
 
-        if (self.auth_type == "basic" and "username" in self.auth_data and
-                "password" in self.auth_data):
-            credentials = (f"{self.auth_data['username']}:"
-                          f"{self.auth_data['password']}")
+        if (
+            self.auth_type == "basic"
+            and "username" in self.auth_data
+            and "password" in self.auth_data
+        ):
+            credentials = f"{self.auth_data['username']}:" f"{self.auth_data['password']}"
             encoded = base64.b64encode(credentials.encode()).decode()
             headers["Authorization"] = f"Basic {encoded}"
 
@@ -177,7 +176,8 @@ class AuthHandler:
         except Exception as e:
             logging.warning(
                 "OAuth2 token refresh raised %s: %s",
-                type(e).__name__, e,
+                type(e).__name__,
+                e,
             )
             return False
 
@@ -191,7 +191,8 @@ class AuthHandler:
                 body_preview = "<unprintable body>"
             logging.warning(
                 "OAuth2 token refresh failed: HTTP %s, body=%s",
-                response.status_code, body_preview,
+                response.status_code,
+                body_preview,
             )
             return False
 
@@ -202,9 +203,7 @@ class AuthHandler:
             return False
 
         if not isinstance(data, dict) or "access_token" not in data:
-            logging.warning(
-                "OAuth2 token refresh: response missing 'access_token' field"
-            )
+            logging.warning("OAuth2 token refresh: response missing 'access_token' field")
             return False
 
         self.auth_data["token"] = data["access_token"]
@@ -214,4 +213,3 @@ class AuthHandler:
             self.auth_data["refresh_token"] = new_refresh
         logging.info("OAuth2 token refreshed successfully")
         return True
-

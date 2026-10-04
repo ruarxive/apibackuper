@@ -9,6 +9,7 @@ The function returns a list of records that match ``--where`` and have
 been projected via ``--fields``. The caller is responsible for writing
 them to its destination (jsonl, gzip, zstd, parquet).
 """
+
 from __future__ import annotations
 
 import json
@@ -81,8 +82,7 @@ def process_record(
     for item in items:
         if where is not None and not where(item):
             continue
-        projected = select_fields(item, list(fields) if fields else None,
-                                  splitter=field_splitter)
+        projected = select_fields(item, list(fields) if fields else None, splitter=field_splitter)
         result.append(projected)
     return result
 

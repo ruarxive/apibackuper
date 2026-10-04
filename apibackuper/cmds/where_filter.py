@@ -5,10 +5,10 @@ unit-tested in isolation. Each function is pure (no ``self``) and is the
 authoritative implementation that ``ProjectBuilder._parse_where`` and
 ``ProjectBuilder._match_where`` delegate to.
 """
+
 from typing import Any, Dict, List, Optional
 
 from ..common import get_dict_value
-
 
 _OPERATORS = ["<=", ">=", "!=", "==", ">", "<"]
 

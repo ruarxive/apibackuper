@@ -2,12 +2,14 @@
 apibackuper: a command-line tool and python library for API backuping
 
 """
+
 try:
     # Source the version from the installed package metadata so the version
     # only needs to be bumped in one place — pyproject.toml. Falls back to a
     # hardcoded default for source-checkout use (where the package is not
     # installed and ``importlib.metadata`` cannot find it).
-    from importlib.metadata import PackageNotFoundError, version as _pkg_version
+    from importlib.metadata import PackageNotFoundError
+    from importlib.metadata import version as _pkg_version
 
     try:
         __version__ = _pkg_version("apibackuper")

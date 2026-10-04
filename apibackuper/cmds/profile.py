@@ -26,9 +26,10 @@ ETA follows the same ladder:
   ``default_delay`` per request.
 * **Default delay only**: ``total_requests * (default_delay + 0.1)``s.
 """
+
 from __future__ import annotations
 
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 
 
 def compute_profile_estimate(
@@ -65,11 +66,15 @@ def compute_profile_estimate(
     state_run_seconds = _compute_state_duration_seconds(state)
     if state_records is not None and state_records > 0:
         records = state_records
-        notes.append(
-            f"records_processed={records} from state file (last run)"
-        )
-        eta = state_run_seconds if state_run_seconds is not None else _eta_from_rate(
-            pages=1, rps=rps, default_delay=default_delay,
+        notes.append(f"records_processed={records} from state file (last run)")
+        eta = (
+            state_run_seconds
+            if state_run_seconds is not None
+            else _eta_from_rate(
+                pages=1,
+                rps=rps,
+                default_delay=default_delay,
+            )
         )
         if state_run_seconds is None:
             notes.append("ETA: no last_run timing in state; using rate limit fallback")
@@ -89,15 +94,15 @@ def compute_profile_estimate(
         )
         # We can still give a defensive lower bound: at least one page.
         if page_limit and page_limit > 0:
-            notes.append(
-                f"lower-bound estimate: page_limit={page_limit} → ≥1 page"
-            )
+            notes.append(f"lower-bound estimate: page_limit={page_limit} → ≥1 page")
             return {
                 "source": "config",
                 "records_estimate": page_limit,  # lower bound = one page
                 "pages_estimate": 1,
                 "eta_seconds": _eta_from_rate(
-                    pages=1, rps=rps, default_delay=default_delay,
+                    pages=1,
+                    rps=rps,
+                    default_delay=default_delay,
                 ),
                 "notes": notes,
             }
@@ -106,21 +111,23 @@ def compute_profile_estimate(
             "records_estimate": None,
             "pages_estimate": None,
             "eta_seconds": _eta_from_rate(
-                pages=None, rps=rps, default_delay=default_delay,
+                pages=None,
+                rps=rps,
+                default_delay=default_delay,
             ),
             "notes": notes,
         }
 
     # 3. Nothing to go on.
-    notes.append(
-        "no state file and no total_number_key — exact count unknown"
-    )
+    notes.append("no state file and no total_number_key — exact count unknown")
     return {
         "source": "unknown",
         "records_estimate": None,
         "pages_estimate": None,
         "eta_seconds": _eta_from_rate(
-            pages=None, rps=rps, default_delay=default_delay,
+            pages=None,
+            rps=rps,
+            default_delay=default_delay,
         ),
         "notes": notes,
     }

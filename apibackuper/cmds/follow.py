@@ -13,11 +13,12 @@ This module owns step 1 — the pure, file-format-driven extraction.
 The orchestrator (``ProjectBuilder.follow``) handles the HTTP loop
 and destination archive lifecycle.
 """
+
 from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 from zipfile import ZipFile
 
 from ..common import get_dict_value
@@ -46,8 +47,7 @@ def extract_keys_from_pages(
             data = json.load(tf)
         try:
             repeatable_data = (
-                get_dict_value(data, data_key, splitter=field_splitter)
-                if data_key else data
+                get_dict_value(data, data_key, splitter=field_splitter) if data_key else data
             )
             if isinstance(repeatable_data, dict):
                 # Page exists but has no list — skip silently.
@@ -79,11 +79,15 @@ def extract_url_map_from_pages(
             data = json.load(tf)
         try:
             for item in get_dict_value(
-                data, data_key, splitter=field_splitter,
+                data,
+                data_key,
+                splitter=field_splitter,
             ):
                 item_id = item[item_key]
                 urls[item_id] = get_dict_value(
-                    item, url_key, splitter=field_splitter,
+                    item,
+                    url_key,
+                    splitter=field_splitter,
                 )
         except KeyError:
             logging.info("Data key: %s not found", data_key)

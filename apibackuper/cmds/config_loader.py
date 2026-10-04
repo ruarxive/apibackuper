@@ -5,16 +5,18 @@ import json
 import logging
 import os
 import re
-from typing import Optional, Dict, List, Any, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     import yaml  # noqa: F401, W0611
+
     YAML_AVAILABLE = True
 except ImportError:
     YAML_AVAILABLE = False
 
 try:
-    from jsonschema import validate, ValidationError
+    from jsonschema import ValidationError, validate
+
     JSONSCHEMA_AVAILABLE = True
 except ImportError:
     JSONSCHEMA_AVAILABLE = False
@@ -46,9 +48,7 @@ class UnresolvedEnvVarError(KeyError):
         self.name = name
         self.source = source
         suffix = f" in {source}" if source else ""
-        super().__init__(
-            f"environment variable '{name}' is not set{suffix}"
-        )
+        super().__init__(f"environment variable '{name}' is not set{suffix}")
 
 
 def substitute_env_vars(
@@ -127,10 +127,8 @@ def load_schema() -> Optional[Dict[str, Any]]:
     # Try multiple paths to find the schema file
     # First, try relative to this file (for development)
     schema_paths = [
-        os.path.join(os.path.dirname(__file__), "..", "schemas",
-                     "config_schema.json"),
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), "schemas",
-                     "config_schema.json"),
+        os.path.join(os.path.dirname(__file__), "..", "schemas", "config_schema.json"),
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "schemas", "config_schema.json"),
     ]
 
     # Also try using importlib.resources if available (for installed packages)
@@ -139,18 +137,19 @@ def load_schema() -> Optional[Dict[str, Any]]:
         # Try Python 3.9+ importlib.resources.files API
         try:
             from importlib.resources import files as resource_files
-            schema_path = (resource_files('apibackuper') / 'schemas' /
-                           'config_schema.json')
+
+            schema_path = resource_files("apibackuper") / "schemas" / "config_schema.json"
             if schema_path.is_file():
                 schema_paths.insert(0, str(schema_path))
         except (ImportError, AttributeError):
             # Try Python 3.7-3.8 importlib.resources.path API
             try:
                 import importlib.resources as importlib_resources_module
+
                 try:
                     with importlib_resources_module.path(
-                            'apibackuper.schemas',
-                            'config_schema.json') as schema_path:
+                        "apibackuper.schemas", "config_schema.json"
+                    ) as schema_path:
                         if os.path.exists(schema_path):
                             schema_paths.insert(0, str(schema_path))
                 except (IOError, OSError, ValueError):
@@ -159,10 +158,11 @@ def load_schema() -> Optional[Dict[str, Any]]:
                 # Try importlib_resources backport for Python 3.6
                 try:
                     import importlib_resources
+
                     try:
                         with importlib_resources.path(
-                                'apibackuper.schemas',
-                                'config_schema.json') as schema_path:
+                            "apibackuper.schemas", "config_schema.json"
+                        ) as schema_path:
                             if os.path.exists(schema_path):
                                 schema_paths.insert(0, str(schema_path))
                     except (IOError, OSError, ValueError):
@@ -178,15 +178,16 @@ def load_schema() -> Optional[Dict[str, Any]]:
                 with open(schema_path, "r", encoding="utf8") as f:
                     return json.load(f)
             except (IOError, OSError, ValueError, json.JSONDecodeError) as e:
-                logging.warning("Error loading schema file from %s: %s",
-                                schema_path, e)
+                logging.warning("Error loading schema file from %s: %s", schema_path, e)
                 continue
 
     logging.warning("Schema file not found in any expected location")
     return None
 
 
-def validate_yaml_config(yaml_data: Dict[str, Any], schema: Optional[Dict[str, Any]] = None) -> Tuple[bool, List[Dict[str, str]]]:
+def validate_yaml_config(
+    yaml_data: Dict[str, Any], schema: Optional[Dict[str, Any]] = None
+) -> Tuple[bool, List[Dict[str, str]]]:
     """Validate YAML config data against JSON schema"""
     if not JSONSCHEMA_AVAILABLE:
         logging.warning("jsonschema not available, skipping validation")
@@ -204,19 +205,23 @@ def validate_yaml_config(yaml_data: Dict[str, Any], schema: Optional[Dict[str, A
         validate(instance=yaml_data, schema=schema)
         return True, []
     except ValidationError as e:
-        errors.append({
-            "message": e.message,
-            "path": ".".join(str(p) for p in e.path),
-            "schema_path": ".".join(str(p) for p in e.schema_path)
-        })
+        errors.append(
+            {
+                "message": e.message,
+                "path": ".".join(str(p) for p in e.path),
+                "schema_path": ".".join(str(p) for p in e.schema_path),
+            }
+        )
         # Collect all errors if possible
-        if hasattr(e, 'context'):
+        if hasattr(e, "context"):
             for error in e.context:
-                errors.append({
-                    "message": error.message,
-                    "path": ".".join(str(p) for p in error.path),
-                    "schema_path": ".".join(str(p) for p in error.schema_path)
-                })
+                errors.append(
+                    {
+                        "message": error.message,
+                        "path": ".".join(str(p) for p in error.path),
+                        "schema_path": ".".join(str(p) for p in error.schema_path),
+                    }
+                )
         return False, errors
     except (IOError, OSError, ValueError, AttributeError):
         # Don't fail on validation errors, just log them
@@ -260,7 +265,9 @@ class YAMLConfigParser:
             return None
         return int(value)
 
-    def getfloat(self, section: str, option: str, fallback: Optional[float] = None) -> Optional[float]:
+    def getfloat(
+        self, section: str, option: str, fallback: Optional[float] = None
+    ) -> Optional[float]:
         """Get float option value from section.
 
         YAML natively distinguishes int from float (e.g. ``0.5`` is a float, not
@@ -279,7 +286,9 @@ class YAMLConfigParser:
             return float(value)
         return float(str(value))
 
-    def getboolean(self, section: str, option: str, fallback: Optional[bool] = None) -> Optional[bool]:
+    def getboolean(
+        self, section: str, option: str, fallback: Optional[bool] = None
+    ) -> Optional[bool]:
         """Get boolean option value from section"""
         value = self.get(section, option, fallback)
         if value is None:
@@ -287,9 +296,8 @@ class YAMLConfigParser:
         if isinstance(value, bool):
             return value
         value_lower = str(value).lower()
-        if value_lower in ('true', 'yes', 'on', '1'):
+        if value_lower in ("true", "yes", "on", "1"):
             return True
-        if value_lower in ('false', 'no', 'off', '0'):
+        if value_lower in ("false", "no", "off", "0"):
             return False
         raise ValueError(f"Not a boolean: {value}")
-

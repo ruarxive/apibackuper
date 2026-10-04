@@ -1,13 +1,15 @@
 # coding: utf-8
 """Common functions"""
 from collections import defaultdict
+from typing import Any, Dict
+
 from lxml import etree  # noqa: F401
 
 
 def etree_to_dict(t, prefix_strip=True):
     """Converts XML (etree) object to the python dictionary. XML prefixes stripped"""
     tag = t.tag if not prefix_strip else t.tag.rsplit("}", 1)[-1]
-    d = {tag: {} if t.attrib else None}
+    d: Dict[str, Any] = {tag: {} if t.attrib else None}
     children = list(t)
     if children:
         dd = defaultdict(list)
@@ -18,8 +20,7 @@ def etree_to_dict(t, prefix_strip=True):
                 dd[k].append(v)
         d = {tag: {k: v[0] if len(v) == 1 else v for k, v in dd.items()}}
     if t.attrib:
-        d[tag].update(
-            ("@" + k.rsplit("}", 1)[-1], v) for k, v in t.attrib.items())
+        d[tag].update(("@" + k.rsplit("}", 1)[-1], v) for k, v in t.attrib.items())
     if t.text:
         text = t.text.strip()
         if children or t.attrib:
@@ -61,19 +62,13 @@ def get_dict_value(adict, key, prefix=None, as_array=False, splitter="."):
         return None
     if isinstance(adict, dict):
         if prefix[0] in adict.keys():
-            return get_dict_value(adict[prefix[0]],
-                                  key,
-                                  prefix=prefix[1:],
-                                  as_array=as_array)
+            return get_dict_value(adict[prefix[0]], key, prefix=prefix[1:], as_array=as_array)
     if isinstance(adict, list):
         if as_array:
             result = []
             for v in adict:
                 if isinstance(v, dict) and prefix[0] in v.keys():
-                    res = get_dict_value(v[prefix[0]],
-                                         key,
-                                         prefix=prefix[1:],
-                                         as_array=as_array)
+                    res = get_dict_value(v[prefix[0]], key, prefix=prefix[1:], as_array=as_array)
                     # ``if res:`` would silently drop legitimate falsy
                     # values (0, False, "", {}, []). For a backup tool
                     # whose job is faithful capture, we must keep them.
@@ -81,10 +76,7 @@ def get_dict_value(adict, key, prefix=None, as_array=False, splitter="."):
                         result.extend(res if isinstance(res, list) else [res])
             return result
         if len(adict) > 0 and isinstance(adict[0], dict) and prefix[0] in adict[0].keys():
-            return get_dict_value(adict[0][prefix[0]],
-                                  key,
-                                  prefix=prefix[1:],
-                                  as_array=as_array)
+            return get_dict_value(adict[0][prefix[0]], key, prefix=prefix[1:], as_array=as_array)
     return None
 
 
@@ -99,19 +91,13 @@ def set_dict_value(adict, key, value, prefix=None, splitter="."):
     if isinstance(adict, dict):
         if prefix[0] not in adict:
             adict[prefix[0]] = {}
-        adict[prefix[0]] = set_dict_value(adict[prefix[0]],
-                                          key,
-                                          value,
-                                          prefix=prefix[1:])
+        adict[prefix[0]] = set_dict_value(adict[prefix[0]], key, value, prefix=prefix[1:])
         return adict
     if isinstance(adict, list):
         result = []
         for v in adict:
             if isinstance(v, dict) and prefix[0] in v:
-                res = set_dict_value(v[prefix[0]],
-                                     key,
-                                     value,
-                                     prefix=prefix[1:])
+                res = set_dict_value(v[prefix[0]], key, value, prefix=prefix[1:])
                 # ``if res:`` would silently drop legitimate falsy return
                 # values from ``set_dict_value`` (e.g. an empty dict or list
                 # indicates a real (re-)set, not a no-op).

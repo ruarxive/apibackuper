@@ -16,15 +16,16 @@ Two storage *flavours* are exposed:
 
 Both flavours are exported here so callers see one import surface.
 """
+
 import os
-from zipfile import ZipFile, ZIP_DEFLATED
 import warnings
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from .backends import (
+    FilesystemStorageBackend,
+    SqliteStorageBackend,
     StorageBackend,
     ZipStorageBackend,
-    SqliteStorageBackend,
-    FilesystemStorageBackend,
     build_storage_backend,
     safe_member_name,
 )
@@ -110,7 +111,7 @@ class FilesystemStorage(FileStorage):
     def _safe_path(self, filename):
         """Resolve filename to a path inside dirpath, rejecting traversal attempts."""
         # Strip leading slashes and backslashes
-        clean = filename.lstrip('/').lstrip('\\')
+        clean = filename.lstrip("/").lstrip("\\")
         base = os.path.abspath(self.dirpath)
         fullname = os.path.abspath(os.path.join(base, clean))
         # Reject paths that escape the base directory

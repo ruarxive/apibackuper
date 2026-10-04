@@ -12,6 +12,7 @@ The caller (the orchestrator) performs the HTTP call and retry loop using
 the per-page dict returned by :func:`build_page_request`. This is the
 shape that ``requests.Session.get(url, params=..., ...)`` expects.
 """
+
 from __future__ import annotations
 
 import logging
@@ -110,7 +111,9 @@ def build_page_request(
         request_url = url_replacer(start_url, local_url_params or {})
     elif query_mode == "mixed":
         request_url = url_replacer(
-            start_url, local_url_params or {}, query_mode=True,
+            start_url,
+            local_url_params or {},
+            query_mode=True,
         )
     else:
         request_url = start_url

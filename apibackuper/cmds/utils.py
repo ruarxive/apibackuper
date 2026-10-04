@@ -1,27 +1,28 @@
 # -*- coding: utf-8 -*-
 """Utility functions for project operations"""
 import csv
-from typing import Dict, List, Any, Optional, Iterable
-from urllib.parse import urlparse, urlencode
+from typing import Any, Dict, List, Optional
+from urllib.parse import urlencode, urlparse
 
 from ..constants import PARAM_SPLITTER
 
-
 # Names commonly used to carry credentials that must never be written to logs.
 # Matched case-insensitively against keys in headers and query params.
-_SENSITIVE_KEY_NAMES = frozenset({
-    "authorization",
-    "proxy-authorization",
-    "x-api-key",
-    "x-auth-token",
-    "api_key",
-    "apikey",
-    "token",
-    "access_token",
-    "refresh_token",
-    "password",
-    "secret",
-})
+_SENSITIVE_KEY_NAMES = frozenset(
+    {
+        "authorization",
+        "proxy-authorization",
+        "x-api-key",
+        "x-auth-token",
+        "api_key",
+        "apikey",
+        "token",
+        "access_token",
+        "refresh_token",
+        "password",
+        "secret",
+    }
+)
 
 _REDACTED = "***REDACTED***"
 
@@ -81,7 +82,9 @@ def load_file_list(filename: str, encoding: str = "utf8") -> List[str]:
     return flist
 
 
-def load_csv_data(filename: str, key: str, encoding: str = "utf8", delimiter: str = ";") -> Dict[str, Dict[str, str]]:
+def load_csv_data(
+    filename: str, key: str, encoding: str = "utf8", delimiter: str = ";"
+) -> Dict[str, Dict[str, str]]:
     """Reads CSV file and returns list records as array of dicts"""
     flist = {}
     with open(filename, "r", encoding=encoding) as fobj:
@@ -114,4 +117,3 @@ def _url_replacer(url: str, params: Dict[str, Any], query_mode: bool = False) ->
     for key, value in params.items():
         finalparams.append("%s=%s" % (str(key), str(value)))
     return parsed.geturl() + splitter + splitter.join(finalparams)
-

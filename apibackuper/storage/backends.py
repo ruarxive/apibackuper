@@ -1,9 +1,8 @@
 import os
-import posixpath
 import re
 import sqlite3
 from typing import List, Optional
-from zipfile import ZipFile, ZIP_DEFLATED
+from zipfile import ZIP_DEFLATED, ZipFile
 
 
 def safe_member_name(name: str) -> str:
@@ -137,13 +136,17 @@ class SqliteStorageBackend(StorageBackend):
     def list_objects(self, kind: str = "page") -> List[str]:
         table = self._table_name(kind)
         cursor = self._conn.cursor()
-        cursor.execute(f"SELECT name FROM {table} ORDER BY name")
+        # ``table`` is the result of ``_table_name`` which restricts the
+        # value to {"pages", "objects"}; not user-controllable.
+        cursor.execute(f"SELECT name FROM {table} ORDER BY name")  # nosec B608
         return [row[0] for row in cursor.fetchall()]
 
     def get_object(self, name: str, kind: str = "page") -> Optional[bytes]:
         table = self._table_name(kind)
         cursor = self._conn.cursor()
-        cursor.execute(f"SELECT content FROM {table} WHERE name = ?", (name,))
+        # ``table`` is the result of ``_table_name`` which restricts the
+        # value to {"pages", "objects"}; not user-controllable.
+        cursor.execute(f"SELECT content FROM {table} WHERE name = ?", (name,))  # nosec B608
         row = cursor.fetchone()
         if not row:
             return None
@@ -234,4 +237,3 @@ def build_storage_backend(storage_type: str, storage_path: str, mode: str) -> St
     if storage_type == "filesystem":
         return FilesystemStorageBackend(storage_path, mode=mode)
     raise ValueError(f"Unsupported storage type: {storage_type}")
-

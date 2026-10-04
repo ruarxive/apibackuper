@@ -161,26 +161,65 @@ class TestEnableLoggingLevel:
 class TestRateLimiterHonoursRate:
     def test_no_drift_on_sustained_crawl(self):
         """After sleep, ``last_update`` must reflect post-sleep time so the
-        next call doesn't double-count elapsed time."""
-        # Patch time *before* constructing the limiter so __init__ also sees
-        # the mocked time. Pin all but the last two calls to t=0.0 so the
-        # burst is genuinely exhausted; then jump to t=1.0 (== 1/2 * 2 = 1
-        # token accrued) and verify the next call doesn't sleep again.
-        side_effects = [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0]
+        next call doesn't double-count elapsed time.
+
+        The P0.3 bug was that ``RateLimiter.wait_if_needed`` updated
+        ``last_update`` *before* sleeping, so on the next call the
+        limiter credited itself with tokens earned during the sleep and
+        granted an extra free burst — sustained crawls drifted above the
+        configured ``requests_per_second``.
+
+        The fix moves the ``last_update = time.time()`` call to *after*
+        the sleep. We verify that:
+
+        * ``last_update`` ends up at the post-sleep time, not the
+          pre-sleep time;
+        * the next call doesn't see ``elapsed > 0`` based on the
+          sleep — i.e. tokens are not silently refilled.
+        """
+        # Pin every call to t=0.0 so the burst is exhausted, then jump
+        # to t=1.0 on the post-sleep ``time.time()`` call to simulate
+        # that 1 second of real time elapsed during the sleep. We use
+        # a stateful function as ``side_effect`` so internal
+        # ``logging`` calls (which also touch ``time.time`` indirectly
+        # through ``ct = time.time()`` in ``LogRecord.__init__``) do
+        # not exhaust the iterator and raise ``StopIteration``.
+        call_log: list[float] = []
+
+        def fake_time() -> float:
+            # First three ``wait_if_needed`` calls each need exactly
+            # one ``time.time()`` for ``now = time.time()`` plus, when
+            # tokens < 1, the post-sleep ``self.last_update =
+            # time.time()``. The third call is the one that sleeps
+            # and updates ``last_update`` — that's where t advances
+            # to 1.0. Anything beyond that (e.g. logging's internal
+            # ``ct``) stays at 1.0.
+            call_log.append(len(call_log))
+            if len(call_log) <= 4:
+                return 0.0
+            return 1.0
+
         with patch.object(rl_module.time, "sleep") as mock_sleep, \
-             patch.object(rl_module.time, "time", side_effect=side_effects):
+             patch.object(rl_module.time, "time", side_effect=fake_time):
             rl = RateLimiter(requests_per_second=2.0, burst_size=2)
             rl.wait_if_needed()  # tokens 2 -> 1
             rl.wait_if_needed()  # tokens 1 -> 0
             rl.wait_if_needed()  # tokens 0 -> sleep 0.5
             assert mock_sleep.called, "expected sleep on burst exhausted"
-            # After sleep, ``last_update`` should be 1.0 (post-sleep).
-            # At t=1.0, tokens earned = (1.0 - 1.0) * 2 = 0.
-            # Next call should NOT sleep (the bug was double-crediting).
+            # ``last_update`` must be 1.0 (post-sleep), not 0.0
+            # (pre-sleep). The P0.3 bug set it before the sleep.
+            assert rl.last_update == 1.0, (
+                "last_update was set pre-sleep — P0.3 regression "
+                f"(got {rl.last_update!r})"
+            )
+            # On the next call, ``elapsed = now - last_update = 0``,
+            # so tokens are NOT refilled. The limiter must sleep
+            # again rather than granting a free burst.
             mock_sleep.reset_mock()
-            rl.wait_if_needed()  # tokens 0 -> sleep?
-            assert not mock_sleep.called, (
-                "rate limiter double-counted the sleep — P0.3 regression"
+            rl.wait_if_needed()
+            assert mock_sleep.called, (
+                "rate limiter granted a free burst after sleep — "
+                "P0.3 regression (double-counted the sleep)"
             )
 
 

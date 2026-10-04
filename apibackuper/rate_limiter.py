@@ -1,19 +1,23 @@
 """
 Rate limiting for apibackuper
 """
-import time
+
 import logging
-from typing import Optional
+import time
 from collections import deque
+from typing import Optional
 
 
 class RateLimiter:
     """Simple token bucket rate limiter"""
 
-    def __init__(self, requests_per_second: Optional[float] = None,
-                 requests_per_minute: Optional[int] = None,
-                 requests_per_hour: Optional[int] = None,
-                 burst_size: int = 5):
+    def __init__(
+        self,
+        requests_per_second: Optional[float] = None,
+        requests_per_minute: Optional[int] = None,
+        requests_per_hour: Optional[int] = None,
+        burst_size: int = 5,
+    ):
         """
         Initialize rate limiter
 
@@ -29,16 +33,15 @@ class RateLimiter:
         self.burst_size = burst_size
 
         # Token bucket for per-second limiting
-        self.tokens = float(burst_size) if requests_per_second else float('inf')
+        self.tokens = float(burst_size) if requests_per_second else float("inf")
         self.last_update = time.time()
-        self.rate = requests_per_second if requests_per_second else float('inf')
+        self.rate = requests_per_second if requests_per_second else float("inf")
 
         # Sliding window for per-minute and per-hour limiting
-        self.minute_requests = deque()
-        self.hour_requests = deque()
+        self.minute_requests: deque = deque()
+        self.hour_requests: deque = deque()
 
-        self.enabled = any([requests_per_second, requests_per_minute,
-                            requests_per_hour])
+        self.enabled = any([requests_per_second, requests_per_minute, requests_per_hour])
 
     def wait_if_needed(self):
         """Wait if rate limit would be exceeded"""
@@ -77,8 +80,7 @@ class RateLimiter:
             if len(self.minute_requests) >= self.requests_per_minute:
                 wait_time = 60 - (now - self.minute_requests[0])
                 if wait_time > 0:
-                    logging.debug("Rate limit: waiting %.2f seconds (minute limit)",
-                                  wait_time)
+                    logging.debug("Rate limit: waiting %.2f seconds (minute limit)", wait_time)
                     time.sleep(wait_time)
 
             self.minute_requests.append(time.time())
@@ -92,9 +94,7 @@ class RateLimiter:
             if len(self.hour_requests) >= self.requests_per_hour:
                 wait_time = 3600 - (now - self.hour_requests[0])
                 if wait_time > 0:
-                    logging.warning("Rate limit: waiting %.2f seconds (hour limit)",
-                                    wait_time)
+                    logging.warning("Rate limit: waiting %.2f seconds (hour limit)", wait_time)
                     time.sleep(wait_time)
 
             self.hour_requests.append(time.time())
-
