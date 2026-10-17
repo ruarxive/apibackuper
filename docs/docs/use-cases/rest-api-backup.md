@@ -11,7 +11,7 @@ and preview it, estimate from a live response, run, then export.
 
 Starter template: `examples/templates/page-based.yaml`.
 
-```yaml
+```yaml config
 settings:
   name: page-based-example
 
@@ -54,8 +54,8 @@ Some APIs paginate with `offset` + `limit` instead of page numbers. Use
 ## POST APIs
 
 Set `http_mode: POST` and put the request body in `params.json` next to the
-config. The [quick start](/getting-started/quick-start) uses this pattern for
-e-trust.gosuslugi.ru.
+config. The [E-Trust walkthrough](/use-cases/post-api-backup) uses this pattern.
+[HTTP requests](/configuration/http-requests) shows the resulting request bodies.
 
 ## Working examples
 
@@ -63,6 +63,7 @@ The `examples/` directory includes real government and commercial APIs:
 
 - **etrust** — POST API of Russian certificate authorities
 - **hhemployers** — hh.ru employers
-- **budgettofk**, **budgetreg**, **subsidies** — budget.gov.ru registries
+- **budgettofk**, **budgetreg** — budget.gov.ru registries
+- **subsidies** — spending.gov.ru subsidies
 
 See [Examples](/examples/).

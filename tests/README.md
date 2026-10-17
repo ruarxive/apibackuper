@@ -67,6 +67,9 @@ that carry that marker and exit with status 5 when nothing matches.
 - `test_export.py`, `test_where_filter.py` - Record extraction, field projection and export filters
 - `test_profile.py`, `test_state_resume.py` - Offline estimates and state/checkpoint round trips
 - `test_substitute_env_vars.py`, `test_validate_config.py` - Environment substitution and configuration validation
+- `test_documented_cli.py` - Real project logging initialization, verbose output and safe failure on invalid export filters
+- `test_docs_examples.py` - Execute marked Quick Start/Python API snippets with real localhost HTTP, temporary storage and exact output checks
+- `test_docs_validation.py` - Check that the documentation gate rejects unknown keys, invalid types/JSON and incomplete full configurations
 
 ## Test Coverage
 
@@ -120,6 +123,11 @@ Validate the shipped configuration examples without external HTTP requests:
 ```bash
 python -m scripts.validate_examples
 ```
+
+This also checks shipped JSON files and Markdown YAML/JSON blocks. Run the
+documentation walkthrough on its own with
+`python -m pytest --no-cov tests/test_docs_examples.py`; it starts and closes
+an ephemeral localhost server automatically and never fetches public APIs.
 
 `test_backup_workflow.py` exercises real temporary ZIP, SQLite and filesystem
 storage through backup, interrupted resume, update, follow and export. It also

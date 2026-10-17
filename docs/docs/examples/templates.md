@@ -10,7 +10,7 @@ Copy from `examples/templates/` and replace the example URLs.
 
 Page-number pagination:
 
-```yaml
+```yaml config
 settings:
   name: page-based-example
 

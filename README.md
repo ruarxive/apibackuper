@@ -75,6 +75,13 @@ python -m pip install .
 
 ## Quick start
 
+For a first run with a known result, follow the
+[local API walkthrough](docs/docs/getting-started/quick-start.md): it serves
+five records on your machine, backs up three pages and checks the exported IDs.
+The server and configuration are in [`examples/local-demo/`](examples/local-demo/).
+
+For an external POST API:
+
 ```bash
 apibackuper create etrust
 cd etrust
@@ -87,7 +94,7 @@ apibackuper export etrust.jsonl
 ```
 
 A worked POST API example is in the
-[quick start](https://ruarxive.org/apibackuper/getting-started/quick-start).
+[E-Trust walkthrough](docs/docs/use-cases/post-api-backup.md).
 Starter YAML files are in [`examples/templates/`](examples/templates/).
 `create` currently writes a minimal `apibackuper.cfg`; save your complete
 configuration as `apibackuper.yaml`, which takes precedence over that INI file.
@@ -113,6 +120,11 @@ apibackuper validate-config
 `run full --dry-run` (alias `--profile`), `update --dry-run`, and
 `follow full --dry-run` print a JSON plan without making HTTP requests.
 `estimate full` contacts the API to measure a sample response.
+
+See [HTTP request files](docs/docs/configuration/http-requests.md) for custom
+headers, query filters and POST bodies, and [export filters](docs/docs/configuration/export-filters.md)
+for the `--where`/`--fields` contract. Malformed filters now fail instead of
+silently producing unfiltered output; this fix is listed under `Unreleased`.
 
 `getfiles` currently reads ZIP backups. Its downloaded files can be stored in
 ZIP or filesystem storage; see [file configuration](docs/docs/configuration/files.md).
@@ -162,6 +174,10 @@ page in the published archive. To recover a staged full backup, use
 ## Contributing
 
 See the [development docs](https://ruarxive.org/apibackuper/development/contributing).
+
+For embedding, see the [Python API guide](docs/docs/development/python-api.md).
+Before scheduling backups, read [backup completeness](docs/docs/getting-started/data-integrity.md)
+for source consistency, deletion handling, verification and rotation.
 
 ## Migration notes
 

@@ -16,6 +16,7 @@ const sections = [
       {label: 'Basic usage', to: '/getting-started/basic-usage'},
       {label: 'Troubleshooting', to: '/getting-started/troubleshooting'},
       {label: 'Best practices', to: '/getting-started/best-practices'},
+      {label: 'Backup completeness', to: '/getting-started/data-integrity'},
     ],
   },
   {
@@ -25,6 +26,7 @@ const sections = [
       'End-to-end examples for full backups, incremental updates, follow requests, and exports.',
     links: [
       {label: 'REST API backup', to: '/use-cases/rest-api-backup'},
+      {label: 'POST API: E-Trust', to: '/use-cases/post-api-backup'},
       {label: 'Incremental and update', to: '/use-cases/incremental-and-update'},
       {label: 'Follow and files', to: '/use-cases/follow-and-files'},
       {label: 'Export and storage', to: '/use-cases/export-and-storage'},
@@ -54,6 +56,8 @@ const sections = [
     links: [
       {label: 'Configuration overview', to: '/configuration/'},
       {label: 'Pagination', to: '/configuration/pagination'},
+      {label: 'HTTP request files', to: '/configuration/http-requests'},
+      {label: 'Export filters', to: '/configuration/export-filters'},
       {label: 'Authentication', to: '/configuration/auth'},
       {label: 'Storage', to: '/configuration/storage'},
       {label: 'Hooks', to: '/configuration/hooks'},
@@ -76,6 +80,7 @@ const sections = [
     to: '/development/contributing',
     description: 'Contributing, tests, community, and license.',
     links: [
+      {label: 'Python API', to: '/development/python-api'},
       {label: 'Contributing', to: '/development/contributing'},
       {label: 'Community', to: '/development/community'},
       {label: 'License', to: '/license'},

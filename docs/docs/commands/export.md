@@ -28,6 +28,11 @@ apibackuper export out.jsonl --fields id,title --where "updated_at >= 2024-01-01
 - `--projectpath` / `-p`
 - `--verbose` / `-v`
 
+See [export filters](/configuration/export-filters) for the exact operators,
+type conversion, nested paths, date handling and missing values. `--where`
+supports one comparison; SQL `=`, compound conditions and malformed expressions
+fail with exit status 1 before replacing existing output.
+
 Parquet requires `pyarrow`; the `recommended` extra includes it and `pandas`:
 `pip install "apibackuper[recommended]"`.
 

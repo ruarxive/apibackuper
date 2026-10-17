@@ -16,7 +16,7 @@ storage:
 |------|-------------|
 | `zip` | Default. Compact single-file archive |
 | `filesystem` | Inspect individual JSON files on disk |
-| `sqlite` | Queryable local database (`storage_path` is the `.sqlite` file) |
+| `sqlite` | JSON page BLOBs in a local database (`storage_path` is the `.sqlite` file) |
 
 SQLite example: `examples/features/sqlite-storage/`.
 
@@ -53,6 +53,10 @@ apibackuper export out.jsonl --where "updated_at >= 2024-01-01"
 ```
 
 Feature example: `examples/features/export-filters/`.
+
+See [export filter syntax](/configuration/export-filters) for supported operators,
+types and dates. See [Python storage access](/development/python-api#direct-storage-access)
+to inspect page payloads; SQLite does not create a relational row per API object.
 
 ## Historical records and safe output paths
 

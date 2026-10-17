@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Reproducible localhost API quick start with five known records; CI executes the documented CLI/Python snippets and verifies archive/export contents.
+- Guides for HTTP request JSON files, pagination/completeness boundaries, export filter grammar, Python integration and storage access; expanded configuration, hook and OAuth2 contracts.
+- Documentation builds on pull requests and validation of Markdown YAML/JSON examples and shipped JSON files.
+
+### Fixed
+- Preserve console logging for `--verbose` after project initialization and honor `logging.level` when verbose is not enabled.
+- Reject malformed and compound export filters before opening storage or replacing output instead of silently disabling filtering or returning misleading results.
+- Correct example descriptions and release instructions, remove references to deleted history/setup files, and retain E-Trust as a separate POST API walkthrough.
+- Align the documentation site's Node.js minimum with the locked Docusaurus requirement (Node 20+).
+
 ## [2.0.0] - 2026-10-17
 
 ### Added

@@ -671,9 +671,9 @@ def run(
     iteration strategy, expected record count, ETA) to stdout and
     exits without making any requests.
     """
+    acmd = ProjectBuilder(projectpath)
     if verbose:
         enable_verbose()
-    acmd = ProjectBuilder(projectpath)
     if acmd.config_format == "ini":
         print("Warning: INI configuration is deprecated; use YAML instead.")
     # ``--dry-run`` is an alias for ``--profile`` — the implementation
@@ -705,9 +705,9 @@ def update(
     ),
 ):
     """Executes project update mode using stored state"""
+    acmd = ProjectBuilder(projectpath)
     if verbose:
         enable_verbose()
-    acmd = ProjectBuilder(projectpath)
     if acmd.config_format == "ini":
         print("Warning: INI configuration is deprecated; use YAML instead.")
     if dry_run:
@@ -735,8 +735,6 @@ def detect(
 ):
     """Detect pagination and data keys for a project"""
     try:
-        if verbose:
-            enable_verbose()
         if url:
             if not YAML_AVAILABLE:
                 print("Error: PyYAML is required to generate YAML config output.")
@@ -747,6 +745,8 @@ def detect(
                 with open(temp_config_path, "w", encoding="utf8") as fobj:
                     yaml.safe_dump(config_data, fobj, sort_keys=False, allow_unicode=True)
                 acmd = ProjectBuilder(temp_dir)
+                if verbose:
+                    enable_verbose()
                 suggestions = acmd.detect(write_config=False)
             _apply_detect_suggestions(config_data, suggestions)
             if write_config:
@@ -761,6 +761,8 @@ def detect(
                 typer.echo(yaml.safe_dump(config_data, sort_keys=False, allow_unicode=True))
         else:
             acmd = ProjectBuilder(projectpath)
+            if verbose:
+                enable_verbose()
             suggestions = acmd.detect(write_config=write_config)
             if suggestions:
                 typer.echo(json.dumps(suggestions, indent=2, sort_keys=True))
@@ -819,6 +821,7 @@ def export(
 ):
     """Exports data as jsonl, gzip, zstd, or parquet file"""
     try:
+        acmd = ProjectBuilder(projectpath)
         if verbose:
             enable_verbose()
 
@@ -842,7 +845,6 @@ def export(
                         "extension, defaulting to jsonl"
                     )
 
-        acmd = ProjectBuilder(projectpath)
         fields_list = [f.strip() for f in fields.split(",")] if fields else None
         acmd.export(format, filename, fields=fields_list, where=where)
     except KeyboardInterrupt:

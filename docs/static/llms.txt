@@ -10,12 +10,14 @@ apibackuper commands grouped the same way as the documentation sidebar.
 - [Cookbook](https://ruarxive.org/apibackuper/getting-started/cookbook)
 - [Troubleshooting](https://ruarxive.org/apibackuper/getting-started/troubleshooting)
 - [Best practices](https://ruarxive.org/apibackuper/getting-started/best-practices)
+- [Backup completeness](https://ruarxive.org/apibackuper/getting-started/data-integrity)
 
 ## Backup workflows
 
 - [Incremental updates and recovery](https://ruarxive.org/apibackuper/use-cases/incremental-and-update)
 - [Export and storage history](https://ruarxive.org/apibackuper/use-cases/export-and-storage)
 - [Follow requests and files](https://ruarxive.org/apibackuper/use-cases/follow-and-files)
+- [Real POST API example](https://ruarxive.org/apibackuper/use-cases/post-api-backup)
 
 ## Commands
 
@@ -35,6 +37,8 @@ apibackuper commands grouped the same way as the documentation sidebar.
 
 - [Overview](https://ruarxive.org/apibackuper/configuration/)
 - [Pagination](https://ruarxive.org/apibackuper/configuration/pagination)
+- [HTTP request files](https://ruarxive.org/apibackuper/configuration/http-requests)
+- [Export filter grammar](https://ruarxive.org/apibackuper/configuration/export-filters)
 - [Authentication](https://ruarxive.org/apibackuper/configuration/auth)
 - [Storage](https://ruarxive.org/apibackuper/configuration/storage)
 - [Rate limiting and requests](https://ruarxive.org/apibackuper/configuration/rate-limiting-and-requests)
@@ -46,3 +50,7 @@ apibackuper commands grouped the same way as the documentation sidebar.
 
 - [Example projects](https://ruarxive.org/apibackuper/examples/)
 - [Templates](https://ruarxive.org/apibackuper/examples/templates)
+
+## Python integration
+
+- [Python API and storage access](https://ruarxive.org/apibackuper/development/python-api)

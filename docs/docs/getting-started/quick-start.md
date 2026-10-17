@@ -1,122 +1,129 @@
 ---
 title: "Quick Start"
-description: "Create a project, estimate size, run a backup, and export data"
+description: "Back up five known records from a local API and verify the export"
 ---
 # Quick Start
 
-Short path to a first successful backup. Not sure where to start? Pick your
-goal in the [cookbook](/getting-started/cookbook).
+This walkthrough backs up **five fixed records in three pages** from a local
+API. It needs Python 3.10+ and a repository checkout. After installation, all
+API traffic stays on `127.0.0.1`; no API account or token is needed.
 
-This example archives the list of Russian certificate authorities published at
-e-trust.gosuslugi.ru through an undocumented POST API.
+## 1. Install and start the API
 
-## 1. Create a project
+From a terminal:
 
 ```bash
-apibackuper create etrust
-cd etrust
+git clone https://github.com/ruarxive/apibackuper.git
+cd apibackuper
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+python examples/local-demo/server.py
 ```
 
-`create` writes a minimal legacy `apibackuper.cfg`. Save the following as a new
-`apibackuper.yaml`; YAML takes precedence when both files exist:
+On Windows, activate with `.venv\Scripts\Activate.ps1` in PowerShell.
+Leave this terminal running. The server prints
+`Demo API: http://127.0.0.1:8765/items`.
+If the port is occupied, use `--port 8766` and change the copied YAML URL.
 
-```yaml
+## 2. Prepare the project
+
+Open a second terminal in the repository root, activate the same environment,
+then copy the example:
+
+```bash
+cp -R examples/local-demo demo
+cd demo
+```
+
+In PowerShell, use `Copy-Item -Recurse examples/local-demo demo` for the copy.
+The copied `apibackuper.yaml` contains:
+
+```yaml config
 settings:
-  initialized: true
-  name: etrust
-
+  name: local-demo
 project:
-  description: E-Trust UC list
-  url: https://e-trust.gosuslugi.ru/app/scc/portal/api/v1/portal/ca/list
-  http_mode: POST
-  work_modes: full,incremental,update
+  url: http://127.0.0.1:8765/items
+  http_mode: GET
   iterate_by: page
-
+  default_delay: 0
 params:
-  page_size_param: recordsOnPage
-  page_size_limit: 100
   page_number_param: page
-
+  page_size_param: per_page
+  page_size_limit: 2
 data:
+  data_key: items
   total_number_key: total
-  data_key: data
-  item_key: РеестровыйНомер
-  change_key: СтатусАккредитации.ДействуетС
-
+  item_key: id
 storage:
   storage_type: zip
 ```
 
-Add `params.json` with the POST body used for each request:
+The first request is `GET /items?page=1&per_page=2`. It returns:
 
 ```json
-{
-  "page": 1,
-  "orderBy": "id",
-  "ascending": false,
-  "recordsOnPage": 100,
-  "searchString": null,
-  "cities": null,
-  "software": null,
-  "cryptToolClasses": null,
-  "statuses": null
-}
+{"total": 5, "items": [
+  {"id": 1, "title": "Item 1", "updated_at": "2026-01-01"},
+  {"id": 2, "title": "Item 2", "updated_at": "2026-01-02"}
+]}
 ```
 
-## 2. Validate, preview and estimate
+## 3. Validate, preview and estimate
 
-Check the configuration and preview the run without HTTP requests:
+Run these commands inside `demo`:
 
-```bash
-apibackuper validate-config
+```bash doc-test
+apibackuper validate-config --strict
 apibackuper run full --dry-run
-```
-
-Then sample the live API to estimate size and time:
-
-```bash
 apibackuper estimate full
 ```
 
-Illustrative output (counts and timings depend on the API):
+Validation and dry-run work offline. Estimate contacts the local server and
+reports 5 records, 2 records per request and 3 requests. Size and time depend
+on the machine. Dry-run can report an unknown count before the first backup.
 
-```text
-Total records: 502
-Records per request: 100
-Total requests: 6
-Average record size 32277.96 bytes
-Estimated size (json lines) 16.20 MB
-Avg request time, seconds 66.9260
-Estimated all requests time, seconds 402.8947
+## 4. Back up and export
+
+```bash doc-test
+apibackuper run full --verbose
+apibackuper info --json
+apibackuper export items.jsonl
+apibackuper export selected.jsonl --fields id,title --where "id >= 3"
 ```
 
-## 3. Run the backup
+A successful run publishes `storage/storage.zip`. Its members are
+`page_1.json`, `page_2.json` and `page_3.json`; the last page has only ID 5.
+The export contains one JSON object per line. Check the result in Python
+(save this as `check.py` and run `python check.py`):
 
-```bash
-apibackuper run full
+```python doc-test
+import json
+from pathlib import Path
+from zipfile import ZipFile
+
+records = [json.loads(line) for line in Path("items.jsonl").read_text().splitlines()]
+assert sorted(row["id"] for row in records) == [1, 2, 3, 4, 5]
+assert len(records) == 5
+selected = [json.loads(line) for line in Path("selected.jsonl").read_text().splitlines()]
+assert sorted(row["id"] for row in selected) == [3, 4, 5]
+assert all(set(row) == {"id", "title"} for row in selected)
+with ZipFile("storage/storage.zip") as archive:
+    assert sorted(archive.namelist()) == ["page_1.json", "page_2.json", "page_3.json"]
+print("Verified: 5 records, 3 pages, 3 filtered records")
 ```
 
-Records are staged in `storage/storage.zip.partial`. A successful full run
-publishes `storage/storage.zip`; an incomplete run keeps any previous complete
-backup. Continue an interrupted download with `apibackuper run full --resume`.
-
-## 4. Export
-
-Format is detected from the file extension, or you can pass `--format`:
-
-```bash
-apibackuper export etrust.jsonl
-apibackuper export etrust.jsonl.gz
-apibackuper export etrust.jsonl.zst
-apibackuper export etrust.parquet
-```
-
-Parquet requires the optional `recommended` extra. JSON Lines, gzip and zstd
-are available with the base installation. See [installation](/getting-started/installation).
+Stop the API server with Ctrl-C when finished. Recover an interrupted backup
+with `apibackuper run full --resume` while the server is running.
 
 ## Next steps
 
-- [Cookbook](/getting-started/cookbook) — task index by goal
-- [Configuration](/configuration/) — YAML sections and field reference
-- [Examples](/examples/) — working projects and templates
-- [CLI reference](/commands/)
+- [Real POST API example](/use-cases/post-api-backup) — the E-Trust walkthrough
+- [HTTP request files](/configuration/http-requests) — headers, filters and POST bodies
+- [Pagination](/configuration/pagination) — page, skip and range boundaries
+- [Backup completeness](/getting-started/data-integrity) — what a successful run guarantees
+- [Python API](/development/python-api) — use this project from a script
+- [Cookbook](/getting-started/cookbook) — choose another task
+
+The marked walkthrough commands and Python checks are executed in CI against
+this server. External API examples are configuration samples; their availability
+depends on the upstream service.

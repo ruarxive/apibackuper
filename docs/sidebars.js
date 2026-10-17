@@ -26,6 +26,7 @@ const sidebars = {
         'getting-started/basic-usage',
         'getting-started/troubleshooting',
         'getting-started/best-practices',
+        'getting-started/data-integrity',
       ],
     },
     {
@@ -33,6 +34,7 @@ const sidebars = {
       label: 'Use Cases',
       items: [
         'use-cases/rest-api-backup',
+        'use-cases/post-api-backup',
         'use-cases/incremental-and-update',
         'use-cases/follow-and-files',
         'use-cases/export-and-storage',
@@ -63,6 +65,8 @@ const sidebars = {
         'configuration/index',
         'configuration/project-and-data',
         'configuration/pagination',
+        'configuration/http-requests',
+        'configuration/export-filters',
         'configuration/auth',
         'configuration/rate-limiting-and-requests',
         'configuration/storage',
@@ -80,7 +84,7 @@ const sidebars = {
     {
       type: 'category',
       label: 'Development',
-      items: ['development/contributing', 'development/community'],
+      items: ['development/python-api', 'development/contributing', 'development/community'],
     },
     'license',
   ],

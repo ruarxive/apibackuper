@@ -12,6 +12,10 @@ first.
 | You want to… | Start with |
 |--------------|------------|
 | Archive a paginated public API | [Quick start](/getting-started/quick-start), [`run`](/commands/run) |
+| Reproduce a backup with known output locally | [Five-record walkthrough](/getting-started/quick-start) |
+| Add headers, filters or a POST body | [HTTP request files](/configuration/http-requests) |
+| Check completeness, deletions and source consistency | [Backup completeness](/getting-started/data-integrity) |
+| Embed backups in Python | [Python API](/development/python-api) |
 | Preview configuration without HTTP requests | [`run full --dry-run`](/commands/run) |
 | Guess pagination keys from a live URL | [`detect`](/commands/detect) |
 | Estimate size before a long run | [`estimate`](/commands/estimate) |
@@ -23,6 +27,7 @@ first.
 | Download files attached to records | [`getfiles`](/commands/getfiles) |
 | Validate configuration and fail on warnings | [`validate-config --strict`](/commands/validate-config) |
 | Export JSONL, gzip, zstd, or Parquet | [`export`](/commands/export) |
+| Select fields or filter exported records | [Filter grammar and types](/configuration/export-filters) |
 | Authenticate against a protected API | [Authentication](/configuration/auth), [protected APIs](/use-cases/protected-apis) |
 | Stay under API rate limits | [Rate limiting](/configuration/rate-limiting-and-requests) |
 | Disable SSL verification for a broken cert | [Troubleshooting](/getting-started/troubleshooting) |

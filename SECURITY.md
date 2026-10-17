@@ -98,6 +98,12 @@ When using OAuth2 (``auth.type = oauth2``), the refresh token POST
 honours the ``verify_ssl`` setting and a 30-second timeout by default.
 Failures are logged at WARNING. Rotated refresh tokens are captured.
 
+CLI API requests pass their configured connection/read timeouts to refresh;
+the 30-second default applies to standalone AuthHandler calls without a timeout.
+Refreshed tokens are held in memory only and are not persisted to configuration
+or credential files. See the documentation authentication page for supported
+grants and restart implications.
+
 ## Path traversal in storage
 
 Member names written to the zip and filesystem storage backends are

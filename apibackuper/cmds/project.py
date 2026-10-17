@@ -160,10 +160,19 @@ class ProjectBuilder:
         fileHandler.setFormatter(logFormatter)
         rootLogger.addHandler(fileHandler)
 
-        # Without this, the root logger stays at WARNING and all
-        # ``logging.info(...)`` traces (URLs, page progress, request timings)
-        # silently vanish from the log file — see §4.4 of the 2026-10 report.
-        rootLogger.setLevel(logging.DEBUG)
+        # Preserve the historical DEBUG default while respecting an explicit
+        # logging section. CLI --verbose can override it after construction.
+        log_level = "DEBUG"
+        config = getattr(self, "config", None)
+        if config is not None and config.has_section("logging"):
+            log_level = config.get("logging", "level", fallback="INFO").upper()
+        levels = {
+            "DEBUG": logging.DEBUG,
+            "INFO": logging.INFO,
+            "WARNING": logging.WARNING,
+            "ERROR": logging.ERROR,
+        }
+        rootLogger.setLevel(levels.get(log_level, logging.INFO))
 
     def __read_config(self, filename: str) -> None:
         self.config = None
@@ -717,21 +726,6 @@ class ProjectBuilder:
                             1,
                         ),
                     )
-
-            # Logging configuration
-            if self.config.has_section("logging"):
-                log_level = (
-                    self.config.get("logging", "level")
-                    if self.config.has_option("logging", "level")
-                    else "INFO"
-                )
-                log_level_map = {
-                    "DEBUG": logging.DEBUG,
-                    "INFO": logging.INFO,
-                    "WARNING": logging.WARNING,
-                    "ERROR": logging.ERROR,
-                }
-                logging.getLogger().setLevel(log_level_map.get(log_level.upper(), logging.INFO))
 
             # Storage enhancements
             self.compression_level = 6

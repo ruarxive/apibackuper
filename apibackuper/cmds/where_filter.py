@@ -6,11 +6,12 @@ authoritative implementation that ``ProjectBuilder._parse_where`` and
 ``ProjectBuilder._match_where`` delegate to.
 """
 
+import re
 from typing import Any, Dict, List, Optional
 
 from ..common import get_dict_value
 
-_OPERATORS = ["<=", ">=", "!=", "==", ">", "<"]
+_COMPARISON = re.compile(r"\s*([^\s<>=!'\"()]+)\s*(<=|>=|!=|==|>|<)\s*(.+?)\s*", re.DOTALL)
 
 
 def parse_where(
@@ -25,26 +26,30 @@ def parse_where(
         ``"updated_at >= 2024-01-01"`` -> ``{"field": "updated_at", "op": ">=", "value": "2024-01-01"}``
         ``"foo.bar != 3.14"``  -> ``{"field": "foo.bar", "op": "!=", "value": 3.14}``
 
-    Returns ``None`` for an empty string or an expression without a
-    recognised operator.
+    Returns ``None`` for an empty string. Invalid or compound expressions
+    raise ``ValueError`` before an export can replace its destination.
     """
-    if not where:
+    if not where or not where.strip():
         return None
-    for op in _OPERATORS:
-        if op in where:
-            left, right = where.split(op, 1)
-            field = left.strip()
-            value = right.strip().strip('"').strip("'")
-            try:
-                if "." in value:
-                    value = float(value)
-                else:
-                    value = int(value)
-            except ValueError:
-                # Leave the value as a string — useful for ISO dates etc.
-                pass
-            return {"field": field, "op": op, "value": value, "splitter": splitter}
-    return None
+    error = "Invalid --where: expected one comparison: FIELD OP VALUE (==, !=, <, <=, >, >=)"
+    match = _COMPARISON.fullmatch(where)
+    if not match:
+        raise ValueError(error)
+    field, op, value = match.groups()
+    value = value.strip()
+    if not value:
+        raise ValueError(error)
+    if value[0] in "\"'":
+        if value[-1] != value[0] or len(value) < 2 or value[0] in value[1:-1]:
+            raise ValueError(error)
+        value = value[1:-1]
+    elif re.search(r"[<>=!()\"']|\b(?:AND|OR|NOT)\b", value, re.IGNORECASE):
+        raise ValueError(error)
+    try:
+        value = float(value) if "." in value else int(value)
+    except ValueError:
+        pass
+    return {"field": field, "op": op, "value": value, "splitter": splitter}
 
 
 def match_where(

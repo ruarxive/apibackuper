@@ -11,7 +11,7 @@ the existing archive. It does not deduplicate records by `item_key`.
 them as a new generation. Earlier generations remain available. Export emits
 historical records from every retained generation, including repeated object IDs.
 
-```yaml
+```yaml config
 settings:
   name: incremental-example
   checkpoint_interval_pages: 5

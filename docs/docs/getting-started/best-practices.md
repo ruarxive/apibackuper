@@ -4,6 +4,10 @@ description: "Reliable long-running backups, credentials, and checkpoints"
 ---
 # Best practices
 
+Read [backup completeness](/getting-started/data-integrity) before a production
+run: stable sorting, source snapshots, stopping conditions, deletion handling
+and reconciliation determine whether all expected objects are captured.
+
 ## Estimate before a full run
 
 Preview the resolved configuration without HTTP requests:

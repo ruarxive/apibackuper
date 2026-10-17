@@ -1,17 +1,18 @@
 # Examples
 
-The `examples/` directory contains ready-to-run YAML configs and Python
-hook scripts that demonstrate how to use apibackuper against real APIs.
+The `examples/` directory contains a reproducible local tutorial, YAML configs
+and Python scripts illustrating public API integrations.
 Every project has an `apibackuper.cfg` or `apibackuper.yaml` and (where
-needed) a `scripts/` folder with `prefetch` / `postfetch` / `follow` hooks.
+needed) a `scripts/` or `hooks/` folder with extraction or lifecycle scripts.
 
 ## Layout
 
 | Directory | What |
 |---|---|
-| `templates/` | **Start here** — minimal YAML configs covering the common patterns: page-based, bearer-auth, skip-offset, follow-multihop |
+| `local-demo/` | **Start here** — local API, five fixed records, tested backup/export walkthrough |
+| `templates/` | Minimal YAML configs covering page-based, bearer-auth, skip-offset and independent follow rules |
 | `features/` | Focused examples for individual capabilities: hooks, detect, export-filters, sqlite-storage, update-resume, concurrency-retry |
-| `sozd/`, `budgetreg/`, `budgetrgz/`, … | Real working projects against Russian government and other APIs. Each is a complete, runnable example. |
+| `sozd/`, `budgetreg/`, `budgetrgz/`, … | External API samples; review current endpoint/access requirements before use |
 
 ## Templates
 
@@ -19,19 +20,20 @@ Drop one of these into a new project directory, edit the URL/keys, and
 you're up and running:
 
 * **`templates/page-based.yaml`** — minimal page-number pagination (page=1, page=2, …).
-* **`templates/skip-offset.yaml`** — offset/skip pagination for APIs without a count (e.g. Elasticsearch-style).
+* **`templates/skip-offset.yaml`** — offset/limit pagination with `results` and `count` response keys.
 * **`templates/bearer-auth.yaml`** — page-based with a static `Authorization: Bearer …` header.
 * **`templates/follow-multihop.yaml`** — illustrates `follow.rules` syntax. Rules read original backup records independently; automatic multi-hop chaining is not implemented. Adapt the endpoints and keys before use.
 
 ## Features
 
-Each subdirectory under `features/` is a complete, single-capability
-example. The `README.md` in that directory explains what it demonstrates.
+Each subdirectory under `features/` contains a focused configuration. See
+`features/README.md` and the linked documentation pages for usage; only `detect/`
+has a separate README. These examples use external APIs and may need adaptation.
 
 * **`concurrency-retry/`** — parallel fetching (`parallelism > 1`) with the retry budget.
 * **`detect/`** — let apibackuper infer the data key, page size, and iteration strategy from the first response.
 * **`export-filters/`** — `--fields` projection and `--where` filtering on the export command.
-* **`hooks/`** — pre/postfetch and follow scripts via the `[code]` section.
+* **`hooks/`** — five lifecycle scripts via the `hooks` section.
 * **`sqlite-storage/`** — use the SQLite storage backend instead of zip for live querying.
 * **`update-resume/`** — incremental / update mode with checkpoint resume.
 
@@ -42,18 +44,25 @@ examples for specific APIs. They demonstrate:
 
 - **`sozd/`** — Russian State Duma bills. Uses a custom Python `postfetch` script to parse HTML and extract the bill IDs from a list page. Run with `python -m apibackuper run full -p examples/sozd`.
 - **`budgetreg/`**, **`budgetrgz/`**, **`budgettofk/`**, **`budgetsclassif/`** — budget.gov.ru registries; mix of page-based and detect-mode.
-- **`etrust/`** — e-trust.gosuslugi.ru certificate authorities; uses Bearer auth.
-- **`fpreceivers/`** — spending.gov.ru; large dataset, demonstrates parallel fetching.
-- **`hhemployers/`** — hh.ru employer listings; demonstrates skip-offset.
-- **`hubofdata/`** — hubofdata.com; demonstrates SQLite storage.
-- **`subsidies/`** — government subsidies; demonstrates the follow-link pattern.
-- **`esklp/`** — esklp; demonstrates the export filters.
+- **`etrust/`** — e-trust.gosuslugi.ru certificate authorities; POST JSON body in `params.json`, no auth section in the shipped YAML.
+- **`fpreceivers/`** — spending.gov.ru; page-number pagination and ZIP storage.
+- **`hhemployers/`** — hh.ru employer listings; page-number pagination with `per_page` and `page`.
+- **`hubofdata/`** — hubofdata.ru CKAN search; skip/offset pagination and ZIP storage in legacy INI.
+- **`subsidies/`** — spending.gov.ru subsidies; page-number pagination and a change-key field.
+- **`esklp/`** — ESKLP registry; page-number pagination with SSL verification disabled in the sample.
 
 ## Running an example
 
 ```bash
-# (1) Pick an example directory
-cd examples/sozd
+# First start this in a separate terminal from the repository root:
+python examples/local-demo/server.py
+```
+
+In another terminal in the repository root:
+
+```bash
+cp -R examples/local-demo demo
+cd demo
 
 # (2) Validate the config without making any requests
 python -m apibackuper validate-config
@@ -61,8 +70,9 @@ python -m apibackuper validate-config
 # (3) Run a profile to see the resolved configuration
 python -m apibackuper run full --profile
 
-# (4) Run the actual backup
+# (4) Run the backup against the local server and export five records
 python -m apibackuper run full
+python -m apibackuper export items.jsonl
 ```
 
 > ⚠️ **Be careful running third-party examples against production APIs.**
@@ -72,7 +82,7 @@ python -m apibackuper run full
 
 ## Writing your own
 
-Validate all shipped YAML projects and templates without contacting their APIs,
+Validate shipped YAML projects, templates, JSON files and Markdown YAML/JSON blocks,
 from the repository root:
 
 ```bash
@@ -81,5 +91,5 @@ python -m scripts.validate_examples
 
 The simplest starting point is to copy `templates/page-based.yaml`,
 edit the `project.url`, set `params.page_size_limit` to the upstream
-API's max, and run. See `docs/docs/configuration/` on the documentation
+API's actual returned page size, and run. See `docs/docs/configuration/` on the documentation
 site for the full schema reference.

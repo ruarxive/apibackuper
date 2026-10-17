@@ -17,6 +17,8 @@ Main continuous integration workflow that runs on every push and pull request.
 
 - **Typecheck**: Runs type checking with mypy
 
+- **Docs**: Builds Docusaurus on pushes and pull requests; broken site and Markdown links fail the job
+
 - **Test**: Runs tests on multiple Python versions (3.10–3.13 on Ubuntu and macOS)
   - Uses pytest with coverage reporting
   - Uploads coverage to Codecov (on Python 3.11)
@@ -136,12 +138,12 @@ Now checks will run automatically on `git commit`.
 
 ### Publishing a Release
 
-1. Update version in `pyproject.toml` and `setup.py`
+1. Update the authoritative version in `pyproject.toml`, source-checkout version fallbacks in `apibackuper/__init__.py`, README and release notes; `setup.py` has been removed
 2. Commit and push changes
 3. Create a git tag:
    ```bash
-   git tag v1.0.12
-   git push origin v1.0.12
+   git tag v2.0.0
+   git push origin v2.0.0
    ```
 4. Create a GitHub release with the same tag
 5. The publish workflow will automatically run

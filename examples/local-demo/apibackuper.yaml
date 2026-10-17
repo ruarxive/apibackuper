@@ -1,0 +1,17 @@
+settings:
+  name: local-demo
+project:
+  url: http://127.0.0.1:8765/items
+  http_mode: GET
+  iterate_by: page
+  default_delay: 0
+params:
+  page_number_param: page
+  page_size_param: per_page
+  page_size_limit: 2
+data:
+  data_key: items
+  total_number_key: total
+  item_key: id
+storage:
+  storage_type: zip

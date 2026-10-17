@@ -19,5 +19,5 @@ description: "Issues, discussions, and related projects"
 
 apibackuper was built to archive Russian government APIs (budget.gov.ru and
 related systems). Working copies of those projects live in `examples/`.
-Project history is in [HISTORY.md](https://github.com/datacoon/apibackuper/blob/master/HISTORY.md)
-and [CHANGELOG.md](https://github.com/datacoon/apibackuper/blob/master/CHANGELOG.md).
+Project and release history is consolidated in
+[CHANGELOG.md](https://github.com/ruarxive/apibackuper/blob/master/CHANGELOG.md).

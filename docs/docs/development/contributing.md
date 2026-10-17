@@ -45,16 +45,20 @@ flake8 apibackuper
 ```bash
 pytest
 pytest --cov=apibackuper --cov-report=html
-tox                 # multiple Python versions
+python -m pip install tox
+tox                 # multiple installed Python versions
 python -m scripts.validate_examples
+python -m pytest --no-cov tests/test_docs_examples.py tests/test_documented_cli.py
 ```
 
 See `tests/README.md` for markers, fixtures, and file layout.
 
 The suite enforces at least 70% overall coverage. Backup lifecycle regressions
 cover interruption, resume, update generations and export on ZIP, SQLite and
-filesystem storage. Example validation checks configuration syntax and schema
-without contacting external APIs.
+filesystem storage. Example validation checks YAML configurations, JSON files
+and Markdown YAML/JSON fragments without HTTP requests. The documentation test
+executes the marked Quick Start and Python API snippets against the local demo
+server and checks exact exported IDs, projected fields and ZIP pages.
 
 ## Documentation
 
@@ -66,7 +70,16 @@ make docs           # production build
 ```
 
 Edit markdown in `docs/docs/`. Keep frontmatter (`title`, `description`).
-`npm run build` fails on broken links (`onBrokenLinks: 'throw'`).
+`npm run build` fails on broken site and Markdown links. The CI documentation
+job builds the site on pull requests as well as pushes.
+
+Use `bash doc-test` or `python doc-test` fences for executable snippets in the
+local Quick Start and Python API guide. `tests/test_docs_examples.py` runs those
+exact snippets, with an ephemeral localhost port and a temporary project copy.
+Keep setup commands unmarked; tests provision the checkout, config and server.
+YAML fragments are checked for known keys/types with required fields relaxed.
+Mark complete configs `yaml config` to enforce all required fields, even if a
+section is accidentally removed. JSON blocks must parse as JSON.
 
 ## Pull requests
 

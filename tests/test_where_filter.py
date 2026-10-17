@@ -3,9 +3,10 @@
 These lock in the behaviour that used to live inline in
 ``ProjectBuilder._parse_where`` / ``_match_where`` / ``_select_fields``.
 """
+
 import pytest
 
-from apibackuper.cmds.where_filter import parse_where, match_where, select_fields
+from apibackuper.cmds.where_filter import match_where, parse_where, select_fields
 
 
 class TestParseWhere:
@@ -27,7 +28,7 @@ class TestParseWhere:
         assert cond["op"] == ">="
 
     def test_quoted_value(self):
-        cond = parse_where("name == \"alice\"")
+        cond = parse_where('name == "alice"')
         assert cond["value"] == "alice"
 
     def test_inequality_operator(self):
@@ -35,9 +36,27 @@ class TestParseWhere:
         assert cond["op"] == "!="
         assert cond["value"] == 200
 
-    def test_no_operator_returns_none(self):
-        # No recognised comparison operator -> unparseable
-        assert parse_where("just_a_word") is None
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            "just_a_word",
+            "id = 2",
+            "id > 1 AND id < 3",
+            "id == 1 OR id == 2",
+            "id >",
+            "== 2",
+            "id <> 2",
+            "id >   ",
+            'name == "unfinished',
+        ],
+    )
+    def test_invalid_expression_is_rejected(self, expression):
+        with pytest.raises(ValueError, match="Invalid --where"):
+            parse_where(expression)
+
+    def test_quoted_literal_can_contain_operators_and_keywords(self):
+        condition = parse_where('name == "Research AND Development > Sales"')
+        assert match_where({"name": "Research AND Development > Sales"}, condition)
 
     def test_dotted_field_path(self):
         cond = parse_where("meta.count == 5")

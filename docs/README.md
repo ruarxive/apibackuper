@@ -6,7 +6,7 @@ This directory contains the Docusaurus documentation site for apibackuper.
 
 ### Prerequisites
 
-- Node.js 18+ and npm
+- Node.js 20+ and npm (the locked Docusaurus release requires Node 20)
 
 ### Installation
 
@@ -105,7 +105,17 @@ When adding or updating documentation:
 4. Update the root `README.md` and `CHANGELOG.md` when user-facing behavior changes;
    keep unreleased work under `Unreleased` without changing release metadata.
 5. Validate examples from the repository root with `python -m scripts.validate_examples`.
-6. Preview with `npm start` and confirm `npm run build` succeeds. Broken site
-   links fail the build; review any Markdown-link warnings as well.
+6. Run `python -m pytest --no-cov tests/test_docs_examples.py` from the repository
+   root. It executes the marked Quick Start/Python API snippets against a local
+   server and checks the resulting archive and exports.
+7. Preview with `npm start` and confirm `npm run build` succeeds. Broken site
+   and Markdown links fail the build. CI also builds the site on pull requests.
+
+`scripts.validate_examples` checks complete shipped YAML configs, JSON files,
+and YAML/JSON blocks in user-facing Markdown. Fragments may omit required keys
+but must use known fields with correct types. Mark complete configurations
+`yaml config` to require every mandatory field. Mark executable walkthrough fences
+with `bash doc-test` or `python doc-test`; the walkthrough test owns setup and
+executes marked blocks sequentially. External API samples are not fetched in CI.
 
 Edit source Markdown only; `build/` and `.docusaurus/` are generated and ignored.

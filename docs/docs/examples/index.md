@@ -6,8 +6,9 @@ slug: /examples
 
 # Examples
 
-The repository `examples/` directory contains working projects. Copy one,
-adjust credentials and URLs, then run `estimate` / `run`.
+Start with `examples/local-demo/` and the [local quick start](/getting-started/quick-start)
+for five known records. Other projects illustrate external APIs: review their
+current URLs, keys, page numbering and access requirements before running them.
 
 ## Government and public APIs
 
@@ -21,7 +22,7 @@ adjust credentials and URLs, then run `estimate` / `run`.
 | `esklp` | ESKLP registration data (SSL verification disabled) |
 | `fpreceivers` | Subsidy and contract receivers, spending.gov.ru |
 | `hhemployers` | Russian company employers, hh.ru |
-| `subsidies` | Government subsidies, budget.gov.ru |
+| `subsidies` | Government subsidies, spending.gov.ru |
 | `sozd` | State Duma bills, with custom Python extractors |
 
 ## Starter files
