@@ -4,11 +4,175 @@ These cover the orchestration logic in isolation: sequential vs parallel
 loops, retry exhaustion, consecutive-error abort, storage close on
 every exit path, and the page-count parser.
 """
+
 from unittest.mock import MagicMock
+
 import pytest
 
-from apibackuper.cmds.runner import fetch_all_pages, parse_total_pages
+from apibackuper.cmds.runner import FetchResult, PageOutcome, fetch_all_pages, parse_total_pages
 from apibackuper.constants import DEFAULT_NUMBER_OF_PAGES
+
+
+@pytest.fixture
+def run_pages():
+    """Run pages with successful defaults; override only the behavior under test."""
+
+    def run(**overrides):
+        options = {
+            "pages": [1, 2, 3],
+            "parallelism": 1,
+            "fetch_one": lambda p: {"page": p, "status": 200, "content": b"{}"},
+            "on_page": lambda p, c: True,
+            "should_retry": lambda s: False,
+            "retry_max_retries": 0,
+            "max_consecutive_errors": 10,
+            "continue_on_error": True,
+            "storage_backend": None,
+            "progress_bar": None,
+            "start_timer": 0.0,
+            "total_pages": 3,
+            "checkpoint_interval": 0,
+            "save_checkpoint": lambda c: None,
+        }
+        options.update(overrides)
+        return fetch_all_pages(**options)
+
+    return run
+
+
+@pytest.mark.parametrize("parallelism", [1, 2])
+def test_nonretryable_http_failure_is_not_saved(run_pages, parallelism):
+    saved = []
+    result = run_pages(
+        parallelism=parallelism,
+        fetch_one=lambda p: {"page": p, "status": 403, "content": b"denied"},
+        on_page=lambda p, c: saved.append(p) or True,
+    )
+    assert result == {"403": 3}
+    assert saved == []
+    assert not result.completed
+    assert result.next_page == 1
+    assert result.failed_pages == [1, 2, 3]
+
+
+def test_parallel_terminal_page_prevents_later_batches(run_pages):
+    fetched = []
+    saved = []
+
+    def fetch(page):
+        fetched.append(page)
+        return {"page": page, "status": 200, "content": b"{}"}
+
+    def consume(page, content):
+        if page == 2:
+            return False
+        saved.append(page)
+        return True
+
+    result = run_pages(pages=list(range(1, 7)), parallelism=3, fetch_one=fetch, on_page=consume)
+    assert sorted(fetched) == [1, 2, 3]
+    assert saved == [1]
+    assert result.completed
+    assert result.last_page == 1
+    assert result.next_page == 2
+
+
+@pytest.mark.parametrize("parallelism", [1, 3])
+def test_checkpoint_never_passes_failed_page(run_pages, parallelism):
+    checkpoints = []
+    saved = []
+    result = run_pages(
+        parallelism=parallelism,
+        fetch_one=lambda p: {
+            "page": p,
+            "status": 503 if p == 2 else 200,
+            "content": b"{}",
+        },
+        on_page=lambda p, c: saved.append(p) or True,
+        checkpoint_interval=1,
+        save_checkpoint=checkpoints.append,
+    )
+    assert saved == [1, 3]
+    assert [c["last_page"] for c in checkpoints] == [1]
+    assert checkpoints[0]["next_page"] == 2
+    assert checkpoints[0]["storage_bytes"] == 2
+    assert result.last_page == 1
+    assert result.next_page == 2
+    assert result.failed_pages == [2]
+    assert result.pages_processed == 1
+    assert result.bytes_processed == 2
+    assert not result.completed
+
+
+@pytest.mark.parametrize("parallelism", [1, 3])
+def test_saved_terminal_page_counts_records_and_bytes_once(run_pages, parallelism):
+    consumed = []
+    checkpoints = []
+    progress = MagicMock()
+
+    def consume(page, content):
+        consumed.append(page)
+        return PageOutcome(stop=page == 3, records=2, bytes_written=7)
+
+    result = run_pages(
+        pages=[2, 3, 4, 5],
+        parallelism=parallelism,
+        on_page=consume,
+        progress_bar=progress,
+        initial_pages_processed=1,
+        initial_records_processed=5,
+        initial_bytes_processed=9,
+        checkpoint_interval=1,
+        save_checkpoint=checkpoints.append,
+    )
+    assert isinstance(result, FetchResult)
+    assert result == {}
+    assert result.completed
+    assert consumed == [2, 3]
+    assert result.last_page == 3
+    assert result.next_page == 4
+    assert result.failed_pages == []
+    assert result.pages_processed == 3
+    assert result.records_processed == 9
+    assert result.bytes_processed == 23
+    assert checkpoints[-1]["last_page"] == 3
+    assert checkpoints[-1]["records_processed"] == 9
+    assert checkpoints[-1]["storage_bytes"] == 23
+    assert progress.update.call_count == 2
+
+
+def test_unsaved_nonterminal_page_freezes_checkpoint(run_pages):
+    result = run_pages(
+        on_page=lambda p, c: PageOutcome(saved=p != 2, records=3),
+    )
+    assert result == {"unsaved": 1}
+    assert result.failed_pages == [2]
+    assert result.next_page == 2
+    assert result.records_processed == 3
+    assert not result.completed
+
+
+@pytest.mark.parametrize("raw_total", [None, "invalid", -1])
+def test_invalid_record_metadata_falls_back_to_page_metadata(raw_total):
+    assert parse_total_pages(
+        {"total": raw_total, "pages": 4},
+        resp_type="json",
+        total_number_key="total",
+        pages_number_key="pages",
+        page_size_limit=10,
+    ) == (4, 40)
+
+
+@pytest.mark.parametrize("limit", [0, -1])
+def test_nonpositive_page_size_is_rejected(limit):
+    with pytest.raises(ValueError, match="page_size_limit"):
+        parse_total_pages(
+            {"total": 2},
+            resp_type="json",
+            total_number_key="total",
+            pages_number_key="",
+            page_size_limit=limit,
+        )
 
 
 class TestFetchAllPagesSequential:
@@ -391,6 +555,7 @@ class TestParseTotalPages:
             save_checkpoint=lambda x: None,
         )
         # close() was attempted (and failed internally — swallowed).
+        assert result == {}
         broken_bar.close.assert_called_once()
 
     def test_safe_close_backend_logs_and_swallows_ioerror(self):
@@ -433,6 +598,7 @@ class TestParseTotalPages:
         ThreadPoolExecutor. Verify it doesn't crash with
         parallelism > 1."""
         from apibackuper.cmds.runner import fetch_all_pages
+
         pages_processed = []
 
         def on_page(p, content):
@@ -477,6 +643,7 @@ class TestParseTotalPages:
         but the runner still records the error count based on the
         final status."""
         from apibackuper.cmds.runner import fetch_all_pages
+
         pages_seen = []
 
         def fetch_one(page):

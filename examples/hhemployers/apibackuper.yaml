@@ -15,7 +15,7 @@ params:
   page_number_param: page
 
 data:
-  pages_number_count: pages
+  pages_number_key: pages
   total_number_key: found
   data_key: items
   item_key: id
@@ -23,4 +23,3 @@ data:
 
 storage:
   storage_type: zip
-

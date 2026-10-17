@@ -22,21 +22,25 @@ Single-hop config:
 ```yaml
 follow:
   follow_mode: item
-  follow_pattern: https://api.example.com/items/
+  follow_pattern: "https://api.example.com/items/{id}"
   follow_param: id
   follow_item_key: id
 ```
 
-`follow_mode` can be `item`, `url`, `drilldown`, or `prefix`. If mode is `url`,
+`follow_mode` can be `item`, `url`, or `prefix`. If mode is `url`,
 `follow_pattern` is unused and the URL is taken from the record.
 
-## Multi-hop follow
+## Multiple follow rules
 
-Use `follow.rules` for org → department → employee style walks. See
-`examples/templates/follow-multihop.yaml` and
-[follow configuration](/configuration/follow).
+Use `follow.rules` for independent requests based on the original list records.
+Each named rule stores its own `details_<name>.zip`; rules do not consume the
+previous rule's output. Automatic org → department → employee traversal is
+not implemented. See [follow configuration](/configuration/follow) for examples.
 
 ## Download files
+
+`getfiles` currently requires a ZIP source backup. Downloaded files can use ZIP
+or filesystem output; see [files configuration](/configuration/files).
 
 ```yaml
 files:

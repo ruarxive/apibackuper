@@ -17,19 +17,19 @@ test-cov: ## Run tests with coverage
 	pytest --cov=apibackuper --cov-report=html --cov-report=term
 
 lint: ## Run linters
-	flake8 apibackuper --max-line-length=100 --extend-ignore=E203
+	flake8 apibackuper scripts
 	bandit -r apibackuper -ll
 
 format: ## Format code with black and isort
-	black --line-length=100 apibackuper tests
-	isort --profile=black --line-length=100 apibackuper tests
+	black apibackuper scripts
+	isort --profile=black apibackuper scripts
 
 format-check: ## Check code formatting without making changes
-	black --check --line-length=100 apibackuper tests
-	isort --check-only --profile=black --line-length=100 apibackuper tests
+	black --check apibackuper scripts
+	isort --check-only --profile=black apibackuper scripts
 
 type-check: ## Run type checker
-	mypy apibackuper --ignore-missing-imports --no-strict-optional
+	mypy apibackuper
 
 docs: ## Build documentation site (Docusaurus)
 	cd docs && npm ci && npm run build

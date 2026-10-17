@@ -1,13 +1,13 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=77.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "apibackuper"
-version = "1.0.15"
+version = "2.0.0"
 description = "a command-line tool and python library for API backuping"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = "MIT"
 authors = [
     {name = "Ivan Begtin", email = "ivan@begtin.tech"}
@@ -18,11 +18,10 @@ classifiers = [
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
@@ -57,7 +56,7 @@ dev = [
     "pytest-cov>=4.1.0",
     "pytest-mock>=3.12.0",
     "pytest-timeout>=2.3.0",
-    "black>=23.12.0",
+    "black==25.1.0",
     "isort>=5.13.0",
     "flake8>=7.0.0",
     "flake8-docstrings>=1.7.0",
@@ -80,9 +79,12 @@ Download = "https://github.com/datacoon/apibackuper/"
 apibackuper = "apibackuper.__main__:main"
 
 [tool.setuptools]
-packages = {find = {}}
 include-package-data = true
 zip-safe = false
+
+[tool.setuptools.packages.find]
+include = ["apibackuper", "apibackuper.*"]
+exclude = ["tests", "tests.*", "examples", "examples.*", "docs", "docs.*"]
 
 [tool.setuptools.package-data]
 apibackuper = ["schemas/*.json"]
@@ -172,6 +174,7 @@ ignore_missing_imports = true
 # pytest configuration
 [tool.pytest.ini_options]
 minversion = "7.0"
+timeout = 60
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
@@ -184,7 +187,7 @@ addopts = [
     "--cov-report=term-missing",
     "--cov-report=html",
     "--cov-report=xml",
-    "--cov-fail-under=29",
+    "--cov-fail-under=70",
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
@@ -222,4 +225,3 @@ exclude_lines = [
 [tool.bandit]
 exclude_dirs = ["tests", "test_*.py"]
 skips = ["B101", "B601"]  # Skip assert_used and shell_injection_subprocess
-

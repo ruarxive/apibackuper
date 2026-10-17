@@ -7,6 +7,8 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
+from .cmds.utils import redact_text
+
 try:
     import requests  # noqa: F401, W0611
 except ImportError:
@@ -161,6 +163,15 @@ class AuthHandler:
             return False
 
         effective_timeout = timeout if timeout is not None else _DEFAULT_TIMEOUT
+
+        def safe_diagnostic(value):
+            text = redact_text(value)
+            for name in ("token", "refresh_token"):
+                secret = self.auth_data.get(name)
+                if isinstance(secret, str) and secret:
+                    text = text.replace(secret, "***REDACTED***")
+            return text
+
         kwargs: Dict[str, Any] = {
             "data": {
                 "grant_type": "refresh_token",
@@ -177,7 +188,7 @@ class AuthHandler:
             logging.warning(
                 "OAuth2 token refresh raised %s: %s",
                 type(e).__name__,
-                e,
+                safe_diagnostic(e),
             )
             return False
 
@@ -186,7 +197,7 @@ class AuthHandler:
             # Coerce the body to str defensively — the test suite uses Mock
             # objects whose ``text`` attribute is itself a Mock.
             try:
-                body_preview = str(response.text)[:200]
+                body_preview = safe_diagnostic(response.text)[:200]
             except Exception:
                 body_preview = "<unprintable body>"
             logging.warning(

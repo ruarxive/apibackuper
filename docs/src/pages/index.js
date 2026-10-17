@@ -20,7 +20,7 @@ function HomepageHeader() {
           Lines, gzip, zstd, or Parquet.
         </p>
         <pre className={styles.install}>
-          {'pip install apibackuper\napibackuper create etrust && apibackuper run full'}
+          {'pip install apibackuper\napibackuper create etrust\ncd etrust\n# Save apibackuper.yaml using the Quick start guide\napibackuper validate-config\napibackuper run full --dry-run'}
         </pre>
       </div>
     </header>

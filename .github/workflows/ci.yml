@@ -1,156 +1,142 @@
 name: CI
 
 on:
-  push:
-    branches: [ master, main, develop ]
-  pull_request:
-    branches: [ master, main, develop ]
-  workflow_dispatch:
+    push:
+        branches: [master, main, develop]
+    pull_request:
+        branches: [master, main, develop]
+    workflow_dispatch:
 
 env:
-  PYTHONUNBUFFERED: 1
+    PYTHONUNBUFFERED: 1
 
 jobs:
-  lint:
-    name: Lint and Format Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-      
-      - name: Run flake8
-        run: |
-          # Stylistic ignores — accumulated technical debt over the
-          # project's history. Critical real-bug categories remain on:
-          # F4xx pyflakes (undefined name, unused import, …), F5xx
-          # f-string bugs, F841 unused local, F541 f-string without
-          # placeholders, etc. B008 is disabled because the codebase
-          # uses Typer's typer.Option / typer.Argument factory calls
-          # in argument defaults, which B008 flags as false positives.
-          flake8 apibackuper --max-line-length=100 \
-            --extend-ignore=E203,E501,E402,E122,E128,E111,E117,E127,E303,W292,W391,B008,B014,B042,D
-      
-      - name: Run bandit security check
-        run: |
-          bandit -r apibackuper -ll
-      
-      - name: Check code formatting with black
-        run: |
-          black --check --line-length=100 apibackuper
-      
-      - name: Check import sorting with isort
-        run: |
-          isort --check-only --profile=black --line-length=100 apibackuper
+    lint:
+        name: Lint and Format Check
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-  typecheck:
-    name: Type Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements-dev.txt
-      
-      - name: Run mypy
-        run: |
-          mypy apibackuper --ignore-missing-imports --no-strict-optional
+            - name: Set up Python
+              uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+              with:
+                  python-version: "3.11"
+                  cache: "pip"
 
-  test:
-    name: Test Python ${{ matrix.python-version }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        # 3.10 is the lowest supported (3.9 reached EOL October 2025).
-        python-version: ['3.10', '3.11', '3.12', '3.13']
-      
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: 'pip'
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements-dev.txt
-      
-      - name: Run tests with pytest
-        run: |
-          pytest \
-            --verbose \
-            --doctest-modules \
-            --timeout=60 \
-            --cov=apibackuper \
-            --cov-report=term-missing \
-            --cov-report=xml \
-            --cov-report=html \
-            ./apibackuper ./tests
-      
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
-        with:
-          file: ./coverage.xml
-          flags: unittests
-          name: codecov-umbrella
-          fail_ci_if_error: false
-        if: matrix.python-version == '3.11'
+            - name: Install dependencies
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install -r requirements-dev.txt
 
-  build:
-    name: Build Package
-    runs-on: ubuntu-latest
-    needs: [lint, typecheck, test]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-      
-      - name: Install build dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install build twine
-      
-      - name: Build package
-        run: |
-          python -m build
-      
-      - name: Check package
-        run: |
-          twine check dist/*
-      
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: dist
-          path: dist/
-          retention-days: 7
+            - name: Run flake8
+              run: flake8 apibackuper scripts
 
+            - name: Run bandit security check
+              run: |
+                  bandit -r apibackuper -ll
+
+            - name: Check code formatting with black
+              run: |
+                  black --check apibackuper scripts
+
+            - name: Check import sorting with isort
+              run: |
+                  isort --check-only apibackuper scripts
+
+    typecheck:
+        name: Type Check
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+            - name: Set up Python
+              uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+              with:
+                  python-version: "3.11"
+                  cache: "pip"
+
+            - name: Install dependencies
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install -r requirements.txt
+                  pip install -r requirements-dev.txt
+
+            - name: Run mypy
+              run: |
+                  mypy apibackuper
+
+    test:
+        name: Test Python ${{ matrix.python-version }}
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-latest, macos-latest]
+                # 3.10 is the lowest supported (3.9 reached EOL October 2025).
+                python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+            - name: Set up Python ${{ matrix.python-version }}
+              uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+              with:
+                  python-version: ${{ matrix.python-version }}
+                  cache: "pip"
+
+            - name: Install dependencies
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install -r requirements.txt
+                  pip install -r requirements-dev.txt
+
+            - name: Validate configuration examples
+              run: python -m scripts.validate_examples
+
+            - name: Run tests with pytest
+              run: pytest ./apibackuper ./tests
+
+            - name: Upload coverage to Codecov
+              uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+              with:
+                  file: ./coverage.xml
+                  flags: unittests
+                  name: codecov-umbrella
+                  fail_ci_if_error: false
+              if: matrix.python-version == '3.11'
+
+    build:
+        name: Build Package
+        runs-on: ubuntu-latest
+        needs: [lint, typecheck, test]
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+            - name: Set up Python
+              uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+              with:
+                  python-version: "3.11"
+                  cache: "pip"
+
+            - name: Install build dependencies
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install build twine -r requirements.txt
+
+            - name: Build package
+              run: |
+                  python -m build
+
+            - name: Check package
+              run: |
+                  twine check dist/*
+
+            - name: Smoke-test installed wheel
+              run: python scripts/check_wheel.py dist/*.whl
+
+            - name: Upload build artifacts
+              uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+              with:
+                  name: dist
+                  path: dist/
+                  retention-days: 7

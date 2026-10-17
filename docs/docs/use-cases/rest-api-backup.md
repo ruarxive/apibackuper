@@ -4,8 +4,8 @@ description: "Archive a paginated GET or POST API into local storage"
 ---
 # REST API backup
 
-The core workflow is: create a project, describe the endpoint, estimate, run,
-export.
+The core workflow is: create a project, save its YAML configuration, validate
+and preview it, estimate from a live response, run, then export.
 
 ## Page-based GET API
 
@@ -34,10 +34,16 @@ storage:
 ```
 
 ```bash
+apibackuper validate-config
+apibackuper run full --dry-run
 apibackuper estimate full
 apibackuper run full
 apibackuper export items.jsonl
 ```
+
+Save the YAML as `apibackuper.yaml` in the project directory before running
+these commands. `create` supplies only a minimal INI scaffold. The first two
+commands run offline; `estimate` and `run` contact the configured API.
 
 ## Skip / offset APIs
 

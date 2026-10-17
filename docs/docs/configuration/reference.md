@@ -18,9 +18,13 @@ Validate with [`apibackuper validate-config`](/commands/validate-config).
 | `id` | string | |
 | `splitter` | string | Default `.` |
 | `logfile` | string | Default `apibackuper.log` |
-| `state_file` | string | |
-| `checkpoint_file` | string | |
-| `checkpoint_interval_pages` | integer | ≥ 0 |
+| `state_file` | string | Default `apibackuper_state.json` in the project directory |
+| `checkpoint_file` | string | Default `apibackuper_checkpoint.json` in the project directory |
+| `checkpoint_interval_pages` | integer | ≥ 0; default 0 disables periodic saves, not lifecycle saves |
+
+Explicit state/checkpoint paths are used as written; relative overrides are
+relative to the process working directory. Use absolute paths when running
+the project from different directories with `-p`.
 
 ## project
 
@@ -32,12 +36,12 @@ Validate with [`apibackuper validate-config`](/commands/validate-config).
 | `work_modes` | string | `full,incremental,update` |
 | `iterate_by` | `page` \| `skip` \| `range` | Default `page` |
 | `resp_type` | `json` \| `xml` \| `html` | Default `json` |
-| `update_mode` | `by_change_key` \| `by_timestamp` \| `custom_script` | |
+| `update_mode` | `by_change_key` \| `by_timestamp` \| `custom_script` | Defaults to change-key mode if `data.change_key` is set, otherwise timestamp; `custom_script` is reserved and execution rejects it |
 | `detect` | boolean | |
-| `default_delay` | integer | Seconds |
+| `default_delay` | number | Seconds, ≥ 0; fractional values such as `0.5` are supported |
 | `retry_delay` | integer | Seconds |
 | `retry_count` | integer | |
-| `force_retry` | boolean | |
+| `force_retry` | boolean | Legacy setting; use `request.retry` for the active retry policy |
 
 ## params
 
@@ -65,16 +69,22 @@ Validate with [`apibackuper validate-config`](/commands/validate-config).
 | `item_key` | string |
 | `change_key` | string |
 
+Omit `data_key` for a root JSON array or a single object. If specified, the key
+must exist in the response. `item_key` identifies records for follow/file
+operations; backup and export retain historical versions without deduplication.
+
 ## storage
 
 | Field | Type | Notes |
 |-------|------|-------|
 | `storage_type` | `zip` \| `filesystem` \| `sqlite` | **Required** |
 | `storage_path` | string | Default `storage` |
-| `compression` | boolean | |
-| `compression_level` | integer | 0–9 |
-| `max_file_size` | integer | Bytes |
-| `split_files` | boolean | |
+| `compression` | boolean | Accepted; CLI ZIP storage currently always uses Deflate |
+| `compression_level` | integer | 0–9; reserved, not applied |
+| `max_file_size` | integer | Bytes; reserved, no automatic splitting |
+| `split_files` | boolean | Reserved, no automatic splitting |
+
+See [storage](/configuration/storage) for backend-specific paths and recovery files.
 
 ## Optional sections
 

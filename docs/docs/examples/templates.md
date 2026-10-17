@@ -51,5 +51,7 @@ Prefer `token_file` over an inline token.
 
 ## follow-multihop.yaml
 
-List endpoint plus `follow.rules` for org → department → employee. See
-[follow configuration](/configuration/follow).
+Illustrates the `follow.rules` configuration shape. Rules currently run
+independently against the original list records; they do not form an automatic
+org → department → employee chain. Adapt the endpoints and keys accordingly.
+See [follow configuration](/configuration/follow) for supported examples.

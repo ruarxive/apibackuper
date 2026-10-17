@@ -10,7 +10,6 @@ description: "Choose ZIP, filesystem, or SQLite storage and export JSONL, gzip, 
 storage:
   storage_type: zip          # zip | filesystem | sqlite
   storage_path: storage
-  compression: true
 ```
 
 | Type | When to use |
@@ -20,6 +19,14 @@ storage:
 | `sqlite` | Queryable local database (`storage_path` is the `.sqlite` file) |
 
 SQLite example: `examples/features/sqlite-storage/`.
+
+For ZIP, `storage_path: storage` creates `storage/storage.zip`. For filesystem
+storage it is the directory containing pages. For SQLite, set a database path
+such as `storage_path: storage.sqlite`.
+
+Full backups use `.partial` staging, and ZIP writes may have a `.journal`
+sidecar. Keep recovery files together until the run completes; see
+[storage configuration](/configuration/storage).
 
 ## Export formats
 
@@ -46,3 +53,14 @@ apibackuper export out.jsonl --where "updated_at >= 2024-01-01"
 ```
 
 Feature example: `examples/features/export-filters/`.
+
+## Historical records and safe output paths
+
+After updates, export reads both the original pages and every retained
+`runs/<id>/` generation. It preserves repeated IDs. Apply deduplication
+downstream if you need one current record per object.
+
+When a follow details archive exists, export uses its records instead of the
+list pages. Choose an output path outside the backup and its detail archives.
+Export writes a temporary file and replaces existing output only after success;
+see [`export`](/commands/export).

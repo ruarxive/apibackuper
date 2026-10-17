@@ -9,8 +9,10 @@ slug: /commands
 All commands are available as `apibackuper <command>`. Use
 `apibackuper <command> --help` for the live flag list.
 
-Most commands accept `--projectpath` / `-p` (project directory) and
-`--verbose` / `-v`.
+Project commands accept `--projectpath` / `-p` (project directory); `create`
+takes the destination directory as its positional argument.
+`--verbose` / `-v` is available on `create`, `detect`, `run`, `update`,
+`export` and `validate-config`. Check individual command pages for other flags.
 
 ## Project lifecycle
 

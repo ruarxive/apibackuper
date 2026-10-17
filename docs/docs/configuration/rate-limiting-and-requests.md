@@ -25,7 +25,7 @@ request:
   connect_timeout: 30
   read_timeout: 120
   verify_ssl: true
-  user_agent: apibackuper/1.0.13
+  user_agent: apibackuper/2.0.0
   max_redirects: 5
   allow_redirects: true
   parallelism: 1
@@ -43,6 +43,23 @@ request:
 `parallelism` is the number of concurrent page requests. It still waits on
 the rate limiter.
 
+Built-in backup, update, follow, file download, detection and estimation requests share
+authentication, status checks, bounded retries, SSL verification and rate limits.
+`connect_timeout` and `read_timeout` control HTTP connection/read timeouts;
+set them explicitly rather than relying on the legacy `timeout` field.
+
+The optional aria2 integration queues transfers to a separate RPC service;
+see [files configuration](/configuration/files) for its requirements.
+
+`max_retries` is the number of retries after the initial attempt. Transport
+failures and statuses in `retry_on_status` use this budget. Other unsuccessful
+statuses fail immediately after any supported OAuth2 refresh attempt. A numeric
+`Retry-After` header takes precedence over the configured backoff delay.
+
+Legacy `project.retry_count` and `project.retry_delay` supply defaults when
+`request.retry` is omitted. Flat `request.retry_*` options are also accepted
+for INI compatibility and override corresponding nested YAML values.
+
 ## error_handling
 
 ```yaml
@@ -51,5 +68,10 @@ error_handling:
   max_consecutive_errors: 10
   continue_on_error: true
 ```
+
+`retry_on_errors` supplies the fallback retry status list. `continue_on_error`
+allows collection to proceed after a failed page until the consecutive-error
+limit is reached; an incomplete backup still exits unsuccessfully and preserves
+the previous successful state. Resume restarts at the first unresolved page.
 
 Feature example: `examples/features/concurrency-retry/`.

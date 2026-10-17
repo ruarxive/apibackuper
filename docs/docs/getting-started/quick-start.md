@@ -17,7 +17,8 @@ apibackuper create etrust
 cd etrust
 ```
 
-Edit `apibackuper.yaml`:
+`create` writes a minimal legacy `apibackuper.cfg`. Save the following as a new
+`apibackuper.yaml`; YAML takes precedence when both files exist:
 
 ```yaml
 settings:
@@ -62,13 +63,22 @@ Add `params.json` with the POST body used for each request:
 }
 ```
 
-## 2. Estimate size and time
+## 2. Validate, preview and estimate
+
+Check the configuration and preview the run without HTTP requests:
+
+```bash
+apibackuper validate-config
+apibackuper run full --dry-run
+```
+
+Then sample the live API to estimate size and time:
 
 ```bash
 apibackuper estimate full
 ```
 
-Typical output:
+Illustrative output (counts and timings depend on the API):
 
 ```text
 Total records: 502
@@ -86,7 +96,9 @@ Estimated all requests time, seconds 402.8947
 apibackuper run full
 ```
 
-Records are stored in the project storage (by default a ZIP file).
+Records are staged in `storage/storage.zip.partial`. A successful full run
+publishes `storage/storage.zip`; an incomplete run keeps any previous complete
+backup. Continue an interrupted download with `apibackuper run full --resume`.
 
 ## 4. Export
 
@@ -98,6 +110,9 @@ apibackuper export etrust.jsonl.gz
 apibackuper export etrust.jsonl.zst
 apibackuper export etrust.parquet
 ```
+
+Parquet requires the optional `recommended` extra. JSON Lines, gzip and zstd
+are available with the base installation. See [installation](/getting-started/installation).
 
 ## Next steps
 

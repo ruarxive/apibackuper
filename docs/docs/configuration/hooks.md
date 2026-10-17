@@ -24,6 +24,16 @@ hooks:
 | `after_page` | After a page of records is stored |
 | `after_run` | Once after the backup finishes |
 
+Each script defines `hook(context)` or `run(context)` and returns a
+JSON-serializable value. Hooks run in a separate Python process with the
+user's permissions and a 30-second timeout. `before_run` may return modified
+`headers` and `params`; `before_request` may also return a modified `url`.
+Other hook results are ignored. Hook failures log a warning and return no override.
+
+Contexts can include live request credentials. Use trusted scripts and avoid
+printing secrets. The subprocess isolation option does not sandbox filesystem
+or network access.
+
 ## Custom extraction scripts
 
 Some HTML / non-JSON APIs need Python to parse the body (`examples/sozd/`):
@@ -33,3 +43,5 @@ code:
   postfetch: scripts/pagetodata.py
   follow: scripts/listtodata.py
 ```
+
+Extraction scripts define `process(content)` and run inside the main process.

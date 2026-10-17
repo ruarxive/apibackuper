@@ -213,6 +213,10 @@ def _emit_dry_run_plan(
     """
     from .cmds.profile import compute_profile_estimate
 
+    validation = acmd.validate_config()
+    if isinstance(validation, tuple) and not validation[0]:
+        raise ValueError("Invalid project configuration; run validate-config for details")
+
     plan: Dict[str, Any] = {
         "command": command,
         "project": {

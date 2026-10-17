@@ -14,19 +14,19 @@ from apibackuper.storage import (
 
 class TestFileStorage:
     """Tests for base FileStorage class"""
-    
+
     def test_exists_not_implemented(self):
         """Test that exists raises NotImplementedError"""
         storage = FileStorage()
         with pytest.raises(NotImplementedError):
             storage.exists("test")
-    
+
     def test_store_not_implemented(self):
         """Test that store raises NotImplementedError"""
         storage = FileStorage()
         with pytest.raises(NotImplementedError):
             storage.store("test", b"content")
-    
+
     def test_close_no_op(self):
         """Test that close does nothing by default"""
         storage = FileStorage()
@@ -283,6 +283,7 @@ class TestStorageEdgeCases:
         backend.save_object("empty.json", b"")
         assert "empty.json" in backend.list_objects("object")
         assert backend.get_object("empty.json", "object") == b""
+        backend.close()
 
     def test_zip_empty_content(self, temp_dir):
         """Zip backend round-trips empty bytes."""
@@ -292,6 +293,7 @@ class TestStorageEdgeCases:
         backend.save_object("empty.json", b"")
         assert "empty.json" in backend.list_objects("object")
         assert backend.get_object("empty.json", "object") == b""
+        backend.close()
 
     def test_filesystem_binary_content(self, temp_dir):
         """Non-UTF-8 binary content round-trips intact."""
@@ -300,6 +302,7 @@ class TestStorageEdgeCases:
         payload = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
         backend.save_object("blob.bin", payload)
         assert backend.get_object("blob.bin", "object") == payload
+        backend.close()
 
     def test_zip_binary_content(self, temp_dir):
         """Zip backend round-trips binary content."""
@@ -309,6 +312,7 @@ class TestStorageEdgeCases:
         payload = bytes(range(256))  # full byte range
         backend.save_object("blob.bin", payload)
         assert backend.get_object("blob.bin", "object") == payload
+        backend.close()
 
     def test_sqlite_binary_content(self, temp_dir):
         """SQLite backend round-trips binary content."""
@@ -318,6 +322,7 @@ class TestStorageEdgeCases:
         payload = b"\x00\x01\x02\xff\xfe\xfd"
         backend.save_object("blob.bin", payload)
         assert backend.get_object("blob.bin", "object") == payload
+        backend.close()
 
 
 class TestLegacyStorageDeprecation:
@@ -366,4 +371,3 @@ class TestLegacyStorageDeprecation:
             ]
         # No deprecation warnings on import alone.
         assert deprecation_warnings == []
-

@@ -4,29 +4,35 @@ description: "apibackuper create command reference"
 ---
 # `create`
 
-Creates a new project directory with a starter configuration file.
+Creates a project directory with a minimal `apibackuper.cfg` containing the
+`settings` section. Configure the endpoint before running other commands.
 
 ```bash
 apibackuper create etrust
-apibackuper create etrust --url https://api.example.com/items
+cd etrust
+# save a complete apibackuper.yaml, using a template or the quick start
+apibackuper validate-config
+apibackuper run full --dry-run
 ```
 
 **Arguments:**
 
 - `name` — project directory name
 
-**Key options:**
+`--verbose` / `-v` enables console logging.
 
-- `--url` / `-u` — API URL (stored for later editing; auto-init is limited)
-- `--http-mode` / `-m` — `GET` or `POST` (default `GET`)
-- `--iterateby` / `-b` — `page` or `number` (default `page`)
-- `--work-modes` / `-w` — `full`, `incremental`, `update` (default `full`)
-- `--pagekey` / `-k` — page/iteration parameter name
-- `--pagesize` / `-s` — page size
-- `--datakey` / `-d` — response field that holds items
-- `--itemkey` / `-i` — unique item key (comma-separated for composites)
-- `--changekey` / `-e` — change-detection field
-- `--verbose` / `-v`
+## Configure the generated project
 
-After create, edit `apibackuper.yaml` (and `params.json` for POST APIs), then
-run [`estimate`](/commands/estimate) and [`run`](/commands/run).
+Save `apibackuper.yaml` using the [quick start](/getting-started/quick-start)
+or a [template](/examples/templates). YAML takes precedence over the generated
+INI file, which can then be removed. For POST APIs, also create `params.json`.
+
+`--url` / `-u`, `--config` / `-c`, `--http-mode` / `-m`, `--iterateby` / `-b`,
+`--work-modes` / `-w`, `--pagekey` / `-k`, `--pagesize` / `-s`,
+`--datakey` / `-d`, `--itemkey` / `-i` and `--changekey` / `-e` are accepted
+for compatibility. They currently do not populate or select the configuration.
+Set the corresponding YAML fields explicitly. With `--url`, the CLI prints
+a reminder to edit the configuration manually.
+
+To generate YAML from a live URL, use [`detect --url URL --write-config`](/commands/detect)
+and review its suggestions. Detection makes HTTP requests; `create` does not.

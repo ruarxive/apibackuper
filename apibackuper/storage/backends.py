@@ -1,6 +1,8 @@
 import os
 import re
+import shutil
 import sqlite3
+import tempfile
 from typing import List, Optional
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -55,46 +57,149 @@ class StorageBackend:
     def close(self) -> None:
         pass
 
+    def flush(self) -> None:
+        """Make saved pages durable before advancing a checkpoint."""
+
+
+def _is_page(name: str) -> bool:
+    return name.rsplit("/", 1)[-1].startswith("page_")
+
 
 class ZipStorageBackend(StorageBackend):
-    """ZIP storage backend implementation."""
+    """ZIP with a durable per-member journal and atomic archive publication.
+
+    Appending directly can destroy the central directory on process termination.
+    Journal pages remain readable after a crash; close compacts them once into a
+    replacement ZIP, preserving the previous ZIP until the replacement is ready.
+    """
 
     def __init__(self, filename: str, mode: str = "a", compression=ZIP_DEFLATED) -> None:
-        self._zip = ZipFile(filename, mode=mode, compression=compression)
+        self._filename = filename
+        self._mode = mode
+        self._compression = compression
+        self._journal = filename + ".journal"
+        self._closed = False
+        if mode == "w":
+            if os.path.isdir(self._journal):
+                shutil.rmtree(self._journal)
+            with ZipFile(filename, "w", compression=compression):
+                pass
+        elif mode != "r" and not os.path.exists(filename):
+            with ZipFile(filename, "w", compression=compression):
+                pass
+        self._zip = ZipFile(filename, "r")
         self._names = set(self._zip.namelist())
+        self._pending = set()
+        if os.path.isdir(self._journal):
+            for directory, _, files in os.walk(self._journal):
+                for entry in files:
+                    if entry.endswith(".pending"):
+                        name = os.path.relpath(os.path.join(directory, entry), self._journal)[:-8]
+                        self._pending.add(name.replace(os.sep, "/"))
+            self._names.update(self._pending)
 
     def save_page(self, name: str, content: bytes) -> None:
-        # P2.22: central name sanitization (§5.2).
-        safe_name = safe_member_name(name)
-        self._zip.writestr(safe_name, content)
-        self._names.add(safe_name)
+        self.save_object(name, content)
 
     def save_object(self, name: str, content: bytes) -> None:
-        safe_name = safe_member_name(name)
-        self._zip.writestr(safe_name, content)
-        self._names.add(safe_name)
+        if self._mode == "r" or self._closed:
+            raise ValueError("Storage is not open for writing")
+        name = safe_member_name(name)
+        destination = os.path.join(self._journal, name + ".pending")
+        os.makedirs(os.path.dirname(destination), exist_ok=True)
+        fd, temporary = tempfile.mkstemp(dir=os.path.dirname(destination))
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, destination)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+        self._pending.add(name)
+        self._names.add(name)
 
     def list_objects(self, kind: str = "page") -> List[str]:
-        if kind == "page":
-            return sorted([name for name in self._names if name.startswith("page_")])
-        return sorted(self._names)
+        return sorted(name for name in self._names if kind != "page" or _is_page(name))
 
     def get_object(self, name: str, kind: str = "page") -> Optional[bytes]:
         if name not in self._names:
             return None
+        if name in self._pending:
+            with open(os.path.join(self._journal, name + ".pending"), "rb") as handle:
+                return handle.read()
         with self._zip.open(name, "r") as handle:
             return handle.read()
 
     def close(self) -> None:
+        if self._closed:
+            return
+        if self._mode != "r" and self._pending:
+            fd, temporary = tempfile.mkstemp(dir=os.path.dirname(os.path.abspath(self._filename)))
+            os.close(fd)
+            try:
+                with ZipFile(temporary, "w", compression=self._compression) as target:
+                    for name in sorted(self._names):
+                        if name in self._pending:
+                            with (
+                                open(
+                                    os.path.join(self._journal, name + ".pending"), "rb"
+                                ) as reader,
+                                target.open(name, "w") as writer,
+                            ):
+                                shutil.copyfileobj(reader, writer)
+                        else:
+                            with self._zip.open(name) as reader, target.open(name, "w") as writer:
+                                shutil.copyfileobj(reader, writer)
+                with open(temporary, "rb") as handle:
+                    os.fsync(handle.fileno())
+                self._zip.close()
+                os.replace(temporary, self._filename)
+                shutil.rmtree(self._journal)
+                self._pending.clear()
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+                if self._zip.fp is None and not self._closed:
+                    self._zip = ZipFile(self._filename, "r")
         self._zip.close()
+        self._closed = True
+
+    def flush(self) -> None:
+        # Each journal file was fsynced before its atomic rename. Preserve the
+        # original ZIP central directory until close's atomic replacement.
+        if self._mode != "r" and os.path.isdir(self._journal):
+            if os.name == "nt":
+                return
+            for directory, _, _ in os.walk(self._journal):
+                descriptor = os.open(directory, os.O_RDONLY)
+                try:
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+
+
+def publish_zip(staging: str, destination: str) -> None:
+    """Keep old journal data recoverable without overlaying the replacement ZIP."""
+    if os.path.isdir(destination + ".journal") and os.path.exists(destination):
+        previous = ZipStorageBackend(destination)
+        previous.close()
+    os.replace(staging, destination)
 
 
 class SqliteStorageBackend(StorageBackend):
     """SQLite storage backend implementation."""
 
-    def __init__(self, filename: str, reset: bool = False) -> None:
-        self._conn = sqlite3.connect(filename)
-        self._ensure_tables(reset=reset)
+    def __init__(self, filename: str, reset: bool = False, read_only: bool = False) -> None:
+        if read_only:
+            from pathlib import Path
+
+            self._conn = sqlite3.connect(Path(filename).resolve().as_uri() + "?mode=ro", uri=True)
+        else:
+            self._conn = sqlite3.connect(filename)
+            self._ensure_tables(reset=reset)
+        self._closed = False
 
     def _ensure_tables(self, reset: bool = False) -> None:
         cursor = self._conn.cursor()
@@ -153,7 +258,9 @@ class SqliteStorageBackend(StorageBackend):
         return row[0]
 
     def close(self) -> None:
-        self._conn.close()
+        if not self._closed:
+            self._conn.close()
+            self._closed = True
 
 
 class FilesystemStorageBackend(StorageBackend):
@@ -177,29 +284,42 @@ class FilesystemStorageBackend(StorageBackend):
         self._root = os.path.abspath(root)
         if mode == "full" and os.path.isdir(self._root):
             shutil.rmtree(self._root)
+        if mode == "read" and not os.path.isdir(self._root):
+            raise FileNotFoundError(self._root)
         os.makedirs(self._root, exist_ok=True)
         self._index: dict[str, set[str]] = {self._PAGE_PREFIX: set(), self._OBJECT_PREFIX: set()}
         # Pre-populate from existing files so list_objects works after restart.
         if os.path.isdir(self._root):
-            for entry in os.listdir(self._root):
-                if entry.startswith(self._PAGE_PREFIX):
-                    self._index[self._PAGE_PREFIX].add(entry)
-                else:
-                    self._index[self._OBJECT_PREFIX].add(entry)
+            for directory, _, files in os.walk(self._root):
+                for entry in files:
+                    name = os.path.relpath(os.path.join(directory, entry), self._root).replace(
+                        os.sep, "/"
+                    )
+                    prefix = self._PAGE_PREFIX if _is_page(name) else self._OBJECT_PREFIX
+                    self._index[prefix].add(name)
 
     def _safe_path(self, name: str) -> str:
         """Resolve name to a path inside ``root``, rejecting traversal attempts."""
         clean = name.lstrip("/").lstrip("\\")
-        fullname = os.path.abspath(os.path.join(self._root, clean))
-        if not fullname.startswith(self._root + os.sep) and fullname != self._root:
+        fullname = os.path.realpath(os.path.join(self._root, clean))
+        root = os.path.realpath(self._root)
+        if not fullname.startswith(root + os.sep) and fullname != root:
             raise ValueError(f"Path traversal detected: {name}")
         return fullname
 
     def _save(self, prefix: str, name: str, content: bytes) -> None:
         fullname = self._safe_path(name)
         os.makedirs(os.path.dirname(fullname), exist_ok=True)
-        with open(fullname, "wb") as fobj:
-            fobj.write(content)
+        fd, temporary = tempfile.mkstemp(dir=os.path.dirname(fullname))
+        try:
+            with os.fdopen(fd, "wb") as fobj:
+                fobj.write(content)
+                fobj.flush()
+                os.fsync(fobj.fileno())
+            os.replace(temporary, fullname)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
         self._index[prefix].add(name)
 
     def save_page(self, name: str, content: bytes) -> None:
@@ -229,11 +349,11 @@ class FilesystemStorageBackend(StorageBackend):
 
 def build_storage_backend(storage_type: str, storage_path: str, mode: str) -> StorageBackend:
     if storage_type == "zip":
-        zip_mode = "w" if mode == "full" else "a"
+        zip_mode = "w" if mode == "full" else "r" if mode == "read" else "a"
         return ZipStorageBackend(storage_path, mode=zip_mode)
     if storage_type == "sqlite":
         reset = mode == "full"
-        return SqliteStorageBackend(storage_path, reset=reset)
+        return SqliteStorageBackend(storage_path, reset=reset, read_only=mode == "read")
     if storage_type == "filesystem":
         return FilesystemStorageBackend(storage_path, mode=mode)
     raise ValueError(f"Unsupported storage type: {storage_type}")

@@ -21,7 +21,7 @@ you're up and running:
 * **`templates/page-based.yaml`** — minimal page-number pagination (page=1, page=2, …).
 * **`templates/skip-offset.yaml`** — offset/skip pagination for APIs without a count (e.g. Elasticsearch-style).
 * **`templates/bearer-auth.yaml`** — page-based with a static `Authorization: Bearer …` header.
-* **`templates/follow-multihop.yaml`** — fetch a list endpoint, follow each item to its details page.
+* **`templates/follow-multihop.yaml`** — illustrates `follow.rules` syntax. Rules read original backup records independently; automatic multi-hop chaining is not implemented. Adapt the endpoints and keys before use.
 
 ## Features
 
@@ -71,6 +71,13 @@ python -m apibackuper run full
 > the URLs and rate-limit settings before fetching live data.
 
 ## Writing your own
+
+Validate all shipped YAML projects and templates without contacting their APIs,
+from the repository root:
+
+```bash
+python -m scripts.validate_examples
+```
 
 The simplest starting point is to copy `templates/page-based.yaml`,
 edit the `project.url`, set `params.page_size_limit` to the upstream

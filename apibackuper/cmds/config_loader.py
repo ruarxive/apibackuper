@@ -119,6 +119,42 @@ def load_json_file(filename: str, default: Optional[Dict[str, Any]] = None) -> D
     return data
 
 
+def parse_status_codes(value: Any) -> List[int]:
+    """Normalize YAML sequences and INI strings into HTTP status codes.
+
+    A bracketed JSON list is accepted for compatibility with configurations
+    previously read through the string-only YAML adapter.
+    """
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return []
+        if value.startswith("["):
+            try:
+                value = json.loads(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("HTTP status codes must be a list of integers") from exc
+        else:
+            value = value.split(",")
+
+    if not isinstance(value, (list, tuple)):
+        raise ValueError("HTTP status codes must be a list or comma-separated string")
+
+    codes = []
+    for entry in value:
+        if isinstance(entry, bool) or not isinstance(entry, (int, str)):
+            raise ValueError(f"Invalid HTTP status code: {entry!r}")
+        if isinstance(entry, str):
+            entry = entry.strip()
+            if not re.fullmatch(r"[0-9]{3}", entry):
+                raise ValueError(f"Invalid HTTP status code: {entry!r}")
+        code = int(entry)
+        if not 100 <= code <= 599:
+            raise ValueError(f"HTTP status code must be between 100 and 599: {code}")
+        codes.append(code)
+    return codes
+
+
 def load_schema() -> Optional[Dict[str, Any]]:
     """Load JSON schema for YAML config validation"""
     if not JSONSCHEMA_AVAILABLE:
@@ -223,12 +259,15 @@ def validate_yaml_config(
                     }
                 )
         return False, errors
-    except (IOError, OSError, ValueError, AttributeError):
-        # Don't fail on validation errors, just log them
-        return True, []
     except Exception as e:
         logging.error("Error during schema validation: %s", e)
-        return True, []  # Don't fail on validation errors, just log them
+        return False, [
+            {
+                "message": f"Could not validate configuration: {e}",
+                "path": "",
+                "schema_path": "",
+            }
+        ]
 
 
 class YAMLConfigParser:
@@ -236,6 +275,8 @@ class YAMLConfigParser:
 
     def __init__(self, yaml_data: Optional[Dict[str, Any]]) -> None:
         """Initialize with YAML data (dict)"""
+        if yaml_data is not None and not isinstance(yaml_data, dict):
+            raise ValueError("YAML configuration must be a mapping")
         self._data: Dict[str, Any] = yaml_data if yaml_data else {}
 
     def has_section(self, section: str) -> bool:
@@ -248,7 +289,13 @@ class YAMLConfigParser:
 
     def has_option(self, section: str, option: str) -> bool:
         """Check if option exists in section"""
-        return self.has_section(section) and option in self._data[section]
+        return isinstance(self._data.get(section), dict) and option in self._data[section]
+
+    def getvalue(self, section: str, option: str, fallback: Any = None) -> Any:
+        """Return a native YAML value, including lists, mappings and scalars."""
+        if not self.has_option(section, option):
+            return fallback
+        return self._data[section][option]
 
     def get(self, section: str, option: str, fallback: Optional[str] = None) -> str:
         """Get option value from section"""

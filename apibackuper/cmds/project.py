@@ -1,8 +1,6 @@
 # -* coding: utf-8 -*-
 import configparser
 import csv
-import gzip
-import io
 import json
 import logging
 import os
@@ -14,7 +12,6 @@ import time
 import warnings
 import zipfile
 from contextlib import suppress
-from datetime import datetime, timezone
 from runpy import run_path
 from timeit import default_timer as timer
 from typing import Any, Dict, List, Optional, Tuple
@@ -27,7 +24,6 @@ import requests
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
 
-import xmltodict
 
 try:
     import yaml
@@ -43,11 +39,10 @@ from tqdm import tqdm
 
 from .. import __version__
 from ..auth import AuthHandler
-from ..common import get_dict_value, update_dict_values
+from ..common import get_dict_value
 from ..constants import (
     DEFAULT_DELAY,
     DEFAULT_ERROR_STATUS_CODES,
-    DEFAULT_NUMBER_OF_PAGES,
     DEFAULT_RETRY_COUNT,
     DEFAULT_TIMEOUT,
     FIELD_SPLITTER,
@@ -55,57 +50,7 @@ from ..constants import (
     RETRY_DELAY,
 )
 from ..rate_limiter import RateLimiter
-from ..storage import (
-    FilesystemStorageBackend,
-    ZipStorageBackend,
-    build_storage_backend,
-)
-
-try:
-    import pandas as pd
-
-    PARQUET_AVAILABLE = True
-except ImportError:
-    PARQUET_AVAILABLE = False
-
-try:
-    import zstandard as zstd
-
-    ZSTD_AVAILABLE = True
-except ImportError:
-    ZSTD_AVAILABLE = False
-
-# Helper class for Zstandard text file writing
-if ZSTD_AVAILABLE:
-
-    class ZstdTextWriter:
-        """Wrapper for writing text to Zstandard-compressed files"""
-
-        def __init__(self, filename, level=22, encoding="utf8"):
-            self.f = open(filename, "wb")
-            cctx = zstd.ZstdCompressor(level=level)
-            self.compressor = cctx.stream_writer(self.f)
-            self.text_wrapper = io.TextIOWrapper(self.compressor, encoding=encoding)
-
-        def write(self, data):
-            return self.text_wrapper.write(data)
-
-        def close(self):
-            if self.text_wrapper:
-                self.text_wrapper.flush()
-                self.text_wrapper.close()
-            if self.compressor:
-                self.compressor.close()
-            if self.f:
-                self.f.close()
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            self.close()
-            return False
-
+from ..storage import FilesystemStorageBackend, ZipStorageBackend, build_storage_backend
 
 # Import from refactored modules
 from .config_loader import (
@@ -113,19 +58,18 @@ from .config_loader import (
     UnresolvedEnvVarError,
     YAMLConfigParser,
     load_json_file,
+    parse_status_codes,
     substitute_env_vars,
     validate_yaml_config,
-)
-from .export import process_record, serialize_record
-from .follow import (
-    compute_pending_targets,
-    extract_keys_from_pages,
-    extract_url_map_from_pages,
 )
 from .utils import (
     _url_replacer,
     load_csv_data,
     load_file_list,
+    redact_headers,
+    redact_params,
+    redact_text,
+    redact_url,
 )
 from .where_filter import match_where
 
@@ -175,7 +119,7 @@ class ProjectBuilder:
 
     def __init__(self, project_path: Optional[str] = None) -> None:
         self.http = requests.Session()
-        self.project_path = os.getcwd() if project_path is None else project_path
+        self.project_path = os.path.abspath(project_path or os.getcwd())
         # Initialize logfile with default value early to ensure it's always available
         self.logfile = "apibackuper.log"
         # Store YAML_AVAILABLE for later use
@@ -254,12 +198,9 @@ class ProjectBuilder:
                 # Substitute ${VAR} placeholders (improve-security 4.1-4.3).
                 if yaml_data:
                     try:
-                        yaml_data = substitute_env_vars(
-                            yaml_data,
-                            source=filename,
-                        )
-                    except UnresolvedEnvVarError as e:
-                        logging.error("%s", e)
+                        yaml_data = substitute_env_vars(yaml_data, source=filename)
+                    except UnresolvedEnvVarError as exc:
+                        self._config_error = exc
                         return
 
                 # Validate YAML config against schema
@@ -290,6 +231,16 @@ class ProjectBuilder:
             logging.warning("INI configuration is deprecated; use YAML instead.")
 
         if self.config is not None:
+            required = (
+                ("settings", "name"),
+                ("project", "url"),
+                ("project", "http_mode"),
+                ("storage", "storage_type"),
+            )
+            if any(not self.config.has_option(section, key) for section, key in required):
+                # Preserve the parsed configuration for validate-config while
+                # avoiding accidental execution with incomplete attributes.
+                return
             self.storage_path = (
                 self.config.get("storage", "storage_path")
                 if self.config.has_option("storage", "storage_path")
@@ -476,7 +427,14 @@ class ProjectBuilder:
                 else None
             )
             self.storage_file = self._resolve_storage_file()
-            self.details_storage_file = os.path.join(self.storagedir, "details.zip")
+            self.details_storage_file = os.path.join(
+                (
+                    os.path.dirname(self.storage_file)
+                    if self.storage_type == "sqlite"
+                    else self.storagedir
+                ),
+                "details.zip",
+            )
 
             self.code_postfetch = (
                 self.config.get("code", "postfetch")
@@ -631,18 +589,10 @@ class ProjectBuilder:
                     # raised ``ValueError: int("[500")`` on the YAML list form
                     # and crashed the CLI before any command ran (§4.6 of the
                     # 2026-10 analysis report).
-                    raw = self.config.get("error_handling", "retry_on_errors")
-                    if isinstance(raw, (list, tuple)):
-                        codes_iter = raw
-                    else:
-                        codes_iter = str(raw).split(",")
-                    parsed_codes = []
-                    for c in codes_iter:
-                        try:
-                            parsed_codes.append(int(str(c).strip()))
-                        except (TypeError, ValueError) as e:
-                            raise ValueError(f"Invalid retry_on_errors entry {c!r}: {e}") from e
-                    self.error_retry_codes = parsed_codes
+                    getter = getattr(self.config, "getvalue", self.config.get)
+                    self.error_retry_codes = parse_status_codes(
+                        getter("error_handling", "retry_on_errors")
+                    )
                 if self.config.has_option("error_handling", "max_consecutive_errors"):
                     self.max_consecutive_errors = _safe_int(
                         self.config.get("error_handling", "max_consecutive_errors"),
@@ -756,17 +706,8 @@ class ProjectBuilder:
                         0,
                     )
                 if self.config.has_option("request", "retry_on_status"):
-                    codes_str = self.config.get("request", "retry_on_status")
-                    parsed_codes = []
-                    for c in str(codes_str).split(","):
-                        try:
-                            parsed_codes.append(int(c.strip()))
-                        except (TypeError, ValueError):
-                            logging.warning(
-                                "request.retry_on_status entry %r is not an integer",
-                                c,
-                            )
-                    self.retry_on_status = parsed_codes
+                    getter = getattr(self.config, "getvalue", self.config.get)
+                    self.retry_on_status = parse_status_codes(getter("request", "retry_on_status"))
                 if self.config.has_option("request", "parallelism"):
                     self.parallelism = max(
                         1,
@@ -821,6 +762,8 @@ class ProjectBuilder:
                 self.update_mode = "by_change_key" if self.change_key else "by_timestamp"
 
     def _raise_config_not_found(self) -> None:
+        if getattr(self, "_config_error", None) is not None:
+            raise self._config_error
         """Raise a consistent error when config file is missing."""
         config_files = [
             os.path.join(self.project_path, "apibackuper.yaml"),
@@ -851,6 +794,8 @@ class ProjectBuilder:
             if candidate.endswith(os.sep) or os.path.isdir(candidate):
                 candidate = os.path.join(candidate, "storage.db")
             return candidate
+        if self.storage_type == "filesystem":
+            return self.storagedir
         return os.path.join(self.storagedir, "storage.zip")
 
     def _load_state(self) -> Dict[str, Any]:
@@ -864,7 +809,7 @@ class ProjectBuilder:
             logging.warning("Failed to load state file %s: %s", self.state_file, e)
             return {}
 
-    def _save_state(self, state: Dict[str, Any]) -> None:
+    def _save_state(self, state: Dict[str, Any], strict: bool = False) -> None:
         """Persist run state to disk atomically.
 
         Writes to ``state_file + ".tmp"`` first, fsync, then ``os.replace()``
@@ -879,6 +824,8 @@ class ProjectBuilder:
                 os.makedirs(state_dir)
             _atomic_write_json(self.state_file, state)
         except (IOError, OSError, ValueError) as e:
+            if strict:
+                raise
             logging.warning("Failed to write state file %s: %s", self.state_file, e)
 
     def _load_checkpoint(self) -> Dict[str, Any]:
@@ -892,7 +839,7 @@ class ProjectBuilder:
             logging.warning("Failed to load checkpoint file %s: %s", self.checkpoint_file, e)
             return {}
 
-    def _save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+    def _save_checkpoint(self, checkpoint: Dict[str, Any], strict: bool = False) -> None:
         """Persist checkpoint to disk atomically.
 
         Same atomic-write pattern as :meth:`_save_state` so a crashed run
@@ -907,6 +854,8 @@ class ProjectBuilder:
                 os.makedirs(checkpoint_dir)
             _atomic_write_json(self.checkpoint_file, checkpoint)
         except (IOError, OSError, ValueError) as e:
+            if strict:
+                raise
             logging.warning("Failed to write checkpoint file %s: %s", self.checkpoint_file, e)
 
     def _run_hook(self, hook_name: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -940,7 +889,9 @@ class ProjectBuilder:
                     cmd, capture_output=True, text=True, timeout=30, check=False
                 )
                 if result.returncode != 0:
-                    logging.warning("Hook %s failed: %s", hook_name, result.stderr.strip())
+                    logging.warning(
+                        "Hook %s failed: %s", hook_name, redact_text(result.stderr.strip())
+                    )
                     return None
                 try:
                     return json.loads(result.stdout) if result.stdout else None
@@ -950,7 +901,7 @@ class ProjectBuilder:
             finally:
                 os.unlink(context_path)
         except (IOError, OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as e:
-            logging.warning("Error running hook %s: %s", hook_name, e)
+            logging.warning("Error running hook %s: %s", hook_name, redact_text(e))
             return None
 
     def _serialize_response(self, response: requests.Response) -> Dict[str, Any]:
@@ -1012,6 +963,7 @@ class ProjectBuilder:
         headers: Optional[Dict[str, str]],
         params: Dict[str, Any],
         flatten: Optional[Dict[str, str]] = None,
+        http_mode: Optional[str] = None,
     ) -> requests.Response:
         """Single http/https request with authentication and rate limiting.
 
@@ -1020,11 +972,11 @@ class ProjectBuilder:
         actionable error wrapping; this method owns the OAuth2 refresh
         trigger and the rate-limiter ordering.
         """
-        from .http_client import (
-            build_request_kwargs,
-            build_retry_kwargs,
-            wrap_request_exception,
-        )
+        from .http_client import build_request_kwargs, build_retry_kwargs, wrap_request_exception
+        from .utils import append_query
+
+        http_mode = http_mode or self.http_mode
+        headers = dict(headers or {})
 
         try:
             # Apply rate limiting first — no point making the request if
@@ -1043,7 +995,7 @@ class ProjectBuilder:
                     headers = auth_headers
 
             (method, request_kwargs, log_safe_url), actual_query_string = build_request_kwargs(
-                http_mode=self.http_mode,
+                http_mode="GET" if http_mode == "HEAD" else http_mode,
                 url=url,
                 params=params,
                 flatten=flatten if self.flat_params else None,
@@ -1058,10 +1010,10 @@ class ProjectBuilder:
             logging.info("url: %s", log_safe_url)
 
             session_method = getattr(self.http, method)
+            if http_mode == "HEAD":
+                session_method = self.http.head
             if actual_query_string is not None:
-                response = session_method(url + actual_query_string, **request_kwargs)
-            elif self.http_mode == "GET":
-                response = session_method(url, **request_kwargs)
+                response = session_method(append_query(url, actual_query_string), **request_kwargs)
             else:
                 response = session_method(url, **request_kwargs)
 
@@ -1087,8 +1039,14 @@ class ProjectBuilder:
                     else:
                         headers = auth_headers
                     retry_kwargs = build_retry_kwargs(request_kwargs, headers)
-                    if self.http_mode == "GET":
-                        response = self.http.get(url, params=params, **retry_kwargs)
+                    if http_mode in ("GET", "HEAD"):
+                        method = self.http.head if http_mode == "HEAD" else self.http.get
+                        if actual_query_string is not None:
+                            response = method(
+                                append_query(url, actual_query_string), **retry_kwargs
+                            )
+                        else:
+                            response = method(url, params=params, **retry_kwargs)
                     else:
                         response = self.http.post(url, json=params, **retry_kwargs)
 
@@ -1102,7 +1060,34 @@ class ProjectBuilder:
                 default_delay=self.default_delay,
                 logfile=getattr(self, "logfile", None),
             )
-            raise wrapped from e
+            raise wrapped from None
+
+    def _request(self, url, headers=None, params=None, flatten=None, http_mode=None):
+        """Execute every command's requests with bounded retries and status checks."""
+        from .http_client import RequestFailed
+        from .utils import redact_text, redact_url
+
+        response = None
+        budget = max(0, self.retry_max_retries)
+        for attempt in range(budget + 1):
+            try:
+                response = self._single_request(
+                    url, headers, params or {}, flatten, http_mode=http_mode
+                )
+            except RuntimeError as exc:
+                if attempt == budget:
+                    raise RuntimeError(redact_text(exc)) from None
+            else:
+                if 200 <= response.status_code < 300:
+                    if self.default_delay:
+                        time.sleep(self.default_delay)
+                    return response
+                if attempt == budget or not self._should_retry(response.status_code):
+                    raise RequestFailed(
+                        f"HTTP {response.status_code} for {redact_url(url)}", response.status_code
+                    )
+            time.sleep(self._get_retry_delay(attempt + 1, response))
+        raise RuntimeError("Request retry budget exhausted")
 
     @staticmethod
     def create(name: str) -> None:
@@ -1156,934 +1141,17 @@ class ProjectBuilder:
             logging.error("OS error creating project %s: %s", name, e)
             raise RuntimeError(error_msg) from e
 
-    def export(
-        self,
-        format: str,
-        filename: str,
-        fields: Optional[List[str]] = None,
-        where: Optional[str] = None,
-    ) -> None:  # noqa: A002, W0622
-        """Exports data as JSON lines, gzip, zstd, or parquet formats"""
-        if self.config is None:
-            self._raise_config_not_found()
-            return
+    def export(self, format: str, filename: str, fields=None, where=None) -> None:
+        """Export retained pages or followed objects through a shared pipeline."""
+        from .export import export_project
 
-        if not filename:
-            print("Error: Output filename is required")
-            return
-
-        try:
-            condition = self._parse_where(where)
-            # Check if parquet format is requested
-            if format == "parquet":
-                if not PARQUET_AVAILABLE:
-                    print(
-                        "Parquet format requires pandas and pyarrow. Please install them: pip install pandas pyarrow"
-                    )
-                    return
-                # Collect all records first for parquet export
-                all_records = []
-            elif format == "jsonl":
-                try:
-                    outfile = open(filename, "w", encoding="utf8")  # noqa: SIM117
-                except (IOError, PermissionError) as e:
-                    error_msg = (
-                        f"Cannot write to output file: {filename}\n"
-                        f"  Error: {str(e)}\n"
-                        f"  Suggestions:\n"
-                        f"    - Check if you have write permissions for the file/directory\n"
-                        f"    - Verify the directory exists and is accessible\n"
-                        f"    - Check if the file is locked by another process\n"
-                        f"    - Ensure you have sufficient disk space"
-                    )
-                    logging.error("Error opening output file %s: %s", filename, e)
-                    print(f"Error: {error_msg}")
-                    return
-            elif format == "gzip":
-                try:
-                    outfile = gzip.open(filename, mode="wt", encoding="utf8")  # noqa: SIM117
-                except (IOError, PermissionError) as e:
-                    error_msg = (
-                        f"Cannot write to gzip file: {filename}\n"
-                        f"  Error: {str(e)}\n"
-                        f"  Suggestions:\n"
-                        f"    - Check if you have write permissions for the file/directory\n"
-                        f"    - Verify the directory exists and is accessible\n"
-                        f"    - Check if the file is locked by another process\n"
-                        f"    - Ensure you have sufficient disk space"
-                    )
-                    logging.error("Error opening gzip file %s: %s", filename, e)
-                    print(f"Error: {error_msg}")
-                    return
-            elif format == "zstd":
-                if not ZSTD_AVAILABLE:
-                    print(
-                        "Zstandard format requires zstandard library. "
-                        "Please install it: pip install zstandard"
-                    )
-                    return
-                try:
-                    # Create Zstandard compressor with maximum compression level (22)
-                    outfile = ZstdTextWriter(filename, level=22, encoding="utf8")  # noqa: SIM117
-                except (IOError, PermissionError) as e:
-                    error_msg = (
-                        f"Cannot write to zstd file: {filename}\n"
-                        f"  Error: {str(e)}\n"
-                        f"  Suggestions:\n"
-                        f"    - Check if you have write permissions for the file/directory\n"
-                        f"    - Verify the directory exists and is accessible\n"
-                        f"    - Check if the file is locked by another process\n"
-                        f"    - Ensure you have sufficient disk space"
-                    )
-                    logging.error("Error opening zstd file %s: %s", filename, e)
-                    print(f"Error: {error_msg}")
-                    return
-            else:
-                print("Supported formats: 'jsonl', 'gzip', 'zstd', 'parquet'")
-                return
-        except (IOError, OSError, ValueError) as e:
-            logging.error("Error setting up export: %s", e)
-            print(f"Error: Failed to set up export: {e}")
-            return
-
-        progress_bar = None
-        try:
-            details_file = os.path.join(self.storagedir, "details.zip")
-            if self.config.has_section("follow") and os.path.exists(details_file):
-                try:
-                    mzip = ZipFile(details_file, mode="r", compression=ZIP_DEFLATED)
-                except (IOError, OSError, zipfile.BadZipFile) as e:
-                    logging.error("Error opening details zip file: %s", e)
-                    print(f"Error: Cannot read details file: {e}")
-                    if format != "parquet":
-                        outfile.close()
-                    return
-                try:
-                    file_list = mzip.namelist()
-                    total_files = len(file_list)
-                    if total_files > 0:
-                        progress_bar = tqdm(total=total_files, desc="Exporting files", unit="file")
-
-                    for fname in file_list:
-                        try:
-                            tf = mzip.open(fname, "r")
-                            logging.info("Loading %s", fname)
-                            try:
-                                data = json.load(tf)
-                            except (json.JSONDecodeError, ValueError) as e:
-                                logging.warning(f"Error parsing JSON from {fname}: {e}")
-                                continue
-                            finally:
-                                tf.close()
-                            # P3.31: the per-record filter / project / serialise
-                            # pipeline is now in cmds.export.process_record.
-                            # ``match_where`` is the predicate exported from
-                            # cmds.where_filter so the export behaviour stays
-                            # identical to the historical code.
-
-                            def _where_pred(rec: Any) -> bool:
-                                return match_where(rec, condition)
-
-                            where_pred = _where_pred
-                            if self.follow_data_key:
-                                follow_data = get_dict_value(
-                                    data,
-                                    self.follow_data_key,
-                                    splitter=self.field_splitter,
-                                )
-                                if isinstance(follow_data, dict):
-                                    follow_data = [follow_data]
-                                elif follow_data is None:
-                                    follow_data = []
-                                payload_data_key = None  # already flattened
-                            else:
-                                payload_data_key = self.data_key
-                            matched = process_record(
-                                data if payload_data_key is None else data,
-                                data_key=payload_data_key,
-                                field_splitter=self.field_splitter,
-                                fields=fields,
-                                where=where_pred,
-                            )
-                            if format == "parquet":
-                                all_records.extend(matched)
-                            else:
-                                for record in matched:
-                                    outfile.write(serialize_record(record))
-                        except (IOError, OSError, ValueError) as e:
-                            logging.warning("Error processing file %s: %s", fname, e)
-                        finally:
-                            if progress_bar:
-                                progress_bar.update(1)
-                finally:
-                    if progress_bar:
-                        progress_bar.close()
-                    mzip.close()
-            else:
-                if not os.path.exists(self.storage_file):
-                    print("Storage file not found %s" % (self.storage_file))
-                    if format != "parquet":
-                        outfile.close()
-                    return
-                if self.storage_type == "sqlite":
-                    try:
-                        storage_backend = build_storage_backend(
-                            "sqlite", self.storage_file, "continue"
-                        )
-                    except (IOError, OSError, ValueError) as e:
-                        print(f"Error: Cannot open storage backend: {e}")
-                        if format != "parquet":
-                            outfile.close()
-                        return
-                    try:
-                        file_list = storage_backend.list_objects("page")
-                        total_files = len(file_list)
-                        if total_files > 0:
-                            progress_bar = tqdm(
-                                total=total_files, desc="Exporting files", unit="file"
-                            )
-                        for fname in file_list:
-                            try:
-                                content = storage_backend.get_object(fname, "page")
-                                if content is None:
-                                    continue
-                                data = json.loads(content)
-                                if self.data_key:
-                                    for item in get_dict_value(
-                                        data, self.data_key, splitter=self.field_splitter
-                                    ):
-                                        if not self._match_where(item, condition):
-                                            continue
-                                        item = self._select_fields(item, fields)
-                                        if format == "parquet":
-                                            all_records.append(item)
-                                        else:
-                                            outfile.write(
-                                                json.dumps(item, ensure_ascii=False) + "\n"
-                                            )
-                                else:
-                                    for item in data:
-                                        if not self._match_where(item, condition):
-                                            continue
-                                        item = self._select_fields(item, fields)
-                                        if format == "parquet":
-                                            all_records.append(item)
-                                        else:
-                                            outfile.write(
-                                                json.dumps(item, ensure_ascii=False) + "\n"
-                                            )
-                            except (json.JSONDecodeError, ValueError) as e:
-                                logging.warning("Error parsing JSON from %s: %s", fname, e)
-                            finally:
-                                if progress_bar:
-                                    progress_bar.update(1)
-                    finally:
-                        if progress_bar:
-                            progress_bar.close()
-                        storage_backend.close()
-                else:
-                    storage_file = self.storage_file
-                    try:
-                        mzip = ZipFile(storage_file, mode="r", compression=ZIP_DEFLATED)
-                    except (IOError, OSError, zipfile.BadZipFile) as e:
-                        error_msg = (
-                            f"Cannot read storage file: {storage_file}\n"
-                            f"  Error: {str(e)}\n"
-                            f"  Suggestions:\n"
-                            f"    - Check if the file exists and is accessible\n"
-                            f"    - Verify file permissions\n"
-                            f"    - The file may be corrupted - try running the backup again\n"
-                            f"    - Check if the file is locked by another process"
-                        )
-                        logging.error("Error opening storage zip file %s: %s", storage_file, e)
-                        print(f"Error: {error_msg}")
-                        if format != "parquet":
-                            outfile.close()
-                        return
-                    try:
-                        file_list = mzip.namelist()
-                        total_files = len(file_list)
-                        if total_files > 0:
-                            progress_bar = tqdm(
-                                total=total_files, desc="Exporting files", unit="file"
-                            )
-
-                        for fname in file_list:
-                            try:
-                                tf = mzip.open(fname, "r")
-                                try:
-                                    data = json.load(tf)
-                                except (json.JSONDecodeError, ValueError) as e:
-                                    logging.warning(f"Error parsing JSON from {fname}: {e}")
-                                    continue
-                                finally:
-                                    tf.close()
-                                try:
-                                    if self.data_key:
-                                        for item in get_dict_value(
-                                            data, self.data_key, splitter=self.field_splitter
-                                        ):
-                                            if not self._match_where(item, condition):
-                                                continue
-                                            item = self._select_fields(item, fields)
-                                            if format == "parquet":
-                                                all_records.append(item)
-                                            else:
-                                                outfile.write(
-                                                    json.dumps(item, ensure_ascii=False) + "\n"
-                                                )
-                                    else:
-                                        for item in data:
-                                            if not self._match_where(item, condition):
-                                                continue
-                                            item = self._select_fields(item, fields)
-                                            if format == "parquet":
-                                                all_records.append(item)
-                                            else:
-                                                outfile.write(
-                                                    json.dumps(item, ensure_ascii=False) + "\n"
-                                                )
-                                except KeyError:
-                                    logging.info("Data key: %s not found", self.data_key)
-                            except (IOError, OSError, ValueError) as e:
-                                logging.warning("Error processing file %s: %s", fname, e)
-                            finally:
-                                if progress_bar:
-                                    progress_bar.update(1)
-                    finally:
-                        if progress_bar:
-                            progress_bar.close()
-                        mzip.close()
-
-            # Handle parquet export
-            if format == "parquet":
-                if len(all_records) == 0:
-                    print("No records found to export")
-                    return
-                try:
-                    df = pd.DataFrame(all_records)
-                    df.to_parquet(filename, engine="pyarrow", index=False)
-                    logging.info("Data exported to %s (%d records)", filename, len(all_records))
-                except (IOError, OSError, ValueError, ImportError) as e:
-                    logging.error("Error exporting to parquet: %s", str(e))
-                    print("Error exporting to parquet: %s" % str(e))
-            else:
-                try:
-                    outfile.close()
-                    logging.info("Data exported to %s", filename)
-                except (IOError, OSError) as e:
-                    logging.error("Error closing output file: %s", e)
-        except (IOError, OSError, ValueError) as e:
-            logging.error("Error during export: %s", e)
-            print(f"Error: Export failed: {e}")
-            if progress_bar:
-                try:
-                    progress_bar.close()
-                except Exception:
-                    pass
-            if format != "parquet" and "outfile" in locals():
-                try:
-                    outfile.close()
-                except Exception:
-                    pass
+        export_project(self, format, filename, fields=fields, where=where)
 
     def run(self, mode: str, resume: bool = False) -> None:
-        """Run data collection"""
-        if self.config is None:
-            self._raise_config_not_found()
-            return
+        """Collect data with durable storage and checkpoint publication."""
+        from .backup import run_backup
 
-        storage_backend = None
-        progress_bar = None
-        run_start_time = datetime.now(timezone.utc)
-        state = self._load_state() if mode == "update" else {}
-        checkpoint = self._load_checkpoint() if resume else {}
-        last_change_value = state.get("last_change_key")
-        last_run_end = state.get("last_run_end")
-        resume_page = checkpoint.get("last_page") if resume else None
-        pages_processed = 0
-        total_records = 0
-        total_bytes = 0
-        error_counts: Dict[str, int] = {}
-        try:
-            try:
-                if self.storage_type == "zip":
-                    os.makedirs(self.storagedir, exist_ok=True)
-                elif self.storage_type == "sqlite":
-                    storage_dir = os.path.dirname(self.storage_file)
-                    if storage_dir:
-                        os.makedirs(storage_dir, exist_ok=True)
-                else:
-                    print(f"Unsupported storage type: {self.storage_type}")
-                    return
-            except (OSError, PermissionError) as e:
-                logging.error("Error creating storage directory: %s", e)
-                print(f"Error: Cannot create storage directory: {e}")
-                return
-
-            process_func = None
-            if self.code_postfetch is not None:
-                try:
-                    script = run_path(self.code_postfetch)
-                    process_func = script.get("process")
-                    if process_func is None:
-                        logging.warning("No 'process' function found in postfetch script")
-                except (IOError, OSError, ValueError) as e:
-                    logging.error("Error loading postfetch script: %s", e)
-                    print(f"Warning: Error loading postfetch script: {e}")
-
-            try:
-                storage_backend = build_storage_backend(self.storage_type, self.storage_file, mode)
-            except (IOError, OSError, PermissionError, ValueError) as e:
-                logging.error("Error opening storage backend: %s", e)
-                print(f"Error: Cannot open storage backend: {e}")
-                return
-
-            start = timer()
-            try:
-                headers = load_json_file(
-                    os.path.join(self.project_path, "headers.json"), default={}
-                )
-            except (IOError, OSError, ValueError) as e:
-                logging.warning("Error loading headers.json: %s", e)
-                headers = {}
-
-            try:
-                params = load_json_file(os.path.join(self.project_path, "params.json"), default={})
-            except (IOError, OSError, ValueError) as e:
-                logging.warning("Error loading params.json: %s", e)
-                params = {}
-
-            if self.flat_params:
-                flatten = {}
-                for k, v in params.items():
-                    flatten[k] = str(v)
-            else:
-                flatten = None
-
-            try:
-                url_params = load_json_file(
-                    os.path.join(self.project_path, "url_params.json"), default=None
-                )
-            except (IOError, OSError, ValueError) as e:
-                logging.warning("Error loading url_params.json: %s", e)
-                url_params = None
-
-            hook_result = self._run_hook(
-                "before_run",
-                {
-                    "mode": mode,
-                    "project_path": self.project_path,
-                    "headers": headers,
-                    "params": params,
-                },
-            )
-            if isinstance(hook_result, dict):
-                headers = hook_result.get("headers", headers)
-                params = hook_result.get("params", params)
-
-            try:
-                if self.query_mode == "params":
-                    url = _url_replacer(self.start_url, url_params or {})
-                elif self.query_mode == "mixed":
-                    url = _url_replacer(self.start_url, url_params or {}, query_mode=True)
-                else:
-                    url = self.start_url
-                hook_result = self._run_hook(
-                    "before_request",
-                    {"url": url, "headers": headers, "params": params, "mode": mode, "page": None},
-                )
-                if isinstance(hook_result, dict):
-                    url = hook_result.get("url", url)
-                    headers = hook_result.get("headers", headers)
-                    params = hook_result.get("params", params)
-                response = self._single_request(url, headers, params, flatten)
-                self._run_hook(
-                    "after_response",
-                    {
-                        "url": url,
-                        "headers": headers,
-                        "params": params,
-                        "mode": mode,
-                        "page": None,
-                        "response": self._serialize_response(response),
-                    },
-                )
-            except requests.exceptions.RequestException as e:
-                error_msg = str(e)
-                if hasattr(e, "response") and e.response:
-                    status_code = e.response.status_code
-                    error_msg = (
-                        f"Failed to connect to API: HTTP {status_code}\n"
-                        f"  URL: {url}\n"
-                        f"  Error: {str(e)}\n"
-                        f"  Check your configuration and network connection"
-                    )
-                logging.error("Error making initial request to %s: %s", url, e)
-                print(f"Error: {error_msg}")
-                if storage_backend:
-                    storage_backend.close()
-                return
-            except (ValueError, RuntimeError, IOError) as e:
-                error_msg = (
-                    f"Unexpected error during initial request\n"
-                    f"  URL: {url}\n"
-                    f"  Error: {str(e)}\n"
-                    f"  Error type: {type(e).__name__}\n"
-                    f"  Check logs for details: {self.logfile if hasattr(self, 'logfile') else 'apibackuper.log'}"
-                )
-                logging.error(
-                    "Unexpected error in initial request to %s: %s", url, e, exc_info=True
-                )
-                print(f"Error: {error_msg}")
-                if storage_backend:
-                    storage_backend.close()
-                return
-
-            try:
-                if self.resp_type == "json":
-                    start_page_data = response.json()
-                elif self.resp_type == "xml":
-                    start_page_data = xmltodict.parse(response.content)
-                elif self.resp_type == "html" and process_func is not None:
-                    start_page_data = process_func(response.content)
-                else:
-                    error_msg = (
-                        f"Unsupported response type: {self.resp_type}\n"
-                        f"  Supported types: json, xml, html\n"
-                        f"  For HTML responses, you must configure a postfetch script in [code] section\n"
-                        f"  Update resp_type in [project] section of your config file"
-                    )
-                    logging.error("Unsupported response type: %s", self.resp_type)
-                    print(f"Error: {error_msg}")
-                    if storage_backend:
-                        storage_backend.close()
-                    return
-            except (json.JSONDecodeError, ValueError) as e:
-                error_msg = (
-                    f"Failed to parse API response as {self.resp_type}\n"
-                    f"  Error: {str(e)}\n"
-                    f"  Response type configured: {self.resp_type}\n"
-                    f"  Suggestions:\n"
-                    f"    - Verify the API is returning {self.resp_type} format\n"
-                    f"    - Check if response_type in [project] section matches actual API response\n"
-                    f"    - Review response in logs (if verbose mode enabled)\n"
-                    f"    - If using HTML response, ensure postfetch script is configured correctly"
-                )
-                logging.error("Error parsing response from %s: %s", url, e)
-                print(f"Error: {error_msg}")
-                if storage_backend:
-                    storage_backend.close()
-                return
-            except (IOError, OSError, RuntimeError) as e:
-                error_msg = (
-                    f"Failed to process API response\n"
-                    f"  Error: {str(e)}\n"
-                    f"  Response type: {self.resp_type}\n"
-                    f"  Error type: {type(e).__name__}\n"
-                    f"  Check logs for more details: {self.logfile if hasattr(self, 'logfile') else 'apibackuper.log'}"
-                )
-                logging.error("Error processing response from %s: %s", url, e, exc_info=True)
-                print(f"Error: {error_msg}")
-                if storage_backend:
-                    storage_backend.close()
-                return
-
-            if self.detect_enabled and self.resp_type == "json":
-                suggestions = self._detect_suggestions(start_page_data)
-                self._apply_detection(suggestions)
-
-            try:
-                if len(self.total_number_key) > 0:
-                    total = get_dict_value(
-                        start_page_data, self.total_number_key, splitter=self.field_splitter
-                    )
-                    if total is None:
-                        logging.warning("total_number_key not found in response")
-                        total = 0
-                    else:
-                        total = int(total)
-                    nr = 1 if total % self.page_limit > 0 else 0
-                    num_pages = (total // self.page_limit) + nr
-                elif len(self.pages_number_key) > 0:
-                    num_pages = get_dict_value(
-                        start_page_data, self.pages_number_key, splitter=self.field_splitter
-                    )
-                    if num_pages is None:
-                        logging.warning("pages_number_key not found in response")
-                        num_pages = DEFAULT_NUMBER_OF_PAGES
-                    else:
-                        num_pages = int(num_pages)
-                    total = num_pages * self.page_limit
-                else:
-                    num_pages = None
-                    total = None
-                if total is not None and num_pages is not None:
-                    logging.info("Total pages %d, records %d", num_pages, total)
-                    num_pages = int(num_pages)
-                else:
-                    num_pages = DEFAULT_NUMBER_OF_PAGES
-            except (ValueError, TypeError, KeyError) as e:
-                logging.warning("Error extracting page count: %s, using default", e)
-                num_pages = DEFAULT_NUMBER_OF_PAGES
-                total = None
-
-            change_params = {}
-
-            # By default it's "full" mode with start_page and end_page as full list of pages
-            start_page = self.start_page
-            end_page = num_pages + self.start_page
-
-            # if "continue" mode is set, shift start_page to last page saved. Force
-            # rewriting last page and continue
-            if mode == "continue":
-                logging.debug("Continue mode enabled, looking for last saved page")
-                pagenames = storage_backend.list_objects("page") if storage_backend else []
-                for page in range(self.start_page, num_pages):
-                    if "page_%d.json" % (page) not in pagenames:
-                        start_page = page
-                        break
-                logging.debug("Start page number %d", start_page)
-
-            if resume_page:
-                start_page = max(start_page, int(resume_page))
-                logging.debug("Resume enabled, start page %d", start_page)
-
-            if mode == "update":
-                if (
-                    self.update_mode == "by_change_key"
-                    and self.change_key_param
-                    and last_change_value
-                ):
-                    change_params[self.change_key_param] = last_change_value
-                elif (
-                    self.update_mode == "by_timestamp" and self.update_since_param and last_run_end
-                ):
-                    change_params[self.update_since_param] = last_run_end
-                elif self.update_mode == "custom_script":
-                    logging.warning("Custom update mode is configured but not implemented.")
-
-            # Initialize progress tracking
-            total_pages = end_page - start_page
-            progress_bar = None
-            if total_pages > 0:
-                progress_bar = tqdm(total=total_pages, desc="Downloading pages", unit="page")
-
-            def fetch_page(target_page: int) -> Dict[str, Any]:
-                local_change_params = dict(change_params)
-                local_params = dict(params)
-                local_url_params = dict(url_params) if url_params else None
-                local_flatten = dict(flatten) if flatten else None
-
-                if self.page_size_param and len(self.page_size_param) > 0:
-                    local_change_params[self.page_size_param] = self.page_limit
-                if self.iterate_by == "page":
-                    local_change_params[self.page_number_param] = target_page
-                elif self.iterate_by == "skip":
-                    local_change_params[self.count_skip_param] = (target_page - 1) * self.page_limit
-                elif self.iterate_by == "range":
-                    local_change_params[self.count_from_param] = (target_page - 1) * self.page_limit
-                    local_change_params[self.count_to_param] = target_page * self.page_limit
-
-                if self.query_mode in ("params", "mixed"):
-                    if local_url_params is None:
-                        local_url_params = {}
-                    local_url_params.update(local_change_params)
-                else:
-                    local_params = update_dict_values(local_params, local_change_params)
-                    if self.flat_params and len(local_params.keys()) > 0:
-                        local_flatten = {}
-                        for k, v in local_params.items():
-                            local_flatten[k] = str(v)
-
-                if self.query_mode == "params":
-                    request_url = _url_replacer(self.start_url, local_url_params or {})
-                elif self.query_mode == "mixed":
-                    request_url = _url_replacer(
-                        self.start_url, local_url_params or {}, query_mode=True
-                    )
-                else:
-                    request_url = self.start_url
-
-                try:
-                    hook_result = self._run_hook(
-                        "before_request",
-                        {
-                            "url": request_url,
-                            "headers": headers,
-                            "params": local_params,
-                            "mode": mode,
-                            "page": target_page,
-                        },
-                    )
-                    local_headers = headers
-                    if isinstance(hook_result, dict):
-                        request_url = hook_result.get("url", request_url)
-                        local_headers = hook_result.get("headers", headers)
-                        local_params = hook_result.get("params", local_params)
-                    response = self._single_request(
-                        request_url, local_headers, local_params, local_flatten
-                    )
-                    self._run_hook(
-                        "after_response",
-                        {
-                            "url": request_url,
-                            "headers": local_headers,
-                            "params": local_params,
-                            "mode": mode,
-                            "page": target_page,
-                            "response": self._serialize_response(response),
-                        },
-                    )
-                except requests.exceptions.RequestException as e:
-                    return {"page": target_page, "error": str(e), "status": None}
-                except (ValueError, RuntimeError, IOError) as e:
-                    return {"page": target_page, "error": str(e), "status": None}
-
-                time.sleep(self.default_delay)
-
-                if self._should_retry(response.status_code):
-                    max_retries = max(self.retry_max_retries, 0)
-                    for attempt in range(1, max_retries + 1):
-                        delay = self._get_retry_delay(attempt, response)
-                        time.sleep(delay)
-                        try:
-                            response = self._single_request(
-                                request_url, local_headers, local_params, local_flatten
-                            )
-                        except requests.exceptions.RequestException:
-                            continue
-                        if not self._should_retry(response.status_code):
-                            break
-
-                return {
-                    "page": target_page,
-                    "status": response.status_code,
-                    "content": response.content,
-                }
-
-            _result_lock = threading.Lock()
-
-            def handle_success(target_page: int, content: bytes) -> bool:
-                nonlocal pages_processed, total_bytes, total_records, last_change_value
-                if num_pages is not None:
-                    logging.info("Saving page %d of %d", target_page, num_pages)
-                else:
-                    logging.info("Saving page %d", target_page)
-                if self.resp_type == "json":
-                    outdata = content
-                    try:
-                        page_data = json.loads(content)
-                    except (ValueError, json.JSONDecodeError):
-                        page_data = None
-                elif self.resp_type == "xml":
-                    page_data = xmltodict.parse(content)
-                    outdata = json.dumps(page_data, ensure_ascii=False)
-                elif self.resp_type == "html":
-                    if process_func is None:
-                        logging.error("HTML response type requires process function")
-                        return False
-                    page_data = process_func(content)
-                    outdata = json.dumps(page_data, ensure_ascii=False)
-                else:
-                    logging.warning("Unknown response type: %s", self.resp_type)
-                    return False
-
-                if len(outdata) == 0:
-                    logging.info("Empty results on page %d. Stopped", target_page)
-                    return False
-
-                # P1.19: detect "empty" pages by content, not by byte length.
-                # For JSON responses with ``data_key``, count records; for XML
-                # and HTML fall back to a non-empty serialised blob.
-                empty_page = False
-                if self.resp_type == "json" and self.data_key:
-                    try:
-                        items = get_dict_value(
-                            page_data, self.data_key, splitter=self.field_splitter
-                        )
-                    except (TypeError, ValueError):
-                        items = None
-                    if items is None or (isinstance(items, list) and len(items) == 0):
-                        empty_page = True
-                if empty_page:
-                    logging.info(
-                        "Empty results on page %d (data_key=%s). Stopped",
-                        target_page,
-                        self.data_key,
-                    )
-                    return False
-
-                # P1.19 (part 2): capture the per-page record count outside
-                # the lock so the size-based early-stop can compare records
-                # to ``page_size_limit`` rather than the previous (buggy)
-                # bytes-vs-records comparison.
-                page_record_count = 0
-                if self.resp_type == "json" and self.data_key and "items" in locals():
-                    if isinstance(items, list):
-                        page_record_count = len(items)
-                    elif items is not None:
-                        page_record_count = 1
-
-                if storage_backend:
-                    storage_backend.save_page("page_%d.json" % (target_page), outdata)
-                with _result_lock:
-                    total_bytes += len(outdata)
-                    pages_processed += 1
-                    if page_data is not None:
-                        try:
-                            # ``items`` was already computed above for the
-                            # empty-page check; reuse it instead of recomputing.
-                            if isinstance(items, list):
-                                total_records += len(items)
-                            elif items is not None:
-                                total_records += 1
-                            if self.change_key and isinstance(items, list):
-                                for item in items:
-                                    if isinstance(item, dict):
-                                        value = get_dict_value(
-                                            item, self.change_key, splitter=self.field_splitter
-                                        )
-                                        if value is not None:
-                                            if not last_change_value or value > last_change_value:
-                                                last_change_value = value
-                        except (TypeError, ValueError):
-                            pass
-                self._run_hook(
-                    "after_page",
-                    {
-                        "page": target_page,
-                        "mode": mode,
-                        "records_processed": total_records,
-                        "bytes_written": len(outdata),
-                    },
-                )
-                if progress_bar:
-                    progress_bar.update(1)
-                    elapsed = max(1e-6, time.time() - start)
-                    with _result_lock:
-                        current_pages = pages_processed
-                    speed = current_pages / elapsed
-                    eta_seconds = int((total_pages - current_pages) / speed) if speed else 0
-                    progress_bar.set_postfix({"speed_p/s": f"{speed:.2f}", "eta_s": eta_seconds})
-                if self.checkpoint_interval_pages:
-                    with _result_lock:
-                        current_processed = pages_processed
-                    if (
-                        current_processed > 0
-                        and current_processed % self.checkpoint_interval_pages == 0
-                    ):
-                        checkpoint_payload = {
-                            "last_page": target_page,
-                            "records_processed": total_records,
-                            "storage_bytes": total_bytes,
-                            "updated_at": datetime.now(timezone.utc).isoformat(),
-                        }
-                        self._save_checkpoint(checkpoint_payload)
-                # P1.19: ``page_limit`` is the configured ``page_size_limit``
-                # (records per page). The historical comparison was
-                # ``len(outdata) < int(self.page_limit)`` — bytes against
-                # records — which never fired for large pages and fired
-                # prematurely for small ones. Compare record counts instead.
-                if self.page_limit and page_record_count < int(self.page_limit):
-                    logging.info(
-                        "Page %d returned %d records, less than expected page size %s. Stopped",
-                        target_page,
-                        page_record_count,
-                        str(self.page_limit),
-                    )
-                    return False
-                return True
-
-            pages = list(range(start_page, end_page))
-
-            # P3.31: the page-fetch loop itself moved to ``cmds.runner`` so
-            # it can be unit-tested in isolation and so future changes
-            # (async via httpx) replace this one module instead of rewriting
-            # the rest of the project. The orchestrator handles storage
-            # close, retry exhaustion, consecutive-error counting, and the
-            # parallelism branch — all of the things the historical code
-            # duplicated across sequential vs parallel paths (P1.12).
-            from .runner import fetch_all_pages
-
-            def fetch_one(target_page: int) -> Dict[str, Any]:
-                return fetch_page(target_page)
-
-            def on_page_success(target_page: int, content: bytes) -> bool:
-                return handle_success(target_page, content)
-
-            error_counts = fetch_all_pages(
-                pages=pages,
-                parallelism=self.parallelism,
-                fetch_one=fetch_one,
-                on_page=on_page_success,
-                should_retry=self._should_retry,
-                retry_max_retries=self.retry_max_retries,
-                max_consecutive_errors=self.max_consecutive_errors,
-                continue_on_error=self.continue_on_error,
-                storage_backend=storage_backend,
-                progress_bar=progress_bar,
-                start_timer=start,
-                total_pages=len(pages),
-                checkpoint_interval=self.checkpoint_interval_pages,
-                save_checkpoint=self._save_checkpoint,
-            )
-
-            run_end_time = datetime.now(timezone.utc)
-            state_payload = {
-                "last_run_start": run_start_time.isoformat(),
-                "last_run_end": run_end_time.isoformat(),
-                "last_page": (
-                    (start_page + pages_processed - 1) if pages_processed > 0 else start_page
-                ),
-                "last_change_key": last_change_value,
-                "records_processed": total_records,
-                "bytes_processed": total_bytes,
-            }
-            self._save_state(state_payload)
-            print("Run summary:")
-            print(f"  Pages processed: {pages_processed}")
-            if total_records:
-                print(f"  Total records: {total_records}")
-            print(f"  Total bytes: {total_bytes}")
-            if error_counts:
-                print("  Errors by status:")
-                for code, count in sorted(error_counts.items()):
-                    print(f"    {code}: {count}")
-            else:
-                print("  Errors by status: none")
-
-            self._run_hook(
-                "after_run",
-                {
-                    "mode": mode,
-                    "pages_processed": pages_processed,
-                    "records_processed": total_records,
-                    "bytes_processed": total_bytes,
-                    "errors": error_counts,
-                },
-            )
-
-            if progress_bar:
-                progress_bar.close()
-            if storage_backend:
-                try:
-                    storage_backend.close()
-                except (IOError, OSError) as e:
-                    logging.error("Error closing storage backend: %s", e)
-        except (ValueError, RuntimeError, IOError) as e:
-            logging.error("Fatal error in run method: %s", e)
-            print(f"Error: Fatal error occurred: {e}")
-            if storage_backend:
-                try:
-                    storage_backend.close()
-                except Exception:
-                    pass
-            if progress_bar:
-                try:
-                    progress_bar.close()
-                except Exception:
-                    pass
+        run_backup(self, mode, resume=resume)
 
     def update(self, resume: bool = False) -> None:
         """Run update mode with state tracking."""
@@ -2136,7 +1204,7 @@ class ProjectBuilder:
             url = _url_replacer(self.start_url, url_params or {}, query_mode=True)
         else:
             url = self.start_url
-        response = self._single_request(url, headers, params, None)
+        response = self._request(url, headers, params, None)
         if self.resp_type != "json":
             print("Detection only supports JSON responses.")
             return {}
@@ -2163,407 +1231,11 @@ class ProjectBuilder:
                     yaml.safe_dump(yaml_data, fobj, sort_keys=False, allow_unicode=True)
         return suggestions
 
-    def _follow_rule(
-        self,
-        rule: Dict[str, Any],
-        mode: str,
-        params: Dict[str, Any],
-        headers: Dict[str, Any],
-        process_func: Optional[Any],
-    ) -> None:
-        follow_mode = rule.get("follow_mode") or rule.get("mode") or self.follow_mode
-        follow_pattern = rule.get("follow_pattern") or self.follow_pattern
-        follow_item_key = rule.get("follow_item_key") or self.follow_item_key
-        follow_data_key = rule.get("follow_data_key") or self.follow_data_key
-        follow_url_key = rule.get("follow_url_key") or self.follow_url_key
-        follow_http_mode = rule.get("follow_http_mode") or self.follow_http_mode
-        follow_param = rule.get("follow_param") or self.follow_param
-        iterate_by = rule.get("iterate_by")
-        rule_params = rule.get("params") or {}
-        page_number_param = rule_params.get("page_number_param")
-        page_size_param = rule_params.get("page_size_param")
-        page_size_limit = rule_params.get("page_size_limit")
-        max_pages = rule_params.get("max_pages", 1000)
-
-        # ``allkeys`` is reassigned to either a list (``item`` mode) or a
-        # dict (``url`` mode) below; declare the union so mypy doesn't
-        # narrow to whichever shape is initialised first.
-        allkeys: Any = []
-
-        details_storage_file = self.details_storage_file
-        if rule.get("name"):
-            details_storage_file = os.path.join(self.storagedir, f"details_{rule['name']}.zip")
-
-        source_zip = ZipFile(self.storage_file, mode="r", compression=ZIP_DEFLATED)
-
-        if follow_mode == "item":
-            allkeys = []  # type: ignore[assignment]
-            logging.info("Extract unique key values from downloaded data")
-            file_list = source_zip.namelist()
-            extract_progress = None
-            if len(file_list) > 0:
-                extract_progress = tqdm(total=len(file_list), desc="Extracting keys", unit="file")
-            for fname in file_list:
-                tf = source_zip.open(fname, "r")
-                data = json.load(tf)
-                tf.close()
-                try:
-                    for item in get_dict_value(data, self.data_key, splitter=self.field_splitter):
-                        allkeys.append(item[follow_item_key])
-                except (KeyError, TypeError):
-                    logging.info("Data key: %s not found" % (self.data_key))
-                if extract_progress:
-                    extract_progress.update(1)
-            if extract_progress:
-                extract_progress.close()
-            logging.info("%d allkeys to process", len(allkeys))
-            if mode == "full":
-                details_zip = ZipFile(details_storage_file, mode="w", compression=ZIP_DEFLATED)
-                finallist = allkeys
-            else:
-                details_zip = ZipFile(details_storage_file, mode="a", compression=ZIP_DEFLATED)
-                keys = []
-                filenames = details_zip.namelist()
-                for name in filenames:
-                    if name.endswith(".json"):
-                        base = name.rsplit(".", 1)[0]
-                        base = base.rsplit("_page_", 1)[0]
-                        keys.append(base)
-                finallist = list(set(allkeys) - set(keys))
-            logging.info("%d keys in final list", len(finallist))
-
-            progress_bar = None
-            if len(finallist) > 0:
-                progress_bar = tqdm(total=len(finallist), desc="Following items", unit="item")
-            for key in finallist:
-                if iterate_by and page_number_param and page_size_limit:
-                    page = 1
-                    while page <= max_pages:
-                        change_params = {}
-                        if follow_param:
-                            change_params[follow_param] = key
-                        if page_size_param:
-                            change_params[page_size_param] = page_size_limit
-                        change_params[page_number_param] = page
-                        request_params = update_dict_values(dict(params), change_params)
-                        if follow_http_mode == "GET":
-                            response = self.http.get(
-                                follow_pattern,
-                                params=request_params,
-                                headers=headers if headers else None,
-                                verify=self.verify_ssl,
-                            )
-                        else:
-                            response = self.http.post(
-                                follow_pattern,
-                                params=request_params,
-                                headers=headers if headers else None,
-                                verify=self.verify_ssl,
-                            )
-                        if self.resp_type == "json":
-                            content = response.content
-                            try:
-                                data = response.json()
-                            except (ValueError, json.JSONDecodeError):
-                                data = None
-                        elif self.resp_type == "html":
-                            data = process_func(response.content) if process_func else None
-                            content = json.dumps(data, ensure_ascii=False).encode("utf8")
-                        else:
-                            data = None
-                            content = response.content
-                        details_zip.writestr(f"{key}_page_{page}.json", content)
-                        items = None
-                        if data is not None and follow_data_key:
-                            items = get_dict_value(
-                                data, follow_data_key, splitter=self.field_splitter
-                            )
-                        if not items or (isinstance(items, list) and len(items) < page_size_limit):
-                            break
-                        page += 1
-                else:
-                    change_params = {}
-                    if follow_param:
-                        change_params[follow_param] = key
-                    request_params = update_dict_values(dict(params), change_params)
-                    if follow_http_mode == "GET":
-                        response = self.http.get(
-                            follow_pattern,
-                            params=request_params,
-                            headers=headers,
-                            verify=self.verify_ssl,
-                        )
-                    else:
-                        response = self.http.post(
-                            follow_pattern,
-                            params=request_params,
-                            headers=headers,
-                            verify=self.verify_ssl,
-                        )
-                    logging.info("Saving object with id %s" % (key))
-                    if self.resp_type == "json":
-                        details_zip.writestr("%s.json" % (key), response.content)
-                    elif self.resp_type == "html":
-                        details_zip.writestr(
-                            "%s.json" % (key),
-                            json.dumps(process_func(response.content), ensure_ascii=False),
-                        )
-                time.sleep(DEFAULT_DELAY)
-                if progress_bar:
-                    progress_bar.update(1)
-            if progress_bar:
-                progress_bar.close()
-            details_zip.close()
-        elif follow_mode == "url":
-            allkeys: Dict[str, Any] = {}
-            logging.info("Extract urls to follow from downloaded data")
-            file_list = source_zip.namelist()
-            extract_progress = None
-            if len(file_list) > 0:
-                extract_progress = tqdm(total=len(file_list), desc="Extracting URLs", unit="file")
-            for fname in file_list:
-                tf = source_zip.open(fname, "r")
-                data = json.load(tf)
-                tf.close()
-                try:
-                    for item in get_dict_value(data, self.data_key, splitter=self.field_splitter):
-                        item_id = item[follow_item_key]
-                        allkeys[item_id] = get_dict_value(
-                            item, follow_url_key, splitter=self.field_splitter
-                        )
-                except KeyError:
-                    logging.info("Data key: %s not found" % (self.data_key))
-                if extract_progress:
-                    extract_progress.update(1)
-            if extract_progress:
-                extract_progress.close()
-            if mode == "full":
-                details_zip = ZipFile(details_storage_file, mode="w", compression=ZIP_DEFLATED)
-            else:
-                details_zip = ZipFile(details_storage_file, mode="a", compression=ZIP_DEFLATED)
-            for key, url in allkeys.items():
-                if follow_http_mode == "GET":
-                    response = self.http.get(url, headers=headers, verify=self.verify_ssl)
-                else:
-                    response = self.http.post(url, headers=headers, verify=self.verify_ssl)
-                details_zip.writestr("%s.json" % (key), response.content)
-            details_zip.close()
-
-        source_zip.close()
-
     def follow(self, mode: str = "full") -> None:
-        """Collects data about each data using additional requests"""
+        """Collect related objects using the shared HTTP execution policy."""
+        from .follow import follow_project
 
-        if self.config is None:
-            self._raise_config_not_found()
-            return
-        if not self.follow_enabled:
-            print("Follow mode not enabled")
-            return
-        if not os.path.exists(self.storagedir):
-            os.mkdir(self.storagedir)
-        if self.storage_type != "zip":
-            print("Only zip storage supported right now")
-            return
-
-        if not os.path.exists(self.storage_file):
-            print("Storage file not found")
-            return
-
-        process_func = None
-        if self.code_postfetch is not None:
-            script = run_path(self.code_follow)
-            process_func = script["process"]
-
-        params = None
-        params_file = os.path.join(self.project_path, "follow_params.json")
-        if os.path.exists(params_file):
-            with open(params_file, "r", encoding="utf8") as f:
-                params = json.load(f)
-        else:
-            params = {}
-        if self.flat_params:
-            flatten = {}
-            for k, v in params.items():
-                flatten[k] = str(v)
-
-        headers_file = os.path.join(self.project_path, "headers.json")
-        if os.path.exists(headers_file):
-            with open(headers_file, "r", encoding="utf8") as f:
-                headers = json.load(f)
-        else:
-            headers = {}
-
-        if hasattr(self, "follow_rules") and self.follow_rules:
-            for rule in self.follow_rules:
-                self._follow_rule(rule, mode, params, headers, process_func)
-            return
-
-        mzip = ZipFile(self.storage_file, mode="r", compression=ZIP_DEFLATED)
-
-        if self.follow_mode == "item":
-            logging.info("Extract unique key values from downloaded data")
-            allkeys = extract_keys_from_pages(
-                mzip,
-                mzip.namelist(),
-                data_key=self.data_key,
-                field_splitter=self.field_splitter,
-                item_key=self.follow_item_key,
-            )
-            logging.info("%d allkeys to process", len(allkeys))
-            if mode == "full":
-                mzip = ZipFile(self.details_storage_file, mode="w", compression=ZIP_DEFLATED)
-            elif mode == "continue":
-                mzip = ZipFile(self.details_storage_file, mode="a", compression=ZIP_DEFLATED)
-                logging.info("%d filenames in zip file", len(mzip.namelist()))
-            finallist, _ = compute_pending_targets(
-                allkeys,
-                dest_zip=mzip,
-                full=(mode == "full"),
-            )
-            logging.info("%d keys in final list", len(finallist))
-
-            n = 0
-            total = len(finallist)
-            progress_bar = None
-            if total > 0:
-                progress_bar = tqdm(total=total, desc="Following items", unit="item")
-            for key in finallist:
-                n += 1
-                change_params = {}
-                change_params[self.follow_param] = key
-                params = update_dict_values(params, change_params)
-                if self.follow_http_mode == "GET":
-                    if headers:
-                        response = self.http.get(
-                            self.follow_pattern,
-                            params=params,
-                            headers=headers,
-                            verify=self.verify_ssl,
-                        )
-                    else:
-                        response = self.http.get(
-                            self.follow_pattern, params=params, verify=self.verify_ssl
-                        )
-                else:
-                    if headers:
-                        response = self.http.post(
-                            self.follow_pattern,
-                            params=params,
-                            headers=headers,
-                            verify=self.verify_ssl,
-                        )
-                    else:
-                        response = self.http.post(
-                            self.follow_pattern, params=params, verify=self.verify_ssl
-                        )
-                logging.info("Saving object with id %s. %d of %d" % (key, n, total))
-                if self.resp_type == "json":
-                    mzip.writestr("%s.json" % (key), response.content)
-                elif self.resp_type == "html":
-                    mzip.writestr(
-                        "%s.json" % (key),
-                        json.dumps(process_func(response.content), ensure_ascii=False),
-                    )
-                time.sleep(DEFAULT_DELAY)
-                if progress_bar:
-                    progress_bar.update(1)
-            if progress_bar:
-                progress_bar.close()
-            mzip.close()
-        elif self.follow_mode == "url":
-            logging.info("Extract urls to follow from downloaded data")
-            allkeys = extract_url_map_from_pages(
-                mzip,
-                mzip.namelist(),
-                data_key=self.data_key,
-                field_splitter=self.field_splitter,
-                item_key=self.follow_item_key,
-                url_key=self.follow_url_key,
-            )
-            if mode == "full":
-                mzip = ZipFile(self.details_storage_file, mode="w", compression=ZIP_DEFLATED)
-            elif mode == "continue":
-                mzip = ZipFile(self.details_storage_file, mode="a", compression=ZIP_DEFLATED)
-            finallist, count_done = compute_pending_targets(
-                list(allkeys.keys()),  # type: ignore[attr-defined]
-                dest_zip=mzip,
-                full=(mode == "full"),
-            )
-            n = 0 if mode == "full" else count_done
-            total = len(allkeys)  # type: ignore[arg-type]
-            progress_bar = None
-            if len(finallist) > 0:
-                progress_bar = tqdm(total=len(finallist), desc="Following URLs", unit="item")
-            for key in finallist:
-                n += 1
-                url = allkeys[key]
-                if headers:
-                    response = self.http.get(
-                        url, params=params, headers=headers, verify=self.verify_ssl
-                    )
-                else:
-                    response = self.http.get(url, params=params, verify=self.verify_ssl)
-                logging.info("Saving object with id %s. %d of %d" % (key, n, total))
-                if self.resp_type == "json":
-                    mzip.writestr("%s.json" % (key), response.content)
-                elif self.resp_type == "html":
-                    mzip.writestr(
-                        "%s.json" % (key),
-                        json.dumps(process_func(response.content), ensure_ascii=False),
-                    )
-                time.sleep(DEFAULT_DELAY)
-                if progress_bar:
-                    progress_bar.update(1)
-            if progress_bar:
-                progress_bar.close()
-            mzip.close()
-        elif self.follow_mode == "drilldown":
-            pass
-        elif self.follow_mode == "prefix":
-            logging.info("Extract unique key values from downloaded data")
-            allkeys = extract_keys_from_pages(
-                mzip,
-                mzip.namelist(),
-                data_key=self.data_key,
-                field_splitter=self.field_splitter,
-                item_key=self.follow_item_key,
-            )
-            if mode == "full":
-                mzip = ZipFile(self.details_storage_file, mode="w", compression=ZIP_DEFLATED)
-            elif mode == "continue":
-                mzip = ZipFile(self.details_storage_file, mode="a", compression=ZIP_DEFLATED)
-            finallist, _ = compute_pending_targets(
-                allkeys,
-                dest_zip=mzip,
-                full=(mode == "full"),
-            )
-
-            n = 0
-            total = len(finallist)
-            progress_bar = None
-            if total > 0:
-                progress_bar = tqdm(total=total, desc="Following prefix URLs", unit="item")
-            for key in finallist:
-                n += 1
-                url = self.follow_pattern + str(key)
-                response = self.http.get(url, verify=self.verify_ssl)
-                logging.info("Saving object with id %s. %d of %d" % (key, n, total))
-                if self.resp_type == "json":
-                    mzip.writestr("%s.json" % (key), response.content)
-                elif self.resp_type == "html":
-                    mzip.writestr(
-                        "%s.json" % (key),
-                        json.dumps(process_func(response.content), ensure_ascii=False),
-                    )
-                time.sleep(DEFAULT_DELAY)
-                if progress_bar:
-                    progress_bar.update(1)
-            if progress_bar:
-                progress_bar.close()
-            mzip.close()
-        else:
-            print("Follow section not configured. Please update config file")
+        follow_project(self, mode)
 
     def getfiles(self, be_careful: bool = False) -> None:
         """Downloads all files associated with this API data"""
@@ -2720,7 +1392,7 @@ class ProjectBuilder:
             fstorage = ZipStorageBackend(files_storage_file, mode="a", compression=ZIP_DEFLATED)
         elif self.file_storage_type == "filesystem":
             fstorage = FilesystemStorageBackend(
-                os.path.join("storage", "files"),
+                os.path.join(self.storagedir, "files"),
                 mode="a",
             )
 
@@ -2739,7 +1411,7 @@ class ProjectBuilder:
                 if n % 50 == 0:
                     logging.info("Downloaded %d files", n)
                 if be_careful:
-                    r = self.http.head(url, timeout=DEFAULT_TIMEOUT, verify=self.verify_ssl)
+                    r = self._request(url, http_mode="HEAD")
                     if (
                         "content-disposition" in r.headers.keys()
                         and self.storage_mode == "filepath"
@@ -2758,7 +1430,7 @@ class ProjectBuilder:
                     ):
                         logging.info(
                             "File skipped with size %d and name %s"
-                            % (int(r.headers["content-length"]), url)
+                            % (int(r.headers["content-length"]), redact_url(url))
                         )
                         record = {
                             "filename": filename,
@@ -2776,16 +1448,17 @@ class ProjectBuilder:
                         filename = str(uniq_id)
                 if self.storage_mode == "filepath":
                     filename = urlparse(url).path
-                logging.info("Processing %s as %s", url, filename)
+                logging.info("Processing %s as %s", redact_url(url), filename)
+                from ..storage import safe_member_name
+
+                filename = safe_member_name(filename)
                 if filename in fstorage.list_objects("object"):
                     logging.info("File %s already stored", filename)
                     if download_progress:
                         download_progress.update(1)
                     continue
                 if not use_aria2:
-                    response = self.http.get(
-                        url, headers=headers, timeout=DEFAULT_TIMEOUT, verify=self.verify_ssl
-                    )
+                    response = self._request(url, headers=headers, http_mode="GET")
                     fstorage.save_object(filename, response.content)
                     list_file.write(url + "\n")
                 else:
@@ -2795,7 +1468,7 @@ class ProjectBuilder:
                         ],
                         options={
                             "out": filename,
-                            "dir": os.path.abspath(os.path.join("storage", "files")),
+                            "dir": os.path.abspath(os.path.join(self.storagedir, "files")),
                         },
                     )
                 if download_progress:
@@ -2861,42 +1534,42 @@ class ProjectBuilder:
                     for k, v in params.items():
                         s.append("%s=%s" % (k, v.replace("'", '"').replace("True", "true")))
                     if headers:
-                        start_page_data = self.http.get(
-                            url + "?" + "&".join(s), headers=headers, verify=self.verify_ssl
+                        start_page_data = self._request(
+                            url + "?" + "&".join(s), headers=headers, http_mode="GET"
                         ).json()
                     else:
-                        start_page_data = self.http.get(
-                            url + "?" + "&".join(s), verify=self.verify_ssl
+                        start_page_data = self._request(
+                            url + "?" + "&".join(s), http_mode="GET"
                         ).json()
                 else:
                     logging.debug(
-                        "Start request params: %s headers: %s" % (str(params), str(headers))
+                        "Start request params: %s headers: %s",
+                        redact_params(params),
+                        redact_headers(headers),
                     )
                     if headers and len(headers.keys()) > 0:
                         if params and len(params.keys()) > 0:
-                            response = self.http.get(
-                                url, params=params, headers=headers, verify=self.verify_ssl
+                            response = self._request(
+                                url, params=params, headers=headers, http_mode="GET"
                             )
                         else:
-                            response = self.http.get(url, headers=headers, verify=self.verify_ssl)
+                            response = self._request(url, headers=headers, http_mode="GET")
                     else:
                         if params and len(params.keys()) > 0:
-                            response = self.http.get(url, params=params, verify=self.verify_ssl)
+                            response = self._request(url, params=params, http_mode="GET")
                         else:
-                            response = self.http.get(url, verify=self.verify_ssl)
+                            response = self._request(url, http_mode="GET")
 
                     if self.resp_type == "json":
                         start_page_data = response.json()
                     elif self.resp_type == "html":
                         start_page_data = process_func(response.content)
             else:
-                logging.info(url)
+                logging.info(redact_url(url))
                 if headers:
-                    response = self.http.post(
-                        url, json=params, verify=self.verify_ssl, headers=headers
-                    )
+                    response = self._request(url, params=params, headers=headers, http_mode="POST")
                 else:
-                    response = self.http.post(url, json=params, verify=self.verify_ssl)
+                    response = self._request(url, params=params, http_mode="POST")
 
                 if self.resp_type == "json":
                     start_page_data = response.json()

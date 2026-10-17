@@ -12,6 +12,21 @@ file (`apibackuper.yaml` or the legacy `apibackuper.cfg`) plus optional
 
 ```bash
 apibackuper create budgettofk
+cd budgettofk
+# save apibackuper.yaml with the endpoint, pagination and response keys
+apibackuper validate-config
+apibackuper run full --dry-run
+apibackuper estimate full
+apibackuper run full
+```
+
+`create` writes a minimal legacy `apibackuper.cfg`. Add a complete YAML file
+using the [quick start](/getting-started/quick-start) or a
+[template](/examples/templates). YAML takes precedence over the INI scaffold.
+
+From the parent directory, select the project explicitly:
+
+```bash
 apibackuper estimate full -p budgettofk
 apibackuper run full -p budgettofk
 ```
@@ -43,12 +58,16 @@ apibackuper getfiles
 
 ## Common flags
 
-Most commands accept:
+Project commands accept `-p` / `--projectpath`; `create` takes the destination
+as its positional argument. Additional flags apply to specific commands:
 
 | Flag | Purpose |
 |------|---------|
 | `-p` / `--projectpath` | Project directory (defaults to the current directory) |
-| `-v` / `--verbose` | Extra logging to the console as well as `apibackuper.log` |
+| `-v` / `--verbose` | Extra diagnostics on `create`, `detect`, `run`, `update`, `export` and `validate-config` |
+| `--dry-run` | Offline JSON plan on `run`, `update` and `follow`; `run` also accepts `--profile` |
+| `--resume` | Recover an interrupted `run` or `update` from its checkpoint |
+| `--strict` | Treat configuration warnings as errors with `validate-config` |
 
 Use `apibackuper <command> --help` for the live flag list.
 

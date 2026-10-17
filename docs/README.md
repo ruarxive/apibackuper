@@ -12,7 +12,7 @@ This directory contains the Docusaurus documentation site for apibackuper.
 
 ```bash
 cd docs
-npm install
+npm ci
 ```
 
 ### Local development
@@ -73,7 +73,8 @@ docs/
 
 The documentation is deployed to GitHub Pages at
 [ruarxive.org/apibackuper](https://ruarxive.org/apibackuper/) when
-changes are pushed to `master`. The workflow lives in
+documentation changes are pushed to `master` or `main`, or the workflow is
+started manually. The workflow lives in
 `.github/workflows/deploy-docs.yml`.
 
 ### GitHub Pages setup
@@ -99,5 +100,12 @@ When adding or updating documentation:
 
 1. Edit the markdown files in `docs/docs/`.
 2. Follow the existing frontmatter (`title`, `description`).
-3. Test locally with `npm start`.
-4. Confirm `npm run build` succeeds (broken links fail the build).
+3. Check flags against `python -m apibackuper <command> --help` and behavior
+   against the current implementation and schema.
+4. Update the root `README.md` and `CHANGELOG.md` when user-facing behavior changes;
+   keep unreleased work under `Unreleased` without changing release metadata.
+5. Validate examples from the repository root with `python -m scripts.validate_examples`.
+6. Preview with `npm start` and confirm `npm run build` succeeds. Broken site
+   links fail the build; review any Markdown-link warnings as well.
+
+Edit source Markdown only; `build/` and `.docusaurus/` are generated and ignored.

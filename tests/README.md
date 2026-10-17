@@ -1,32 +1,41 @@
 # Test Suite for apibackuper
 
-This directory contains the comprehensive test suite for the apibackuper project.
+This directory contains unit and backup lifecycle tests for apibackuper.
+Use Python 3.10+ and install the development extra from the repository root:
+
+```bash
+python -m pip install -e ".[dev]"
+```
 
 ## Running Tests
 
 ### Run all tests
 ```bash
-pytest
+python -m pytest
 ```
 
 ### Run with coverage
 ```bash
-pytest --cov=apibackuper --cov-report=html
+python -m pytest --cov=apibackuper --cov-report=html
 ```
+
+The shared `pyproject.toml` configuration already enables coverage reports and
+enforces a 70% overall coverage floor. For focused test selections, use
+`--no-cov` to avoid applying the whole-project coverage gate to a small subset.
 
 ### Run specific test file
 ```bash
-pytest tests/test_common.py
+python -m pytest --no-cov tests/test_common.py
 ```
 
 ### Run specific test class
 ```bash
-pytest tests/test_common.py::TestEtreeToDict
+python -m pytest --no-cov tests/test_common.py::TestEtreeToDict
 ```
 
 ### Run specific test
 ```bash
-pytest tests/test_common.py::TestEtreeToDict::test_simple_xml
+python -m pytest --no-cov tests/test_common.py::TestEtreeToDict::test_simple_xml
 ```
 
 ### Run with verbose output
@@ -35,16 +44,11 @@ pytest -v
 ```
 
 ### Run with markers
-```bash
-# Run only unit tests
-pytest -m unit
 
-# Run only integration tests
-pytest -m integration
-
-# Skip slow tests
-pytest -m "not slow"
-```
+`unit`, `integration` and `slow` are registered in `pyproject.toml`, but the
+current tests do not assign these markers. Select tests by file, class or
+function as shown above. Marker filters such as `-m unit` only select tests
+that carry that marker and exit with status 5 when nothing matches.
 
 ## Test Structure
 
@@ -52,12 +56,17 @@ pytest -m "not slow"
 - `test_common.py` - Tests for common utility functions (XML parsing, dict operations)
 - `test_rate_limiter.py` - Tests for rate limiting functionality
 - `test_auth.py` - Tests for authentication handlers
-- `test_storage.py` - Tests for storage classes (ZipFileStorage, FilesystemStorage)
+- `test_storage.py` - ZIP, SQLite and filesystem backend operations and legacy API deprecation
 - `test_config_loader.py` - Tests for configuration loading and parsing
 - `test_utils.py` - Tests for utility functions (file loading, CSV parsing, URL replacement)
 - `test_http_client.py` - Tests for HTTP client with authentication and rate limiting
 - `test_core.py` - Tests for CLI commands
 - `test_project.py` - Tests for ProjectBuilder class
+- `test_backup_workflow.py` - Full backup, interrupted resume, update generations, follow, export and failure recovery with real temporary storage
+- `test_runner.py`, `test_fetch.py`, `test_single_request.py` - Ordered page collection, request construction and shared HTTP execution
+- `test_export.py`, `test_where_filter.py` - Record extraction, field projection and export filters
+- `test_profile.py`, `test_state_resume.py` - Offline estimates and state/checkpoint round trips
+- `test_substitute_env_vars.py`, `test_validate_config.py` - Environment substitution and configuration validation
 
 ## Test Coverage
 
@@ -85,19 +94,35 @@ Common fixtures available in `conftest.py`:
 
 ## Running Tests in CI
 
-Tests are configured to run in CI environments using tox. See `tox.ini` for configuration.
+CI runs pytest directly on Python 3.10–3.13 on Ubuntu and macOS. Local tox
+environments cover the same Python versions and share the pytest configuration.
+Only environments with installed interpreters can run locally; see `tox.ini`.
 
 ```bash
 # Run tests on all Python versions
 tox
 
 # Run tests on specific Python version
-tox -e py39
+tox -e py313
 
 # Run linting
 tox -e lint
 
 # Run type checking
 tox -e typecheck
+
+# Check Black and isort formatting
+tox -e format
 ```
 
+Validate the shipped configuration examples without external HTTP requests:
+
+```bash
+python -m scripts.validate_examples
+```
+
+`test_backup_workflow.py` exercises real temporary ZIP, SQLite and filesystem
+storage through backup, interrupted resume, update, follow and export. It also
+checks abrupt process termination, publication recovery, installed-record
+preservation, credential diagnostics and nonzero command failures. The shared
+pytest configuration enforces a 70% overall coverage floor.

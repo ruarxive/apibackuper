@@ -14,7 +14,15 @@ from urllib.parse import urlencode
 
 import requests
 
-from .utils import _REDACTED, _is_sensitive_key, redact_headers, redact_params
+from .utils import append_query, redact_headers, redact_params, redact_text, redact_url
+
+
+class RequestFailed(RuntimeError):
+    """A completed HTTP exchange with an unsuccessful response status."""
+
+    def __init__(self, message: str, status_code: int):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def build_request_kwargs(
@@ -22,22 +30,22 @@ def build_request_kwargs(
     http_mode: str,
     url: str,
     params: Dict[str, Any],
-    flatten: Optional[Dict[str, str]],
+    flatten: Optional[Dict[str, Any]],
     headers: Optional[Dict[str, str]],
     verify_ssl: bool,
     connect_timeout: float,
     read_timeout: float,
     allow_redirects: bool,
 ) -> tuple:
-    """Build ``(method, kwargs_for_session_method, log_safe_url)``.
+    """Build ``((method, kwargs_for_session_method, log_safe_url), query)``.
 
     The caller is responsible for invoking the returned method on its
     session. ``log_safe_url`` is the URL string we want to write to the
     log file — redaction of ``token=``, ``api_key=``, etc. is applied
     here so the actual HTTP request never carries the redacted token.
 
-    Returns ``(method, kwargs, log_safe_url)`` where ``method`` is the
-    attribute name on a ``requests.Session`` (``"get"`` or ``"post"``).
+    ``query`` is the actual encoded flat query, or ``None`` for normal requests.
+    ``method`` names an attribute on ``requests.Session`` (``"get"`` or ``"post"``).
     """
     request_kwargs: Dict[str, Any] = {
         "verify": verify_ssl,
@@ -45,41 +53,38 @@ def build_request_kwargs(
         "allow_redirects": allow_redirects,
     }
 
-    log_safe_url = url
+    log_safe_url = redact_url(url)
 
     if http_mode == "GET":
         if flatten:
             # Coerce values to str so we can call str.replace on them.
             str_flatten = {k: (str(v) if not isinstance(v, str) else v) for k, v in flatten.items()}
-            # P2.21: redact sensitive keys before logging.
+            # Redact before stringifying so credentials in nested objects stay safe.
             redacted_flatten = {
-                k: (
-                    _REDACTED
-                    if _is_sensitive_key(k)
-                    else v.replace("'", '"').replace("True", "true")
-                )
-                for k, v in str_flatten.items()
+                k: str(v).replace("'", '"').replace("True", "true")
+                for k, v in redact_params(flatten).items()
             }
             # P2.23: URL-encode the query so values with ``&``, ``=``, ``#``
             # or whitespace do not corrupt or extend the query.
-            query_string = urlencode(redacted_flatten, doseq=True)
             actual_query_string = urlencode(
                 {k: v.replace("'", '"').replace("True", "true") for k, v in str_flatten.items()},
                 doseq=True,
             )
-            log_safe_url = url + "?" + query_string
+            log_safe_url = redact_url(append_query(url, redacted_flatten))
             if headers:
                 request_kwargs["headers"] = headers
             return ("get", request_kwargs, log_safe_url), actual_query_string
         # Branch without flat_params
-        log_safe_url = f"{url} params={redact_params(params)}"
+        log_safe_url = f"{redact_url(url)} params={redact_params(params)}"
         if headers:
             request_kwargs["headers"] = headers
         request_kwargs["params"] = params
         return ("get", request_kwargs, log_safe_url), None
 
     # POST
-    log_safe_url = f"{url} params={redact_params(params)} " f"headers={redact_headers(headers)}"
+    log_safe_url = (
+        f"{redact_url(url)} params={redact_params(params)} headers={redact_headers(headers)}"
+    )
     if headers:
         request_kwargs["headers"] = headers
     request_kwargs["json"] = params
@@ -115,16 +120,19 @@ def wrap_request_exception(
     """Turn a low-level ``requests`` exception into an actionable ``RuntimeError``.
 
     The user sees a multi-line, suggestion-rich message in the log file;
-    the original exception is chained via ``raise ... from exc``.
+    All diagnostics are sanitized; callers should suppress the raw exception
+    context when exposing the wrapped message to users.
     """
     log_file_hint = logfile or "apibackuper.log"
+    url = redact_url(url)
+    error_details = redact_text(exc)
 
     if isinstance(exc, requests.exceptions.Timeout):
         timeout_info = f"Connect timeout: {connect_timeout}s, " f"Read timeout: {read_timeout}s"
         error_msg = (
             f"Request timeout while connecting to {url}\n"
             f"  Current timeout settings: {timeout_info}\n"
-            f"  Error details: {str(exc)}\n"
+            f"  Error details: {error_details}\n"
             "  Suggestions:\n"
             f"    - Increase timeout values in [request] section:\n"
             f"      connect_timeout = {connect_timeout * 2}\n"
@@ -132,13 +140,13 @@ def wrap_request_exception(
             "    - Check network connectivity and API server status\n"
             "    - Verify the URL is correct and accessible"
         )
-        logging.error("Request timeout for URL %s: %s", url, exc)
+        logging.error("Request timeout for URL %s: %s", url, error_details)
         return RuntimeError(error_msg)
 
     if isinstance(exc, requests.exceptions.SSLError):
         error_msg = (
             f"SSL certificate verification failed for {url}\n"
-            f"  Error details: {str(exc)}\n"
+            f"  Error details: {error_details}\n"
             "  Suggestions:\n"
             "    - If this is a trusted server, disable SSL verification in [request] section:\n"
             "      verify_ssl = False\n"
@@ -147,13 +155,13 @@ def wrap_request_exception(
             "    - Update your system's certificate store\n"
             "    - Check if the server's certificate has expired"
         )
-        logging.error("SSL error for URL %s: %s", url, exc)
+        logging.error("SSL error for URL %s: %s", url, error_details)
         return RuntimeError(error_msg)
 
     if isinstance(exc, requests.exceptions.ConnectionError):
         error_msg = (
             f"Failed to connect to {url}\n"
-            f"  Error details: {str(exc)}\n"
+            f"  Error details: {error_details}\n"
             "  Suggestions:\n"
             "    - Check your internet connection\n"
             f"    - Verify the URL is correct: {url}\n"
@@ -161,38 +169,37 @@ def wrap_request_exception(
             "    - If using a proxy, verify proxy settings in [request] section\n"
             "    - Check firewall settings"
         )
-        logging.error("Connection error for URL %s: %s", url, exc)
+        logging.error("Connection error for URL %s: %s", url, error_details)
         return RuntimeError(error_msg)
 
     if isinstance(exc, requests.exceptions.HTTPError):
-        status_code = (
-            exc.response.status_code if hasattr(exc, "response") and exc.response else "unknown"
-        )
-        error_msg = f"HTTP error {status_code} for {url}\n" f"  Error details: {str(exc)}\n"
-        if hasattr(exc, "response") and exc.response:
-            error_msg += f"  Response status: {exc.response.status_code}\n"
-            if exc.response.status_code == 401:
+        response = getattr(exc, "response", None)
+        status_code = response.status_code if response is not None else "unknown"
+        error_msg = f"HTTP error {status_code} for {url}\n" f"  Error details: {error_details}\n"
+        if response is not None:
+            error_msg += f"  Response status: {response.status_code}\n"
+            if response.status_code == 401:
                 error_msg += (
                     "  Suggestions:\n"
                     "    - Check authentication credentials in [auth] section\n"
                     "    - Verify API key or token is valid and not expired\n"
                     "    - Check if authentication type matches API requirements"
                 )
-            elif exc.response.status_code == 403:
+            elif response.status_code == 403:
                 error_msg += (
                     "  Suggestions:\n"
                     "    - Check if your account has permission to access this resource\n"
                     "    - Verify API key has required permissions\n"
                     "    - Check rate limiting or quota restrictions"
                 )
-            elif exc.response.status_code == 404:
+            elif response.status_code == 404:
                 error_msg += (
                     "  Suggestions:\n"
                     f"    - Verify the URL is correct: {url}\n"
                     "    - Check if the API endpoint exists\n"
                     "    - Review API documentation for correct endpoint path"
                 )
-            elif exc.response.status_code == 429:
+            elif response.status_code == 429:
                 error_msg += (
                     "  Suggestions:\n"
                     "    - You are being rate limited. Wait before retrying\n"
@@ -200,7 +207,7 @@ def wrap_request_exception(
                     "    - Increase delays between requests in [project] section:\n"
                     f"      default_delay = {default_delay * 2}"
                 )
-            elif exc.response.status_code >= 500:
+            elif response.status_code >= 500:
                 error_msg += (
                     "  Suggestions:\n"
                     "    - This is a server error. The API may be temporarily unavailable\n"
@@ -208,26 +215,26 @@ def wrap_request_exception(
                     "    - Check API status page if available\n"
                     "    - Increase retry settings in [project] section"
                 )
-        logging.error("HTTP error for URL %s: %s", url, exc)
+        logging.error("HTTP error for URL %s: %s", url, error_details)
         return RuntimeError(error_msg)
 
     if isinstance(exc, requests.exceptions.RequestException):
         error_msg = (
             f"Request failed for {url}\n"
-            f"  Error details: {str(exc)}\n"
+            f"  Error details: {error_details}\n"
             "  Suggestions:\n"
             "    - Check network connectivity\n"
             "    - Verify URL and request parameters\n"
             "    - Review configuration settings\n"
             f"    - Check logs for more details: {log_file_hint}"
         )
-        logging.error("Request error for URL %s: %s", url, exc)
+        logging.error("Request error for URL %s: %s", url, error_details)
         return RuntimeError(error_msg)
 
     # ValueError / RuntimeError / IOError
     error_msg = (
         f"Unexpected error while requesting {url}\n"
-        f"  Error details: {str(exc)}\n"
+        f"  Error details: {error_details}\n"
         f"  Error type: {type(exc).__name__}\n"
         "  Suggestions:\n"
         f"    - Check logs for more details: {log_file_hint}\n"
@@ -237,8 +244,7 @@ def wrap_request_exception(
     logging.error(
         "Unexpected error in request to %s: %s",
         url,
-        exc,
-        exc_info=True,
+        error_details,
     )
     return RuntimeError(error_msg)
 

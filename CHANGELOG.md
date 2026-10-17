@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [2.0.0] - 2026-10-17
+
+### Added
+- Durable ZIP member journals (`.journal`) and recoverable publication of completed backups.
+- Backup lifecycle regression coverage for interruption, resume, update and export across ZIP, SQLite and filesystem storage.
+- Validation of shipped YAML examples and templates with `python -m scripts.validate_examples`.
+
+### Fixed
+- Preserve the previous complete backup during full runs by writing to `.partial` storage and publishing only after successful collection. Resume keeps saved pages and can finish interrupted publication without new requests.
+- Retain each update under `runs/<id>/page_N.json` instead of overwriting earlier pages. `update --resume` continues the same generation; export includes all retained historical records without deduplicating object IDs.
+- Advance checkpoints only through contiguous, durably saved pages. Failed or incomplete runs return a nonzero exit status and leave the last successful state unchanged.
+- Capture timestamp update watermarks at the start of successful runs so changes made during collection remain eligible for the next update.
+- Handle root JSON arrays, single objects and XML records when `data_key` is omitted; stop parallel collection at the end of the dataset.
+- Preserve existing queries and fragments when constructing flat URLs, including OAuth2 retries, and accept typed YAML retry status lists and fractional delays.
+- Support the full backup/resume/update/export workflow on filesystem storage. Apply shared authentication, bounded retries, timeouts and rate limits to follow-up and file requests.
+- Write exports through a temporary file and reject output paths that would overwrite backup data, including filesystem members and source path aliases.
+
+### Changed
+- **Breaking:** require Python 3.10+; Python 3.8 and 3.9 users must upgrade. CI and tox cover Python 3.10–3.13 on Ubuntu/macOS and supported local interpreters respectively.
+- Extract backup, follow and export orchestration into focused modules and raise the enforced test coverage minimum from 29% to 70%.
+- Exclude development packages from wheels; build and smoke-test installed wheels on pull requests.
+- Align Black, isort, flake8 and mypy settings across local tooling and CI.
+- Update recovery, export, request and configuration documentation; remove duplicate changelog release sections and reconcile completed OpenSpec work.
+- Correct project setup examples to describe the INI scaffold and API options accepted by `create`; document command-specific flags, strict validation, live estimate requirements and ZIP-only file-download sources. Align the test guide with Python 3.10–3.13 and the current coverage gate.
+
+### Security
+- Redact credentials in URLs, nested parameters, OAuth2 failures and exception diagnostics while preserving the credentials sent to the API.
+
 ## [1.0.15] - 2026-10-03
 
 ### Added
@@ -68,26 +98,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `HISTORY.md` (consolidated into CHANGELOG)
 - 25+ dead helpers in `ProjectBuilder`
 
-## [1.0.12] - 2025-11-14
-
-### Added
-- **Zstandard (zstd) compression format support** for export functionality
-  - Export data as zstd-compressed files with maximum compression level
-  - Auto-detection of `.zst` file extension
-  - Requires `zstandard` library (included in dependencies)
-- Fixed setup.py build issue to avoid importing module during build
-
-### Changed
-- Updated export format documentation to include zstd alongside jsonl, gzip, and parquet
-- Improved SSL certificate verification handling at session level
-
-### Fixed
-- Fixed logfile initialization to ensure it's always available
-- Improved error handling for missing logfile attribute
-
 ## [1.0.13] - 2026-10-03
 
-### Added (this release)
+### Added
 - **Docs**: Docusaurus documentation site in `docs/`, organized like undatum (getting started, CLI reference, configuration, examples) and ready for GitHub Pages at `https://ruarxive.org/apibackuper/`
 - **Docs**: `SECURITY.md` documenting the "config = executable code" model, hook context shapes, credential redaction, and reporting vulnerabilities
 - **Security**: SSL certificate verification is now configurable in `follow`, `estimate`, and `getfiles` modes (previously hardcoded to disabled)
@@ -143,8 +156,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fixed logfile initialization to ensure it's always available
 - Improved error handling for missing logfile attribute
-
-### Fixed
 - **Bug**: Integer division crash in pagination page count calculation (`/` → `//`) for non-divisible totals
 - **Bug**: Dead no-op branch in `run()` start_page assignment
 - **Bug**: Lexicographic string comparison for change-key values (removed erroneous `str()` cast)
@@ -280,7 +291,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Fixed** for any bug fixes
 - **Security** for vulnerability fixes
 
-[Unreleased]: https://github.com/datacoon/apibackuper/compare/v1.0.12...HEAD
+[Unreleased]: https://github.com/ruarxive/apibackuper/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/ruarxive/apibackuper/compare/3ba501f5e7400866aea858986ce3adcc6064a539...v2.0.0
+[1.0.15]: https://github.com/datacoon/apibackuper/compare/v1.0.14...3ba501f5e7400866aea858986ce3adcc6064a539
+[1.0.14]: https://github.com/datacoon/apibackuper/compare/v1.0.13...v1.0.14
+[1.0.13]: https://github.com/datacoon/apibackuper/compare/v1.0.12...v1.0.13
 [1.0.12]: https://github.com/datacoon/apibackuper/compare/v1.0.11...v1.0.12
 [1.0.11]: https://github.com/datacoon/apibackuper/compare/v1.0.10...v1.0.11
 [1.0.10]: https://github.com/datacoon/apibackuper/compare/v1.0.9...v1.0.10
@@ -293,4 +308,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.0.3]: https://github.com/datacoon/apibackuper/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/datacoon/apibackuper/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/datacoon/apibackuper/releases/tag/v1.0.1
-

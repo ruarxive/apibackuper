@@ -5,13 +5,13 @@
 - [ ] 1.4 Remove bare `except: pass` blocks that silently accept failures
 
 ## 2. Core Logic Tests
-- [ ] 2.1 Add `test_run_paginated()` — mock HTTP multi-page response, verify all pages stored
-- [ ] 2.2 `test_run_single_page()` — single page, no pagination needed
-- [ ] 2.3 `test_follow_item_mode()` — mock index + follow-up responses
-- [ ] 2.4 `test_follow_url_mode()` — follow by URL pattern
-- [ ] 2.5 `test_export_jsonl()` — verify output format and record count
-- [ ] 2.6 `test_export_parquet()` — verify parquet output with pandas
-- [ ] 2.7 `test_update_incremental()` — state file save/load, only new records fetched
+- [x] 2.1 Add `test_run_paginated()` — mock HTTP multi-page response, verify all pages stored
+- [x] 2.2 `test_run_single_page()` — single page, no pagination needed
+- [x] 2.3 `test_follow_item_mode()` — mock index + follow-up responses
+- [x] 2.4 `test_follow_url_mode()` — follow by URL pattern
+- [x] 2.5 `test_export_jsonl()` — verify output format and record count
+- [x] 2.6 `test_export_parquet()` — verify parquet output with pandas
+- [x] 2.7 `test_update_incremental()` — state file save/load, only new records fetched
 
 ## 3. Edge Case Tests
 - [x] 3.1 `test_pagination_non_divisible_total()` — total=100, limit=30 → 4 pages (verified by integer division fix)
@@ -28,10 +28,10 @@
 ## 4. Negative Tests
 - [x] 4.1 `test_config_file_missing()` — graceful error, non-zero exit
 - [x] 4.2 `test_config_invalid_yaml()` — parse error handling
-- [ ] 4.3 `test_network_timeout()` — connection timeout recovery
+- [x] 4.3 `test_network_timeout()` — connection timeout recovery
 - [ ] 4.4 `test_permission_error()` — cannot write to storage path
 
 ## 5. Coverage
-- [ ] 5.1 Measure coverage with coverage.py
-- [ ] 5.2 Identify uncovered branches in `project.py`
+- [x] 5.1 Measure coverage with coverage.py
+- [x] 5.2 Identify uncovered branches in `project.py`
 - [ ] 5.3 Add tests until coverage >= 80% for `project.py`

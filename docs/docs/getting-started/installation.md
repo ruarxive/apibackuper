@@ -46,8 +46,12 @@ pip install aria2p           # aria2-backed file downloads
 
 ### Requirements
 
-- Python 3.8 or greater
+- Python 3.10 or greater
 - Linux, macOS, or Windows
+
+Version 2.0.0 requires Python 3.10+. Users on Python 3.8 or 3.9
+must upgrade before installing it. CI tests Python 3.10–3.13 on Ubuntu and macOS.
+See the changelog's **2.0.0** section for release details.
 
 ### Install from source
 

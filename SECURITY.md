@@ -6,7 +6,7 @@ should be aware of when running it.
 ## ⚠️ Config = executable code
 
 apibackuper config files can reference arbitrary Python files via the
-``code_postfetch`` and ``code_follow`` settings in the ``[code]`` section.
+`code.postfetch`, `code.follow` and `hooks` settings.
 These files are loaded and executed via ``runpy.run_path`` at the relevant
 point in the run lifecycle. Examples:
 
@@ -24,26 +24,32 @@ code:
 - Treat the project directory the same way you treat a checked-out shell
   script: read every line before you let it run.
 
-This is by design — apibackuper is a CLI tool for trusted local scripts —
-but it must be **prominently documented** for users coming from
-"innocent-looking YAML" mental models. See §S9 of the 2026-10 analysis
-report.
+Only use these features with trusted project files and scripts.
 
 ## Hook context format
 
-When ``[code.pre]``, ``[code.postfetch]`` or ``[code.follow]`` is set,
-apibackuper writes a JSON blob to a temporary file and passes the path
-to your script. The blob shape varies by hook:
+Scripts configured under `hooks` run in a separate Python process, which reads
+the context from a temporary JSON file and calls `hook(context)` or
+`run(context)`. They have the user's filesystem and network permissions;
+Python's `-I` option does not sandbox them. The context shape varies by hook.
+`code.postfetch` and `code.follow` extraction scripts run inside the main
+process and expose `process(content)` instead.
 
 ### `before_run`
 
 ```json
 {
-  "mode": "full" | "incremental" | "update",
-  "config": {...},
+  "mode": "full",
+  "headers": {},
+  "params": {},
   "project_path": "/abs/path/to/project"
 }
 ```
+
+`mode` is `full`, `continue` or `update`. `before_request` adds `url` and
+`page` to request headers and parameters. `after_response` also includes a
+serialized response. These contexts can contain live credentials; trusted
+hooks are responsible for handling them safely.
 
 ### `after_page` / `after_run`
 
@@ -62,28 +68,28 @@ to your script. The blob shape varies by hook:
   "pages_processed": 12,
   "records_processed": 5400,
   "bytes_processed": 1200000,
-  "errors": {"503": 1}
+  "errors": {}
 }
 ```
 
 ## Credentials in logs
 
-The ``apibackuper.log`` file written to your current working directory
-captures request URLs and headers at DEBUG level. Authorization headers
-and tokens are **redacted** (`***REDACTED***`) when the redact_* helpers
-in ``apibackuper.cmds.utils`` are applied to the log payload. Do not
-lower the log level to DEBUG on a production run unless you have
-verified the redaction is in effect for your configuration.
+The CLI writes `apibackuper.log` in the current working directory.
+Shared HTTP diagnostics redact recognized credential keys in headers, nested
+parameters, URL user information and query strings, OAuth2 errors and request
+exception messages. Redaction uses `***REDACTED***` and leaves actual request
+credentials unchanged. Custom hooks and API-specific free text are outside
+that guarantee; review them before sharing logs.
 
 ## SSL/TLS verification
 
-Set ``verify_ssl = false`` only for hosts with self-signed certificates.
-When set to ``false`` apibackuper logs a warning (visible at INFO+).
-You can also point ``verify_ssl`` at a CA-bundle path:
+`request.verify_ssl` is a boolean and defaults to `true`. Backup, follow,
+estimate, detection and file requests share this setting. Disabling it logs a
+warning. The configuration loader does not accept a CA-bundle path in this field:
 
-```ini
-[request]
-verify_ssl = /etc/ssl/certs/my-bundle.pem
+```yaml
+request:
+  verify_ssl: true
 ```
 
 ## OAuth2 refresh

@@ -11,6 +11,20 @@ auth:
 
 Prefer `*_file` fields over inline secrets.
 
+YAML values can also read credentials from the process environment:
+
+```yaml
+auth:
+  type: bearer
+  token: "${API_TOKEN}"
+```
+
+Export the variable in your shell before running the CLI. An unset or empty
+required variable stops configuration loading. `run full` reports it with status
+2; `validate-config` and offline plans fail validation with status 1. `${VAR:-default}`
+uses its default when the variable is unset or empty; use defaults for
+non-sensitive settings. A `.env` file is not loaded automatically.
+
 ## Basic
 
 ```yaml

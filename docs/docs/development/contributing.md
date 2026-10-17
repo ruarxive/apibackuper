@@ -11,7 +11,7 @@ docs.
 
 ### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.10 or higher
 - Git
 - pip
 
@@ -28,16 +28,16 @@ pre-commit install
 
 ## Code style
 
-- **black** — line length 100
+- **black** — version 25.1.0, line length 100
 - **isort** — Black profile, line length 100
-- **flake8** — max line length 100, ignore E203
-- **mypy** — `mypy apibackuper --ignore-missing-imports --no-strict-optional`
+- **flake8** — shared `.flake8` configuration
+- **mypy** — `mypy apibackuper`
 - **bandit** — `bandit -r apibackuper -ll`
 
 ```bash
-black --line-length=100 apibackuper
-isort --profile=black --line-length=100 apibackuper
-flake8 apibackuper --max-line-length=100 --extend-ignore=E203
+black apibackuper
+isort --profile=black apibackuper
+flake8 apibackuper
 ```
 
 ## Tests
@@ -46,9 +46,15 @@ flake8 apibackuper --max-line-length=100 --extend-ignore=E203
 pytest
 pytest --cov=apibackuper --cov-report=html
 tox                 # multiple Python versions
+python -m scripts.validate_examples
 ```
 
 See `tests/README.md` for markers, fixtures, and file layout.
+
+The suite enforces at least 70% overall coverage. Backup lifecycle regressions
+cover interruption, resume, update generations and export on ZIP, SQLite and
+filesystem storage. Example validation checks configuration syntax and schema
+without contacting external APIs.
 
 ## Documentation
 

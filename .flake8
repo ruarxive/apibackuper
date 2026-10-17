@@ -1,0 +1,6 @@
+[flake8]
+max-line-length = 100
+# Legacy stylistic debt; keep undefined-name and other correctness checks enabled.
+# B008 is incompatible with Typer's Option/Argument defaults.
+extend-ignore = E203,E501,E402,E122,E128,E111,E117,E127,E303,W292,W391,B008,B014,B042,D
+exclude = .git,.venv,.tox,build,dist

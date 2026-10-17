@@ -26,5 +26,5 @@ adjust credentials and URLs, then run `estimate` / `run`.
 
 ## Starter files
 
-- [Templates](/examples/templates) — page, skip, bearer, multi-hop follow
+- [Templates](/examples/templates) — page, skip, bearer, follow rule syntax
 - [Feature examples](/examples/feature-examples) — update/resume, SQLite, hooks, detect, concurrency, export filters

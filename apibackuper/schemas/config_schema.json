@@ -93,7 +93,7 @@
           "default": "json"
         },
         "default_delay": {
-          "type": "integer",
+          "type": "number",
           "minimum": 0,
           "description": "Default delay between requests in seconds"
         },
@@ -463,17 +463,17 @@
       "properties": {
         "timeout": {
           "type": "integer",
-          "minimum": 0,
+          "minimum": 1,
           "description": "Request timeout in seconds"
         },
         "connect_timeout": {
           "type": "integer",
-          "minimum": 0,
+          "minimum": 1,
           "description": "Connection timeout in seconds"
         },
         "read_timeout": {
           "type": "integer",
-          "minimum": 0,
+          "minimum": 1,
           "description": "Read timeout in seconds"
         },
         "verify_ssl": {
@@ -500,6 +500,18 @@
           "minimum": 1,
           "description": "Number of concurrent requests"
         },
+        "retry_max_retries": {"type": "integer", "minimum": 0},
+        "retry_backoff_strategy": {
+          "type": "string",
+          "enum": ["fixed", "exponential"]
+        },
+        "retry_initial_delay": {"type": "integer", "minimum": 0},
+        "retry_max_delay": {"type": "integer", "minimum": 0},
+        "retry_on_status": {
+          "type": ["string", "array"],
+          "items": {"type": "integer", "minimum": 100, "maximum": 599},
+          "description": "HTTP status codes to retry on (comma-separated string or array)"
+        },
         "retry": {
           "type": "object",
           "properties": {
@@ -512,7 +524,7 @@
             "max_delay": {"type": "integer", "minimum": 0},
             "retry_on_status": {
               "type": "array",
-              "items": {"type": "integer"}
+              "items": {"type": "integer", "minimum": 100, "maximum": 599}
             }
           },
           "additionalProperties": false
@@ -529,6 +541,7 @@
       "properties": {
         "retry_on_errors": {
           "type": ["string", "array"],
+          "items": {"type": "integer", "minimum": 100, "maximum": 599},
           "description": "HTTP status codes to retry on (comma-separated string or array)"
         },
         "max_consecutive_errors": {
@@ -559,4 +572,3 @@
   },
   "additionalProperties": false
 }
-

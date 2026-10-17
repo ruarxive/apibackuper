@@ -16,8 +16,8 @@
 - [x] 3.3 Add test for SQL injection attempt via table name
 
 ## 4. Credential Management
-- [ ] 4.1 Add environment variable substitution (`${VAR}`) in config loading
-- [ ] 4.2 Report clear error when referenced variable is unset
+- [x] 4.1 Add environment variable substitution (`${VAR}`) in config loading
+- [x] 4.2 Report clear error when referenced variable is unset
 - [ ] 4.3 Document credential best practices in README security section
 
 ## 5. Verification

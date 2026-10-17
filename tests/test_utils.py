@@ -1,12 +1,25 @@
 """Tests for utility functions"""
+
 import os
+from urllib.parse import parse_qsl, urlsplit
+
 import pytest
-from apibackuper.cmds.utils import load_file_list, load_csv_data, _url_replacer
+
+from apibackuper.cmds.utils import (
+    _url_replacer,
+    append_query,
+    load_csv_data,
+    load_file_list,
+    redact_headers,
+    redact_params,
+    redact_text,
+    redact_url,
+)
 
 
 class TestLoadFileList:
     """Tests for load_file_list function"""
-    
+
     def test_load_file_list(self, temp_dir):
         """Test loading file as list of lines"""
         file_path = os.path.join(temp_dir, "test.txt")
@@ -14,19 +27,19 @@ class TestLoadFileList:
             f.write("line1\n")
             f.write("line2\n")
             f.write("line3\n")
-        
+
         result = load_file_list(file_path)
         assert result == ["line1", "line2", "line3"]
-    
+
     def test_load_file_list_empty(self, temp_dir):
         """Test loading empty file"""
         file_path = os.path.join(temp_dir, "empty.txt")
-        with open(file_path, "w", encoding="utf-8") as f:
+        with open(file_path, "w", encoding="utf-8"):
             pass
-        
+
         result = load_file_list(file_path)
         assert result == []
-    
+
     def test_load_file_list_strips_newlines(self, temp_dir):
         """Test that newlines are stripped"""
         file_path = os.path.join(temp_dir, "test.txt")
@@ -34,10 +47,10 @@ class TestLoadFileList:
             f.write("line1\n")
             f.write("line2\r\n")
             f.write("line3\n")
-        
+
         result = load_file_list(file_path)
         assert all("\n" not in line and "\r" not in line for line in result)
-    
+
     def test_load_file_list_custom_encoding(self, temp_dir):
         """Test loading file with custom encoding"""
         file_path = os.path.join(temp_dir, "test.txt")
@@ -45,7 +58,7 @@ class TestLoadFileList:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write("тест\n")
             f.write("测试\n")
-        
+
         result = load_file_list(file_path, encoding="utf-8")
         assert "тест" in result
         assert "测试" in result
@@ -53,7 +66,7 @@ class TestLoadFileList:
 
 class TestLoadCsvData:
     """Tests for load_csv_data function"""
-    
+
     def test_load_csv_data(self, temp_dir):
         """Test loading CSV data"""
         file_path = os.path.join(temp_dir, "test.csv")
@@ -61,14 +74,14 @@ class TestLoadCsvData:
             f.write("id;name;value\n")
             f.write("1;Item 1;100\n")
             f.write("2;Item 2;200\n")
-        
+
         result = load_csv_data(file_path, "id")
         assert len(result) == 2
         assert "1" in result
         assert "2" in result
         assert result["1"]["name"] == "Item 1"
         assert result["2"]["name"] == "Item 2"
-    
+
     def test_load_csv_data_custom_delimiter(self, temp_dir):
         """Test loading CSV with custom delimiter"""
         file_path = os.path.join(temp_dir, "test.csv")
@@ -76,20 +89,20 @@ class TestLoadCsvData:
             f.write("id,name,value\n")
             f.write("1,Item 1,100\n")
             f.write("2,Item 2,200\n")
-        
+
         result = load_csv_data(file_path, "id", delimiter=",")
         assert len(result) == 2
         assert result["1"]["name"] == "Item 1"
-    
+
     def test_load_csv_data_empty(self, temp_dir):
         """Test loading empty CSV"""
         file_path = os.path.join(temp_dir, "empty.csv")
         with open(file_path, "w", encoding="utf-8") as f:
             f.write("id;name\n")
-        
+
         result = load_csv_data(file_path, "id")
         assert result == {}
-    
+
     def test_load_csv_data_duplicate_keys(self, temp_dir):
         """Test loading CSV with duplicate keys (last one wins)"""
         file_path = os.path.join(temp_dir, "test.csv")
@@ -97,7 +110,7 @@ class TestLoadCsvData:
             f.write("id;name;value\n")
             f.write("1;Item 1;100\n")
             f.write("1;Item 1 Updated;150\n")
-        
+
         result = load_csv_data(file_path, "id")
         assert len(result) == 1
         assert result["1"]["name"] == "Item 1 Updated"
@@ -105,45 +118,45 @@ class TestLoadCsvData:
 
 class TestUrlReplacer:
     """Tests for _url_replacer function"""
-    
+
     def test_url_replacer_query_mode(self):
         """Test URL replacement in query mode"""
         url = "https://api.example.com/data"
         params = {"page": 1, "size": 10}
         result = _url_replacer(url, params, query_mode=True)
-        
+
         assert "?" in result
         assert "page=1" in result
         assert "size=10" in result
         assert "&" in result
-    
+
     def test_url_replacer_non_query_mode(self):
         """Test URL replacement in non-query mode"""
         url = "https://api.example.com/data"
         params = {"page": 1, "size": 10}
         result = _url_replacer(url, params, query_mode=False)
-        
+
         assert ";" in result
         assert "page=1" in result
         assert "size=10" in result
-    
+
     def test_url_replacer_empty_params(self):
         """Test URL replacement with empty params"""
         url = "https://api.example.com/data"
         params = {}
         result = _url_replacer(url, params, query_mode=True)
-        
+
         assert result == url + "?"
-    
+
     def test_url_replacer_existing_query(self):
         """Test URL replacement with existing query string"""
         url = "https://api.example.com/data?existing=value"
         params = {"page": 1}
         result = _url_replacer(url, params, query_mode=True)
-        
+
         assert "existing=value" in result
         assert "page=1" in result
-    
+
     def test_url_replacer_special_chars(self):
         """Test URL replacement with special characters in values.
 
@@ -158,17 +171,17 @@ class TestUrlReplacer:
         # Space → '+'; '&' → '%26' (encoded)
         assert "query=test+value" in result
         assert "id=123%26456" in result
-    
+
     def test_url_replacer_numeric_values(self):
         """Test URL replacement with numeric values"""
         url = "https://api.example.com/data"
         params = {"page": 1, "size": 10, "offset": 0}
         result = _url_replacer(url, params, query_mode=True)
-        
+
         assert "page=1" in result
         assert "size=10" in result
         assert "offset=0" in result
-    
+
     def test_url_replacer_boolean_values(self):
         """Test URL replacement with boolean values"""
         url = "https://api.example.com/data"
@@ -196,17 +209,124 @@ class TestUtilsEdgeCases:
         # When ``str(key)`` raises, ``_is_sensitive_key`` must return False
         # rather than propagating the exception.
         from apibackuper.cmds.utils import _is_sensitive_key
+
         class Weird:
             def __str__(self):
                 raise RuntimeError("nope")
+
         assert _is_sensitive_key(Weird()) is False
 
-    def test_redact_params_passes_through_non_dict(self):
-        # Non-dict params are returned unchanged.
-        from apibackuper.cmds.utils import redact_params
+    def test_redact_params_preserves_scalar_values(self):
         assert redact_params("token=abc") == "token=abc"
         assert redact_params(None) is None
         assert redact_params(42) == 42
-        # List is also not a dict — passthrough.
+        # Scalar tuple elements remain unchanged when traversing containers.
         assert redact_params([("token", "abc")]) == [("token", "abc")]
 
+
+def test_redaction_copies_nested_lists_and_tuples_without_mutating_request():
+    original = {
+        "filter": [{"Access_Token": "nested-token-secret", "id": 7}],
+        "options": ({"credentials": {"password": "tuple-password-secret"}}, 4),
+        "page": 2,
+    }
+    redacted = redact_params(original)
+
+    assert "nested-token-secret" not in repr(redacted)
+    assert "tuple-password-secret" not in repr(redacted)
+    assert redacted["filter"][0]["id"] == 7
+    assert redacted["page"] == 2
+    assert isinstance(redacted["filter"], list)
+    assert isinstance(redacted["options"], tuple)
+    assert original["filter"][0]["Access_Token"] == "nested-token-secret"
+    assert original["options"][0]["credentials"]["password"] == "tuple-password-secret"
+    assert redacted["filter"] is not original["filter"]
+    assert redacted["options"][0] is not original["options"][0]
+
+
+def test_header_redaction_handles_nested_credentials():
+    original = {
+        "Authorization": "Bearer header-token-secret",
+        "X-Context": [{"api_key": "context-key-secret", "public": "visible"}],
+    }
+    redacted = redact_headers(original)
+    assert "header-token-secret" not in repr(redacted)
+    assert "context-key-secret" not in repr(redacted)
+    assert redacted["X-Context"][0]["public"] == "visible"
+    assert original["Authorization"] == "Bearer header-token-secret"
+
+
+def test_url_redaction_covers_userinfo_and_duplicate_sensitive_query_pairs():
+    url = (
+        "https://username-secret:password-secret@api.example.com:8443/items"
+        "?token=first-token-secret&token=second-token-secret&API_KEY=api-key-secret"
+        "&page=2&empty=#result"
+    )
+    safe = redact_url(url)
+    for secret in (
+        "username-secret",
+        "password-secret",
+        "first-token-secret",
+        "second-token-secret",
+        "api-key-secret",
+    ):
+        assert secret not in safe
+    parsed = urlsplit(safe)
+    assert parsed.hostname == "api.example.com"
+    assert parsed.port == 8443
+    assert parsed.fragment == "result"
+    pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    assert ("page", "2") in pairs
+    assert ("empty", "") in pairs
+    assert len([p for p in pairs if p[0] == "token"]) == 2
+    assert "first-token-secret" in url
+
+
+def test_exception_redaction_covers_urls_and_plain_credential_assignments():
+    error = RuntimeError(
+        "Timeout at https://url-user-secret:url-pass-secret@api.example.com/items"
+        "?access_token=url-token-secret&page=2 "
+        'api_key="quoted key secret" Authorization: Bearer bearer-secret'
+    )
+    safe = redact_text(error)
+    for secret in (
+        "url-user-secret",
+        "url-pass-secret",
+        "url-token-secret",
+        "quoted key secret",
+        "bearer-secret",
+    ):
+        assert secret not in safe
+    assert "Timeout" in safe
+    assert "api.example.com/items" in safe
+    assert "page=2" in safe
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"page": 2, "filter": "a&b", "tag": ["one", "two"]},
+        "page=2&filter=a%26b&tag=one&tag=two",
+        [("page", 2), ("filter", "a&b"), ("tag", "one"), ("tag", "two")],
+    ],
+)
+def test_append_query_preserves_existing_pairs_and_fragment(extra):
+    parsed = urlsplit(
+        append_query("https://api.example.com/items?existing=x%3Dy&empty=#data", extra)
+    )
+    assert parsed.path == "/items"
+    assert parsed.fragment == "data"
+    assert parse_qsl(parsed.query, keep_blank_values=True) == [
+        ("existing", "x=y"),
+        ("empty", ""),
+        ("page", "2"),
+        ("filter", "a&b"),
+        ("tag", "one"),
+        ("tag", "two"),
+    ]
+
+
+def test_append_query_introduces_question_mark_and_ignores_empty_extra():
+    url = "https://api.example.com/items#data"
+    assert append_query(url, {"page": 2}) == "https://api.example.com/items?page=2#data"
+    assert append_query(url, {}) == url

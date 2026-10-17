@@ -16,6 +16,7 @@ shape that ``requests.Session.get(url, params=..., ...)`` expects.
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 from typing import Any, Callable, Dict, Optional, Tuple
 
 
@@ -80,21 +81,21 @@ def build_page_request(
     that ``ProjectBuilder._single_request`` accepts.
     """
     local_change_params = dict(change_params)
-    local_params = dict(base_params)
+    local_params = deepcopy(base_params)
     local_url_params = dict(base_url_params) if base_url_params else None
     local_flatten = dict(base_flatten) if base_flatten else None
 
     if page_size_param:
         local_change_params[page_size_param] = page_limit
 
-    if iterate_by == "page":
+    if iterate_by == "page" and page_number_param:
         local_change_params[page_number_param] = target_page
-    elif iterate_by == "skip":
+    elif iterate_by == "skip" and count_skip_param:
         local_change_params[count_skip_param] = (target_page - 1) * page_limit
-    elif iterate_by == "range":
+    elif iterate_by == "range" and count_from_param and count_to_param:
         local_change_params[count_from_param] = (target_page - 1) * page_limit
         local_change_params[count_to_param] = target_page * page_limit
-    else:
+    elif iterate_by not in ("page", "skip", "range") and page_number_param:
         logging.warning("Unknown iterate_by %r — using 'page' fallback", iterate_by)
         local_change_params[page_number_param] = target_page
 

@@ -14,16 +14,18 @@ Main continuous integration workflow that runs on every push and pull request.
   - bandit security scanning
   - black formatting check
   - isort import sorting check
-  
+
 - **Typecheck**: Runs type checking with mypy
 
-- **Test**: Runs tests on multiple Python versions (3.6-3.12)
+- **Test**: Runs tests on multiple Python versions (3.10–3.13 on Ubuntu and macOS)
   - Uses pytest with coverage reporting
   - Uploads coverage to Codecov (on Python 3.11)
 
-- **Build**: Builds the package (only on master/main branch)
+- **Build**: Builds and installs the package on pushes and pull requests
   - Creates distribution packages
   - Validates package with twine
+  - Verifies installed CLI, schema access and wheel contents outside the checkout
+  - Tests example and template configurations in the test job
   - Uploads artifacts for 7 days
 
 **Triggers:**
@@ -107,12 +109,12 @@ Before pushing, you can run the same checks locally:
 pip install -r requirements-dev.txt
 
 # Run linting
-flake8 apibackuper --max-line-length=100 --extend-ignore=E203,E501
+flake8 apibackuper
 bandit -r apibackuper -ll
 
 # Check formatting
-black --check --line-length=100 apibackuper
-isort --check-only --profile=black --line-length=100 apibackuper
+black --check apibackuper
+isort --check-only apibackuper
 
 # Type checking
 mypy apibackuper --ignore-missing-imports --no-strict-optional
@@ -156,9 +158,9 @@ Add these badges to your README.md (optional):
 
 ## Troubleshooting
 
-### Tests Fail on Python 3.6/3.7
+### Supported Python versions
 
-Python 3.6 and 3.7 are EOL. If you want to drop support, remove them from the matrix in `ci.yml`.
+The declared minimum is Python 3.10. Keep package metadata, tox and the CI matrix synchronized.
 
 ### Coverage Upload Fails
 
@@ -169,4 +171,3 @@ Codecov upload is optional and won't fail the build. Make sure you've connected 
 1. Ensure trusted publishing is configured in PyPI
 2. Check that the version in `pyproject.toml` matches the release tag
 3. Verify the package builds successfully locally
-

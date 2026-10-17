@@ -9,6 +9,13 @@ apibackuper commands grouped the same way as the documentation sidebar.
 - [When to use](https://ruarxive.org/apibackuper/getting-started/when-to-use)
 - [Cookbook](https://ruarxive.org/apibackuper/getting-started/cookbook)
 - [Troubleshooting](https://ruarxive.org/apibackuper/getting-started/troubleshooting)
+- [Best practices](https://ruarxive.org/apibackuper/getting-started/best-practices)
+
+## Backup workflows
+
+- [Incremental updates and recovery](https://ruarxive.org/apibackuper/use-cases/incremental-and-update)
+- [Export and storage history](https://ruarxive.org/apibackuper/use-cases/export-and-storage)
+- [Follow requests and files](https://ruarxive.org/apibackuper/use-cases/follow-and-files)
 
 ## Commands
 
@@ -30,6 +37,9 @@ apibackuper commands grouped the same way as the documentation sidebar.
 - [Pagination](https://ruarxive.org/apibackuper/configuration/pagination)
 - [Authentication](https://ruarxive.org/apibackuper/configuration/auth)
 - [Storage](https://ruarxive.org/apibackuper/configuration/storage)
+- [Rate limiting and requests](https://ruarxive.org/apibackuper/configuration/rate-limiting-and-requests)
+- [Follow rules](https://ruarxive.org/apibackuper/configuration/follow)
+- [Hooks](https://ruarxive.org/apibackuper/configuration/hooks)
 - [Full reference](https://ruarxive.org/apibackuper/configuration/reference)
 
 ## Examples

@@ -18,7 +18,6 @@ data:
   total_number_key: count_total
   data_key: results
   item_key: num_reg_version
-  change_key: 
 
 storage:
   storage_type: zip
@@ -26,4 +25,3 @@ storage:
 
 request:
   verify_ssl: false
-

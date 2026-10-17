@@ -15,6 +15,15 @@ apibackuper estimate full -p budgettofk
 
 - `mode` — estimate mode (default `full`)
 
+Requires `data.total_number_key` to obtain the total count from the response
+and a positive `params.page_size_limit`. Configure `data.data_key` for wrapped
+record arrays. This command samples the live endpoint; its `mode` argument
+does not apply incremental update filters.
+
+For an offline plan based on configuration and saved state, use
+[`run full --dry-run`](/commands/run). Its estimate can be a lower bound or
+unknown when no total count is available.
+
 Typical output:
 
 ```text
@@ -28,4 +37,5 @@ Estimated all requests time, seconds 46.0536
 ```
 
 Run estimate before any large `run`. SSL, auth, and rate-limit settings from
-the project config apply.
+the project config apply. The size and time figures are estimates from the
+sample response and can change during a long backup.
