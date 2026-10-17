@@ -40,6 +40,7 @@ def test_local_walkthroughs(tmp_path, walkthrough):
     if walkthrough == "quick-start":
         pages.extend(
             [
+                (ROOT / "docs/docs/getting-started/data-integrity.md", demo),
                 (ROOT / "docs/docs/use-cases/export-and-storage.md", demo),
                 (ROOT / "docs/docs/development/python-api.md", tmp_path),
             ]
@@ -120,3 +121,34 @@ def test_documented_current_view(tmp_path, conflicting_latest):
         else:
             assert result.returncode == 0, result.stdout + result.stderr
             assert [json.loads(line) for line in output.read_text().splitlines()] == [history[2]]
+
+
+@pytest.mark.parametrize("problem", ["duplicate", "missing_record", "missing_field"])
+def test_documented_baseline_validation_rejects_incomplete_data(tmp_path, problem):
+    """The completeness recipe must detect failures hidden by a readable export."""
+    from scripts.validate_examples import markdown_blocks
+
+    page = ROOT / "docs/docs/getting-started/data-integrity.md"
+    code = next(body for language, meta, body in markdown_blocks(page) if language == "python")
+    records = runpy.run_path(str(ROOT / "examples/local-demo/server.py"))["RECORDS"]
+    if problem == "duplicate":
+        records[-1] = records[0]
+        expected_error = "Duplicate IDs"
+    elif problem == "missing_record":
+        records.pop()
+        expected_error = "AssertionError: (4, 5)"
+    else:
+        records[0].pop("title")
+        expected_error = "Unexpected record shape"
+    (tmp_path / "items.jsonl").write_text(
+        "\n".join(json.dumps(row) for row in records), encoding="utf8"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode != 0
+    assert expected_error in result.stderr
