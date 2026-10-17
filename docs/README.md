@@ -106,8 +106,8 @@ When adding or updating documentation:
    keep unreleased work under `Unreleased` without changing release metadata.
 5. Validate examples from the repository root with `python -m scripts.validate_examples`.
 6. Run `python -m pytest --no-cov tests/test_docs_examples.py` from the repository
-   root. It executes the marked Quick Start/Python API snippets against a local
-   server and checks the resulting archive and exports.
+   root. It executes the marked Quick Start, GET/POST use-case, export and Python
+   API snippets against a local server and checks the resulting archives and exports.
 7. Preview with `npm start` and confirm `npm run build` succeeds. Broken site
    and Markdown links fail the build. CI also builds the site on pull requests.
 
