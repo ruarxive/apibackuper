@@ -511,3 +511,123 @@ def test_oauth_refresh_diagnostics_do_not_echo_credentials(make_project, caplog)
     assert "private-access-token" not in caplog.text
     assert "private-refresh-token" not in caplog.text
     assert builder.http.post.call_args.kwargs["data"]["refresh_token"] == "private-refresh-token"
+
+
+DETAIL_RULE = {
+    "follow_mode": "item",
+    "follow_item_key": "id",
+    "follow_param": "id",
+    "follow_pattern": "https://api.example.test/detail",
+}
+
+
+def test_filesystem_full_backup_keeps_follow_details(make_project):
+    from zipfile import ZipFile
+
+    builder = make_project("filesystem", follow=DETAIL_RULE)
+    serve(builder, [{"id": 1}])
+    builder.run("full")
+    builder.http.get.side_effect = [reply({"id": 1, "detail": "kept"})]
+    builder.follow("full")
+    serve(builder, [{"id": 1}])
+    builder.run("full")
+    with ZipFile(builder.details_storage_file) as archive:
+        assert json.loads(archive.read("1.json"))["detail"] == "kept"
+
+
+def test_capped_page_size_fails_instead_of_publishing_partial_backup(make_project):
+    builder = make_project(params={"page_size_limit": 5})
+    serve(builder, [{"id": n} for n in range(6)])
+    with pytest.raises(RuntimeError, match="page_size_limit"):
+        builder.run("full")
+    assert not builder._load_state()
+    assert builder._load_checkpoint()["status"] == "running"
+
+
+def test_without_count_metadata_collects_until_short_page(make_project, monkeypatch):
+    monkeypatch.setattr("apibackuper.cmds.runner.DEFAULT_NUMBER_OF_PAGES", 2)
+    builder = make_project()
+    builder.total_number_key = ""
+    records = [{"id": n} for n in range(7)]
+    serve(builder, records)
+    builder.run("full")
+    assert stored(builder) == records
+
+
+def test_ignored_page_parameter_is_reported(make_project):
+    builder = make_project()
+    builder.total_number_key = ""
+    builder.http.get.side_effect = lambda url, **kwargs: reply({"items": [{"id": 1}, {"id": 2}]})
+    with pytest.raises(ValueError, match="ignore the pagination parameter"):
+        builder.run("full")
+
+
+def test_rate_limited_page_is_retried_by_default(make_project):
+    from datetime import datetime, timedelta, timezone
+    from email.utils import format_datetime
+
+    builder = make_project(project={"retry_count": 1})
+    assert 429 in builder.retry_on_status and 504 in builder.retry_on_status
+    limited = reply({}, 429)
+    limited.headers = {"Retry-After": format_datetime(datetime.now(timezone.utc) + timedelta(60))}
+    assert 59 * 86400 < builder._get_retry_delay(1, limited) <= 60 * 86400
+    builder.http.get.side_effect = [limited, reply({"items": [{"id": 1}], "total": 1})]
+    builder.run("full")
+    assert stored(builder) == [{"id": 1}]
+
+
+def test_follow_records_missing_objects_and_publishes_the_rest(make_project):
+    from zipfile import ZipFile
+
+    builder = make_project(follow=DETAIL_RULE)
+    serve(builder, [{"id": 1}, {"id": 2}])
+    builder.run("full")
+
+    def detail(url, **kwargs):
+        key = kwargs["params"]["id"]
+        return reply({}, 404) if key == 2 else reply({"id": key, "detail": True})
+
+    builder.http.get.side_effect = detail
+    builder.follow("full")
+    with ZipFile(builder.details_storage_file) as archive:
+        assert archive.namelist() == ["1.json"]
+    missing = builder.details_storage_file[: -len(".zip")] + ".missing.json"
+    with open(missing, encoding="utf8") as handle:
+        assert json.load(handle) == [{"key": 2, "page": 1, "status": 404}]
+    builder.http.get.reset_mock()
+    builder.follow("continue")
+    assert [call.kwargs["params"]["id"] for call in builder.http.get.call_args_list] == [2]
+
+
+def test_interrupted_run_resumes_after_last_saved_page(make_project):
+    builder = make_project(settings={"checkpoint_interval_pages": 0})
+    records = [{"id": n} for n in range(6)]
+
+    def get(url, **kwargs):
+        page = int(kwargs["params"]["page"])
+        if page == 3:
+            raise KeyboardInterrupt
+        return reply({"items": records[(page - 1) * 2 : page * 2], "total": len(records)})
+
+    builder.http.get.side_effect = get
+    with pytest.raises(KeyboardInterrupt):
+        builder.run("full")
+    assert builder._load_checkpoint()["next_page"] == 3
+    serve(builder, records)
+    builder.http.get.reset_mock()
+    builder.run("full", resume=True)
+    assert [call.kwargs["params"]["page"] for call in builder.http.get.call_args_list] == [3]
+    assert stored(builder) == records
+
+
+def test_checkpoint_interval_defaults_to_every_page(tmp_path, monkeypatch):
+    monkeypatch.setattr(ProjectBuilder, "enable_logging", lambda self: None)
+    config = {
+        "settings": {"name": "defaults"},
+        "project": {"url": "https://api.example.test/items", "http_mode": "GET"},
+        "params": {"page_size_limit": 2},
+        "data": {},
+        "storage": {"storage_type": "zip"},
+    }
+    (tmp_path / "apibackuper.yaml").write_text(yaml.safe_dump(config))
+    assert ProjectBuilder(str(tmp_path)).checkpoint_interval_pages == 1

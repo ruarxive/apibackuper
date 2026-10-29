@@ -49,7 +49,7 @@ cap and server-side filter semantics still need verification against the service
 | `logfile` | string; `apibackuper.log` | Relative to working directory unless absolute |
 | `state_file` | string; project's `apibackuper_state.json` | Successful-run state/watermark; explicit override is used as written |
 | `checkpoint_file` | string; project's `apibackuper_checkpoint.json` | Resume progress; explicit override is used as written |
-| `checkpoint_interval_pages` | integer ≥ 0; `0` | Periodic saves every N pages; 0 leaves lifecycle saves enabled |
+| `checkpoint_interval_pages` | integer ≥ 0; `1` | Periodic saves every N pages; 0 leaves lifecycle saves enabled |
 
 Do not share recovery files between projects. Keep config and data files
 consistent with their checkpoint during resume. See [project and data](/configuration/project-and-data).
@@ -182,7 +182,7 @@ Flat compatibility keys `retry_max_retries`, `retry_backoff_strategy`,
 `retry_initial_delay`, `retry_max_delay`, `retry_on_status` override the
 corresponding nested values. Flat status values also accept comma-separated
 strings. Missing retry status configuration falls back to
-`error_handling.retry_on_errors`, then `[500,502,503]`. An empty nested status
+`error_handling.retry_on_errors`, then `[429,500,502,503,504]`. An empty nested status
 list can still use the fallback; set `max_retries: 0` to disable ordinary retries.
 OAuth refresh is a separate 401-handling step.
 
@@ -193,7 +193,7 @@ proxy syntax, quota scope and total request budgets.
 
 | Field | Type / default | Interpretation |
 |-------|----------------|----------------|
-| `error_handling.retry_on_errors` | Integer array or comma-separated string; `[500,502,503]` | Fallback retry statuses |
+| `error_handling.retry_on_errors` | Integer array or comma-separated string; `[429,500,502,503,504]` | Fallback retry statuses |
 | `error_handling.max_consecutive_errors` | integer ≥ 0; `10` | Stop after this many consecutive unresolved page failures; 0 stops on the first failure, not unlimited |
 | `error_handling.continue_on_error` | boolean; `true` | Try later pages after failure; incomplete runs still exit unsuccessfully |
 | `logging.level` | `DEBUG`, `INFO`, `WARNING`, `ERROR` | DEBUG without section, INFO for empty logging section |

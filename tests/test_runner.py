@@ -681,3 +681,35 @@ class TestParseTotalPages:
         # ``should_retry(500)`` is True, so the 500 page was counted
         # in the errors dict.
         assert errors == {"500": 1}
+
+
+@pytest.mark.parametrize("parallelism", [1, 2])
+def test_unbounded_pages_run_until_a_terminal_page(run_pages, parallelism):
+    import itertools
+
+    saved = []
+
+    def consume(page, content):
+        if page == 4:
+            return False
+        saved.append(page)
+        return True
+
+    result = run_pages(pages=itertools.count(1), parallelism=parallelism, on_page=consume)
+    assert saved == [1, 2, 3]
+    assert result.completed
+    assert result.next_page == 4
+
+
+def test_interruption_saves_checkpoint_for_saved_prefix(run_pages):
+    checkpoints = []
+
+    def consume(page, content):
+        if page == 3:
+            raise KeyboardInterrupt
+        return True
+
+    with pytest.raises(KeyboardInterrupt):
+        run_pages(on_page=consume, save_checkpoint=checkpoints.append)
+    assert checkpoints[-1]["next_page"] == 3
+    assert checkpoints[-1]["pages_processed"] == 2

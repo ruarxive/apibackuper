@@ -27,7 +27,7 @@ settings:
 | `logfile` | `apibackuper.log` | Log path, relative to the working directory unless absolute |
 | `state_file` | Project's `apibackuper_state.json` | Last successful run and update watermark |
 | `checkpoint_file` | Project's `apibackuper_checkpoint.json` | Recovery mode, storage path and saved-page progress |
-| `checkpoint_interval_pages` | `0` | Non-negative periodic checkpoint interval; 0 disables periodic saves |
+| `checkpoint_interval_pages` | `1` | Non-negative periodic checkpoint interval; 0 disables periodic saves |
 
 Lifecycle checkpoints are written even when the interval is 0. State is
 advanced only after a successful backup/update; incomplete collection keeps

@@ -29,6 +29,10 @@ from ..storage import ZipStorageBackend, build_storage_backend, safe_member_name
 from ..storage.backends import publish_zip
 from .config_loader import load_json_file
 from .export import process_record
+from .http_client import RequestFailed
+
+# Statuses that mean a followed object no longer exists upstream.
+MISSING_STATUSES = (404, 410)
 
 
 def extract_keys_from_pages(
@@ -184,6 +188,7 @@ def follow_project(project, mode="full"):
         finally:
             source.close()
         target = ZipStorageBackend(working, mode="w" if mode == "full" else "a")
+        missing = []
         try:
             for key, item in targets.items():
                 pattern = option("follow_pattern")
@@ -215,12 +220,20 @@ def follow_project(project, mode="full"):
                     if mode == "continue" and name in target.list_objects("object"):
                         content = target.get_object(name, "object")
                     else:
-                        response = project._request(
-                            url,
-                            headers,
-                            update_dict_values(deepcopy(params), changes),
-                            http_mode=option("follow_http_mode", "GET"),
-                        )
+                        try:
+                            response = project._request(
+                                url,
+                                headers,
+                                update_dict_values(deepcopy(params), changes),
+                                http_mode=option("follow_http_mode", "GET"),
+                            )
+                        except RequestFailed as error:
+                            # A deleted object must not block the rest of the
+                            # follow run; record it and move to the next key.
+                            if error.status_code not in MISSING_STATUSES:
+                                raise
+                            missing.append({"key": key, "page": page, "status": error.status_code})
+                            break
                         content = response.content
                         if project.resp_type == "html":
                             if process is None:
@@ -243,11 +256,28 @@ def follow_project(project, mode="full"):
                         break
                 else:
                     raise RuntimeError("Follow pagination reached max_pages before end of data")
+            _write_missing(os.path.splitext(destination)[0] + ".missing.json", missing)
             target.close()
             if working != destination:
                 publish_zip(working, destination)
         finally:
             target.close()
+
+
+def _write_missing(path, missing):
+    """Replace the list of followed objects the API reported as gone."""
+    if not missing:
+        if os.path.exists(path):
+            os.unlink(path)
+        return
+    temporary = path + ".tmp"
+    with open(temporary, "w", encoding="utf8") as handle:
+        json.dump(missing, handle, ensure_ascii=False, indent=2, default=str)
+    os.replace(temporary, path)
+    statuses = "/".join(str(code) for code in MISSING_STATUSES)
+    message = f"{len(missing)} followed objects were not found (HTTP {statuses}); see {path}"
+    logging.warning(message)
+    print(f"Warning: {message}")
 
 
 __all__ = [

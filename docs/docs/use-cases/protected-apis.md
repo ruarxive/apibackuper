@@ -173,7 +173,7 @@ immediate replay can add HTTP exchanges within an attempt, so reserve headroom
 if the provider counts every exchange. Follow/file transfers also consume quota;
 aria2 uses a separate policy.
 
-An integer `Retry-After` can exceed `max_delay`; HTTP-date values are not parsed.
+A `Retry-After` value, in seconds or as an HTTP date, can exceed `max_delay`.
 Increasing retries does not repair a 401/403. Set the active connection/read
 fields rather than relying on the legacy `request.timeout` setting. For POST
 search APIs, confirm request replay is acceptable before using retries.

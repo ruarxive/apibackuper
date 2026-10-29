@@ -90,8 +90,11 @@ class ZipStorageBackend(StorageBackend):
         self._zip = ZipFile(filename, "r")
         self._names = set(self._zip.namelist())
         self._pending = set()
+        # Journal directories whose entries changed since the last flush.
+        self._dirty = set()
         if os.path.isdir(self._journal):
             for directory, _, files in os.walk(self._journal):
+                self._dirty.add(directory)
                 for entry in files:
                     if entry.endswith(".pending"):
                         name = os.path.relpath(os.path.join(directory, entry), self._journal)[:-8]
@@ -119,6 +122,10 @@ class ZipStorageBackend(StorageBackend):
                 os.unlink(temporary)
         self._pending.add(name)
         self._names.add(name)
+        directory = os.path.dirname(destination)
+        while directory.startswith(self._journal):
+            self._dirty.add(directory)
+            directory = os.path.dirname(directory)
 
     def list_objects(self, kind: str = "page") -> List[str]:
         return sorted(name for name in self._names if kind != "page" or _is_page(name))
@@ -169,15 +176,20 @@ class ZipStorageBackend(StorageBackend):
     def flush(self) -> None:
         # Each journal file was fsynced before its atomic rename. Preserve the
         # original ZIP central directory until close's atomic replacement.
+        # Only directories touched since the last flush are synced, so
+        # per-page checkpoints do not rescan the whole journal.
         if self._mode != "r" and os.path.isdir(self._journal):
             if os.name == "nt":
                 return
-            for directory, _, _ in os.walk(self._journal):
+            for directory in sorted(self._dirty):
+                if not os.path.isdir(directory):
+                    continue
                 descriptor = os.open(directory, os.O_RDONLY)
                 try:
                     os.fsync(descriptor)
                 finally:
                     os.close(descriptor)
+            self._dirty.clear()
 
 
 def publish_zip(staging: str, destination: str) -> None:

@@ -1,5 +1,7 @@
 """Backup workflow shared by the public run/update commands."""
 
+import hashlib
+import itertools
 import json
 import os
 import shutil
@@ -227,7 +229,7 @@ def run_backup(project, mode, resume=False):
         first_data = _decode(project, response.content, process)
         if project.detect_enabled and project.resp_type == "json":
             project._apply_detection(project._detect_suggestions(first_data))
-        num_pages, _ = parse_total_pages(
+        num_pages, total = parse_total_pages(
             first_data,
             resp_type=project.resp_type,
             total_number_key=project.total_number_key,
@@ -240,11 +242,15 @@ def run_backup(project, mode, resume=False):
             "skip": project.count_skip_param,
             "range": project.count_from_param,
         }.get(project.iterate_by)
+        # Count metadata bounds the run; without it, collect until the API
+        # returns a short or empty page instead of stopping at a fixed cap.
+        bounded = total is not None or not pagination_parameter
         if not pagination_parameter:
             num_pages = 1
         num_pages = max(1, num_pages)
-        pages = list(range(first_page, project.start_page + num_pages))
-        bar = tqdm(total=len(pages), desc="Downloading pages", unit="page")
+        last_expected = project.start_page + num_pages - 1
+        pages = range(first_page, last_expected + 1) if bounded else itertools.count(first_page)
+        bar = tqdm(total=len(pages) if bounded else None, desc="Downloading pages", unit="page")
 
         def fetch(page):
             try:
@@ -258,13 +264,31 @@ def run_backup(project, mode, resume=False):
                 }
 
         hook_records = current["records_processed"]
+        previous_digest = None
+        early_end = None
+
+        def note_end(page, count):
+            nonlocal early_end
+            if bounded and pagination_parameter and page < last_expected:
+                early_end = (page, count)
 
         def store(page, content):
-            nonlocal hook_records
+            nonlocal hook_records, previous_digest
             data = _decode(project, content, process)
             items = _records(project, data)
             if not items:
+                note_end(page, 0)
                 return PageOutcome(saved=False, stop=True)
+            if pagination_parameter:
+                digest = hashlib.sha256(
+                    json.dumps(items, sort_keys=True, ensure_ascii=False, default=str).encode()
+                ).hexdigest()
+                if digest == previous_digest:
+                    raise ValueError(
+                        f"Page {page} returned the same records as page {page - 1}; the API "
+                        f"appears to ignore the pagination parameter {pagination_parameter!r}"
+                    )
+                previous_digest = digest
             serialized = (
                 content
                 if project.resp_type == "json"
@@ -282,10 +306,13 @@ def run_backup(project, mode, resume=False):
                 },
             )
             countable = isinstance(data, list) or bool(project.data_key)
+            short = countable and len(items) < project.page_limit
+            if short:
+                note_end(page, len(items))
             return PageOutcome(
                 records=len(items),
                 bytes_written=len(serialized),
-                stop=countable and len(items) < project.page_limit or not countable,
+                stop=short or not countable,
             )
 
         result = fetch_all_pages(
@@ -300,7 +327,7 @@ def run_backup(project, mode, resume=False):
             storage_backend=None,
             progress_bar=bar,
             start_timer=time.time(),
-            total_pages=len(pages),
+            total_pages=len(pages) if bounded else 0,
             checkpoint_interval=project.checkpoint_interval_pages,
             save_checkpoint=save,
             initial_pages_processed=current["pages_processed"],
@@ -322,7 +349,21 @@ def run_backup(project, mode, resume=False):
             raise RuntimeError(
                 "Backup is incomplete; resume from checkpoint. Errors: " + json.dumps(result)
             )
+        if early_end is not None:
+            page, count = early_end
+            raise RuntimeError(
+                f"Backup is incomplete: page {page} returned {count} records "
+                f"(page_size_limit is {project.page_limit}) before page {last_expected}, the "
+                f"last page implied by the API's count metadata. If the API caps the page "
+                f"size, set params.page_size_limit to the size it returns and run a new full "
+                f"backup; if its count is not exact, remove the count key from the data section."
+            )
         summary = _summary(project, session, baseline)
+        if total is not None and summary["records_processed"] < total:
+            print(
+                f"Warning: collected {summary['records_processed']} of {total} records "
+                "reported by the API"
+            )
         ended = datetime.now(timezone.utc).isoformat()
         state = dict(summary, last_run_start=started, last_run_end=ended, update_watermark=started)
         session.backend.flush()

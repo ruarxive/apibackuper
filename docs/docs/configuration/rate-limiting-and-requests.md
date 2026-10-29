@@ -118,7 +118,7 @@ For this example, delays before retries are 1, 2 and 4 seconds. `fixed` uses
 `initial_delay` each time, capped by `max_delay`; exponential uses
 `min(initial_delay * 2^(retry_number - 1), max_delay)`.
 A server `Retry-After: 15` overrides the configured backoff delay, even when it
-exceeds `max_delay`. HTTP-date Retry-After values are not parsed; the configured
+exceeds `max_delay`. An HTTP-date Retry-After waits until that time; otherwise the configured
 delay is used instead.
 
 POST requests can also be retried. Use this tool for read/query endpoints where
@@ -136,8 +136,8 @@ For each corresponding setting, flat compatibility keys override nested keys:
    fixed backoff and maximum delay `max(retry_delay, retry_delay * 4)`.
 
 The fallback retry status list is `error_handling.retry_on_errors`, or
-`[500, 502, 503]` when omitted. Configure a non-empty explicit list to remove
-ambiguity; 429 is not included in that default. Prefer the nested YAML form and
+`[429, 500, 502, 503, 504]` when omitted. Configure a non-empty explicit list to
+remove ambiguity. Prefer the nested YAML form and
 remove leftover flat overrides when migrating a configuration.
 
 ## Failed pages and continued collection

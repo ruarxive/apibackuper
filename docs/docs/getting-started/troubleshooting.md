@@ -129,7 +129,7 @@ request:
 ```
 
 Use provider-approved values. Account for other processes/apps using the same
-quota; the project's limiter is per process. An integer Retry-After can cause
+quota; the project's limiter is per process. A Retry-After value can cause
 waits longer than `max_delay`. Minute/hour windows and retries can also explain
 long pauses without new requests. More concurrency or retries can worsen quota
 failures. See [request policy](/configuration/rate-limiting-and-requests).

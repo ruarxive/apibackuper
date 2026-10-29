@@ -12,7 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Guides for HTTP request JSON files, pagination/completeness boundaries, export filter grammar, Python integration and storage access; expanded configuration, hook and OAuth2 contracts.
 - Documentation builds on pull requests and validation of Markdown YAML/JSON examples and shipped JSON files.
 
+### Changed
+- Retry HTTP 429 and 504, along with 500, 502 and 503, when no retry status list is configured.
+- Default `settings.checkpoint_interval_pages` to 1, so an interrupted backup resumes after its last saved page. Set 0 to keep only lifecycle checkpoints.
+
 ### Fixed
+- Keep follow archives such as `details.zip` when a new full backup is published to filesystem storage; they were deleted with the previous backup tree.
+- Fail a backup as incomplete when a short or empty page arrives before the last page implied by the API's count metadata, for example when the API caps the page size, instead of publishing a partial archive.
+- Without count metadata, collect until a short or empty page instead of silently stopping at 20,000 pages, and fail when a page repeats the previous page's records.
+- Print a warning when a run collects fewer records than the API's reported total.
+- Record followed objects answered with HTTP 404 or 410 in `details.missing.json` and continue with the other keys instead of aborting the follow run.
+- Save a checkpoint for the saved pages when collection is interrupted, and sync only changed ZIP journal directories when checkpointing.
+- Honor `Retry-After` HTTP-date values.
 - Preserve console logging for `--verbose` after project initialization and honor `logging.level` when verbose is not enabled.
 - Reject malformed and compound export filters before opening storage or replacing output instead of silently disabling filtering or returning misleading results.
 - Correct example descriptions and release instructions, remove references to deleted history/setup files, and retain E-Trust as a separate POST API walkthrough.

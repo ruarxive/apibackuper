@@ -3,6 +3,7 @@ import configparser
 import csv
 import json
 import logging
+import math
 import os
 import subprocess
 import sys
@@ -12,6 +13,8 @@ import time
 import warnings
 import zipfile
 from contextlib import suppress
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from runpy import run_path
 from timeit import default_timer as timer
 from typing import Any, Dict, List, Optional, Tuple
@@ -282,14 +285,16 @@ class ProjectBuilder:
                 if self.config.has_option("settings", "checkpoint_file")
                 else os.path.join(self.project_path, "apibackuper_checkpoint.json")
             )
+            # Checkpoint after every saved page by default so a crash resumes
+            # where it stopped; 0 keeps only the lifecycle checkpoints.
             self.checkpoint_interval_pages = _safe_int(
                 (
                     self.config.get("settings", "checkpoint_interval_pages")
                     if self.config.has_option("settings", "checkpoint_interval_pages")
-                    else 0
+                    else 1
                 ),
                 "settings.checkpoint_interval_pages",
-                0,
+                1,
             )
             self.data_key = (
                 self.config.get("data", "data_key")
@@ -928,6 +933,15 @@ class ProjectBuilder:
                     return int(retry_after)
                 except ValueError:
                     pass
+                # RFC 9110 also allows an HTTP-date.
+                try:
+                    moment = parsedate_to_datetime(retry_after)
+                except (TypeError, ValueError):
+                    moment = None
+                if moment is not None:
+                    if moment.tzinfo is None:
+                        moment = moment.replace(tzinfo=timezone.utc)
+                    return max(0, math.ceil((moment - datetime.now(timezone.utc)).total_seconds()))
         if self.retry_backoff_strategy == "exponential":
             delay = self.retry_initial_delay * (2 ** (attempt - 1))
         else:

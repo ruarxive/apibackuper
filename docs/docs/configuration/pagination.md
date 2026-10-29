@@ -101,10 +101,17 @@ The first response is used to derive the collection bound:
 
 1. A usable `data.total_number_key` gives `ceil(total / page_size_limit)`.
 2. Otherwise, `data.pages_number_key` supplies the page count.
-3. Without usable count metadata, the fallback is 20,000 internal pages.
+3. Without usable count metadata, collection continues until a short or empty
+   page; there is no fixed page cap.
 
 For 250 records and a size of 100, the count is 3 pages. Without count metadata,
-responses of 100, 100 and 50 records stop after the short page. If all pages
+responses of 100, 100 and 50 records stop after the short page. A page that
+repeats the previous page's records fails the run, because the API is
+ignoring the pagination parameter.
+
+When count metadata is available, a short or empty page before the last page it
+implies fails the run instead of publishing a partial backup. This usually means
+the API caps the page size below `page_size_limit`. If all pages
 are exactly full, an additional empty page can be needed to discover the end.
 
 An empty page ends collection without adding an empty data page to the archive.
@@ -147,7 +154,8 @@ paginate each detail endpoint. See [paginated follow rules](/configuration/follo
 | Symptom | Likely cause / action |
 |---------|-----------------------|
 | Only one page saved | Missing parameter name for the chosen mode, short page, or wrong `data_key` |
-| Every page contains the same records | Wrong parameter name/location; the API ignores the changing value |
+| Every page contains the same records / "ignore the pagination parameter" error | Wrong parameter name/location; the API ignores the changing value |
+| "returned N records … before page M" error | The API caps the page size: set `page_size_limit` to the returned size and run a new full backup; or remove an inexact count key |
 | Collection stops after the first 50 records | Server page-size cap differs from `page_size_limit` |
 | Unexpected page count | Record total confused with page total, or metadata path does not exist |
 | Repeated/missing IDs | Unstable sorting, changing source, or inclusive range bounds |
