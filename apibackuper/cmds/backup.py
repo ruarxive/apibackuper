@@ -9,6 +9,7 @@ import time
 from copy import deepcopy
 from datetime import datetime, timezone
 from runpy import run_path
+from urllib.parse import urljoin, urlsplit
 
 import xmltodict
 from tqdm import tqdm
@@ -17,7 +18,7 @@ from ..common import get_dict_value, update_dict_values
 from ..storage.session import BackupSession
 from .config_loader import load_json_file
 from .export import process_record
-from .fetch import build_page_request
+from .fetch import CURSOR_MODES, build_page_request
 from .runner import PageOutcome, fetch_all_pages, parse_total_pages
 from .utils import flat_param_value, redact_text
 
@@ -39,6 +40,33 @@ def _records(project, data):
         if get_dict_value(data, project.data_key, splitter=project.field_splitter) is None:
             raise ValueError(f"Response is missing configured data_key: {project.data_key}")
     return process_record(data, data_key=project.data_key, field_splitter=project.field_splitter)
+
+
+def _next_position(project, response, data):
+    """Return the cursor or absolute URL of the page after ``response``, or None."""
+    if project.iterate_by == "link_header":
+        links = getattr(response, "links", None) or {}
+        value = (links.get("next") or {}).get("url")
+    else:
+        key = project.next_url_key if project.iterate_by == "next_url" else project.next_cursor_key
+        # A literal key such as ``@odata.nextLink`` wins over a dotted path.
+        if isinstance(data, dict) and key in data:
+            value = data[key]
+        else:
+            value = get_dict_value(data, key, splitter=project.field_splitter)
+    if value is None or value == "" or value is False:
+        return None
+    if project.iterate_by == "cursor":
+        return value
+    base = getattr(response, "url", None) or project.start_url
+    target = urljoin(base, str(value))
+    host = urlsplit(target).netloc
+    if host != urlsplit(project.start_url).netloc and not project.allow_cross_host_next:
+        raise RuntimeError(
+            f"Backup is incomplete: the next-page URL points to another host ({host}); "
+            "set params.allow_cross_host_next to follow it"
+        )
+    return target
 
 
 def _summary(project, session, baseline):
@@ -91,6 +119,11 @@ def run_backup(project, mode, resume=False):
         mode = "continue"
     if mode not in ("full", "continue", "update"):
         raise ValueError(f"Unsupported run mode: {mode}")
+    if mode == "continue" and project.iterate_by in CURSOR_MODES:
+        raise ValueError(
+            "run continue cannot start inside a cursor chain; "
+            "use run full --resume or update instead"
+        )
     valid, _, _ = project.validate_config()
     if not valid:
         raise ValueError("Invalid project configuration; run validate-config for details")
@@ -149,11 +182,28 @@ def run_backup(project, mode, resume=False):
         "records_processed": 0,
         "storage_bytes": 0,
         "failed_pages": [],
+        # Cursor or URL of the page after the saved prefix (cursor modes).
+        "cursor": None,
     }
     current.update({key: checkpoint[key] for key in current if key in checkpoint})
     if checkpoint and "next_page" not in checkpoint:
         current["next_page"] = max(
             project.start_page, int(checkpoint.get("last_page", project.start_page))
+        )
+    if (
+        project.iterate_by in CURSOR_MODES
+        and current["next_page"] > project.start_page
+        and current["cursor"] is None
+    ):
+        # Without a stored cursor the chain cannot continue; replay it from
+        # the start, overwriting the saved pages.
+        current.update(
+            last_page=project.start_page - 1,
+            next_page=project.start_page,
+            pages_processed=0,
+            records_processed=0,
+            storage_bytes=0,
+            failed_pages=[],
         )
     if mode == "continue" and not checkpoint:
         names = set(session.backend.list_objects("page"))
@@ -165,7 +215,7 @@ def run_backup(project, mode, resume=False):
         current.update(payload)
         session.checkpoint(dict(current, run_start=started))
 
-    def request(page):
+    def request(page, cursor=None):
         url, page_params, _, flatten = build_page_request(
             target_page=page,
             start_url=project.start_url,
@@ -184,7 +234,14 @@ def run_backup(project, mode, resume=False):
             url_replacer=project_url_replacer,
             update_dict_values=update_dict_values,
             flat_params=project.flat_params,
+            cursor_param=project.cursor_param,
+            cursor=cursor,
         )
+        if cursor is not None and project.iterate_by in ("next_url", "link_header"):
+            # The next URL carries the position and the original query.
+            url = cursor
+            if project.http_mode == "GET":
+                page_params, flatten = {}, None
         local_headers = deepcopy(headers)
         hook = project._run_hook(
             "before_request",
@@ -225,10 +282,10 @@ def run_backup(project, mode, resume=False):
     try:
         save(current)
         first_page = int(current["next_page"])
-        response = request(first_page)
+        response = request(first_page, current["cursor"])
         first_data = _decode(project, response.content, process)
         if project.detect_enabled and project.resp_type == "json":
-            project._apply_detection(project._detect_suggestions(first_data))
+            project._apply_detection(project._detect_suggestions(first_data, response.headers))
         num_pages, total = parse_total_pages(
             first_data,
             resp_type=project.resp_type,
@@ -237,14 +294,19 @@ def run_backup(project, mode, resume=False):
             page_size_limit=project.page_limit,
             field_splitter=project.field_splitter,
         )
-        pagination_parameter = {
-            "page": project.page_number_param,
-            "skip": project.count_skip_param,
-            "range": project.count_from_param,
-        }.get(project.iterate_by)
+        cursor_mode = project.iterate_by in CURSOR_MODES
+        if cursor_mode:
+            pagination_parameter = project.cursor_param or "next link"
+        else:
+            pagination_parameter = {
+                "page": project.page_number_param,
+                "skip": project.count_skip_param,
+                "range": project.count_from_param,
+            }.get(project.iterate_by)
         # Count metadata bounds the run; without it, collect until the API
         # returns a short or empty page instead of stopping at a fixed cap.
-        bounded = total is not None or not pagination_parameter
+        # Cursor chains end only when the API returns no next position.
+        bounded = not cursor_mode and (total is not None or not pagination_parameter)
         if not pagination_parameter:
             num_pages = 1
         num_pages = max(1, num_pages)
@@ -252,9 +314,18 @@ def run_backup(project, mode, resume=False):
         pages = range(first_page, last_expected + 1) if bounded else itertools.count(first_page)
         bar = tqdm(total=len(pages) if bounded else None, desc="Downloading pages", unit="page")
 
+        # Cursor modes: the next position comes from the stored page's response.
+        position = {"next": current["cursor"]}
+        responses = {}
+        seen = set()
+        if current["cursor"] is not None:
+            seen.add(json.dumps(current["cursor"], sort_keys=True, default=str))
+
         def fetch(page):
             try:
-                result = response if page == first_page else request(page)
+                result = response if page == first_page else request(page, position["next"])
+                if cursor_mode:
+                    responses[page] = result
                 return {"page": page, "status": result.status_code, "content": result.content}
             except (RuntimeError, ValueError, OSError) as exc:
                 return {
@@ -289,6 +360,17 @@ def run_backup(project, mode, resume=False):
                         f"appears to ignore the pagination parameter {pagination_parameter!r}"
                     )
                 previous_digest = digest
+            following = None
+            if cursor_mode:
+                following = _next_position(project, responses.pop(page, None), data)
+                if following is not None:
+                    marker = json.dumps(following, sort_keys=True, default=str)
+                    if marker in seen:
+                        raise RuntimeError(
+                            f"Backup is incomplete: page {page} returned a next position that "
+                            "was already followed; the API pagination loops"
+                        )
+                    seen.add(marker)
             serialized = (
                 content
                 if project.resp_type == "json"
@@ -305,6 +387,11 @@ def run_backup(project, mode, resume=False):
                     "bytes_written": len(serialized),
                 },
             )
+            if cursor_mode:
+                current["cursor"] = position["next"] = following
+                return PageOutcome(
+                    records=len(items), bytes_written=len(serialized), stop=following is None
+                )
             countable = isinstance(data, list) or bool(project.data_key)
             short = countable and len(items) < project.page_limit
             if short:
@@ -317,13 +404,14 @@ def run_backup(project, mode, resume=False):
 
         result = fetch_all_pages(
             pages=pages,
-            parallelism=project.parallelism,
+            # Each cursor request depends on the previous response.
+            parallelism=1 if cursor_mode else project.parallelism,
             fetch_one=fetch,
             on_page=store,
             should_retry=project._should_retry,
             retry_max_retries=project.retry_max_retries,
             max_consecutive_errors=project.max_consecutive_errors,
-            continue_on_error=project.continue_on_error,
+            continue_on_error=project.continue_on_error and not cursor_mode,
             storage_backend=None,
             progress_bar=bar,
             start_timer=time.time(),

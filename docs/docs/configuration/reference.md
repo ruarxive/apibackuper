@@ -62,7 +62,7 @@ consistent with their checkpoint during resume. See [project and data](/configur
 | `http_mode` | `GET` or `POST` | **Required**; POST is JSON, not form data |
 | `description` | string; omitted | Dataset purpose/source description |
 | `work_modes` | string; omitted | Legacy declaration such as `full,incremental,update`; does not enforce an allowlist |
-| `iterate_by` | `page`, `skip`, `range`; `page` | Main backup pagination calculation |
+| `iterate_by` | `page`, `skip`, `range`, `cursor`, `next_url`, `link_header`; `page` | Main backup pagination; cursor modes are sequential |
 | `resp_type` | `json`, `xml`, `html`; `json` | Main response decoding; HTML requires extraction code |
 | `detect` | boolean; `false` | Infer selected keys from the first JSON response |
 | `update_mode` | `by_change_key`, `by_timestamp`, `custom_script` | Conditional fallback described below; custom script is reserved/rejected |
@@ -84,6 +84,8 @@ metadata alone does not make an endpoint incremental.
 | `start_page` | integer ≥ 1; `1` | Internal start page; sent unchanged in page mode |
 | `page_number_param` | string; omitted | Page-mode request parameter; e.g. `page` or `paging.page` |
 | `page_size_param` | string; omitted | Request parameter receiving page size |
+| `cursor_param` | string; omitted | Cursor-mode request parameter receiving the token from the previous response |
+| `allow_cross_host_next` | boolean; `false` | Follow next-page URLs on another host |
 | `count_skip_param` | string; omitted | Skip-mode offset `(page-1)*size` |
 | `count_from_param` | string; omitted | Range lower bound `(page-1)*size` |
 | `count_to_param` | string; omitted | Range upper bound `page*size`; no automatic inclusive adjustment |
@@ -104,6 +106,8 @@ and [HTTP request files](/configuration/http-requests).
 | `data_key` | string; omitted | Path from response root to records; omit for root list/object |
 | `total_number_key` | string; omitted | Path from response root to total **record** count |
 | `pages_number_key` | string; omitted | Path from response root to total **page** count; fallback after record total |
+| `next_cursor_key` | string; omitted | `cursor` mode: path to the next token; missing or empty ends collection |
+| `next_url_key` | string; omitted | `next_url` mode: path or literal key of the next URL; missing ends collection |
 | `item_key` | string; omitted | Identifier metadata; does not build an index or deduplicate archives |
 | `change_key` | string; omitted | Path from each extracted record to a comparable change value |
 

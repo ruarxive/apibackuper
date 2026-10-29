@@ -64,6 +64,7 @@ from .config_loader import (
     substitute_env_vars,
     validate_yaml_config,
 )
+from .fetch import CURSOR_MODES
 from .utils import (
     _is_sensitive_key,
     _url_replacer,
@@ -117,6 +118,47 @@ def _atomic_write_json(path: str, payload: Dict[str, Any]) -> None:
             # support fsync; skip it rather than fail the write.
             pass
     os.replace(tmp_path, path)
+
+
+# Common response fields that point to the next page, most specific first.
+NEXT_URL_KEYS = (
+    "@odata.nextLink",
+    "next",
+    "next_url",
+    "nextUrl",
+    "links.next",
+    "_links.next.href",
+    "paging.next",
+    "pagination.next",
+    "meta.next",
+)
+# Cursor fields and the request parameter that usually carries them back.
+NEXT_CURSOR_KEYS = (
+    ("next_cursor", "cursor"),
+    ("nextCursor", "cursor"),
+    ("cursor.next", "cursor"),
+    ("response_metadata.next_cursor", "cursor"),
+    ("meta.next_cursor", "cursor"),
+    ("next_page_token", "page_token"),
+    ("nextPageToken", "pageToken"),
+)
+# Detected suggestion -> (config section, option); suggestions never replace
+# an option the configuration already sets.
+DETECTED_OPTIONS = {
+    "data_key": ("data", "data_key"),
+    "total_number_key": ("data", "total_number_key"),
+    "next_url_key": ("data", "next_url_key"),
+    "next_cursor_key": ("data", "next_cursor_key"),
+    "cursor_param": ("params", "cursor_param"),
+    "iterate_by": ("project", "iterate_by"),
+}
+
+
+def apply_detected_options(config_data: Dict[str, Any], suggestions: Dict[str, Any]) -> None:
+    """Write detected options into a YAML config mapping without overriding it."""
+    for name, (section, option) in DETECTED_OPTIONS.items():
+        if suggestions.get(name):
+            config_data.setdefault(section, {}).setdefault(option, suggestions[name])
 
 
 class RedirectSafeSession(requests.Session):
@@ -466,6 +508,27 @@ class ProjectBuilder:
             self.page_size_param = (
                 self.config.get("params", "page_size_param")
                 if self.config.has_option("params", "page_size_param")
+                else None
+            )
+            # Cursor-style pagination (iterate_by: cursor, next_url, link_header).
+            self.cursor_param = (
+                self.config.get("params", "cursor_param")
+                if self.config.has_option("params", "cursor_param")
+                else None
+            )
+            self.allow_cross_host_next = (
+                self.config.getboolean("params", "allow_cross_host_next")
+                if self.config.has_option("params", "allow_cross_host_next")
+                else False
+            )
+            self.next_cursor_key = (
+                self.config.get("data", "next_cursor_key")
+                if self.config.has_option("data", "next_cursor_key")
+                else None
+            )
+            self.next_url_key = (
+                self.config.get("data", "next_url_key")
+                if self.config.has_option("data", "next_url_key")
                 else None
             )
             self.storage_file = self._resolve_storage_file()
@@ -1202,8 +1265,14 @@ class ProjectBuilder:
         """Run update mode with state tracking."""
         self.run("update", resume=resume)
 
-    def _detect_suggestions(self, data: Any) -> Dict[str, Any]:
+    def _detect_suggestions(self, data: Any, headers: Any = None) -> Dict[str, Any]:
         suggestions: Dict[str, Any] = {}
+        link = (headers or {}).get("Link") or (headers or {}).get("link")
+        if link and any(
+            "next" in str(entry.get("rel", "")).split()
+            for entry in requests.utils.parse_header_links(link)
+        ):
+            suggestions["iterate_by"] = "link_header"
         if isinstance(data, dict):
             for key in ["results", "items", "data"]:
                 if isinstance(data.get(key), list):
@@ -1218,23 +1287,35 @@ class ProjectBuilder:
                 if key in data:
                     suggestions["total_number_key"] = key
                     break
-            if "page" in data or "pages" in data:
-                suggestions["iterate_by"] = "page"
-            elif "offset" in data or "skip" in data:
-                suggestions["iterate_by"] = "skip"
+            if "iterate_by" not in suggestions:
+                suggestions.update(self._detect_cursor(data))
+            if "iterate_by" not in suggestions:
+                if "page" in data or "pages" in data:
+                    suggestions["iterate_by"] = "page"
+                elif "offset" in data or "skip" in data:
+                    suggestions["iterate_by"] = "skip"
         return suggestions
+
+    def _detect_cursor(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Suggest a next-URL or cursor mode from common response fields."""
+        splitter = self.field_splitter
+        for path in NEXT_URL_KEYS:
+            key = path if path in data else splitter.join(path.split("."))
+            value = data.get(key) if key in data else get_dict_value(data, key, splitter=splitter)
+            if isinstance(value, str) and value.startswith(("http://", "https://", "/", "?")):
+                return {"iterate_by": "next_url", "next_url_key": key}
+        for path, param in NEXT_CURSOR_KEYS:
+            key = splitter.join(path.split("."))
+            if get_dict_value(data, key, splitter=splitter) not in (None, ""):
+                return {"iterate_by": "cursor", "next_cursor_key": key, "cursor_param": param}
+        return {}
 
     def _apply_detection(self, suggestions: Dict[str, Any]) -> None:
         if not suggestions:
             return
-        if not self.config.has_option("data", "data_key") and suggestions.get("data_key"):
-            self.data_key = suggestions["data_key"]
-        if not self.config.has_option("data", "total_number_key") and suggestions.get(
-            "total_number_key"
-        ):
-            self.total_number_key = suggestions["total_number_key"]
-        if not self.config.has_option("project", "iterate_by") and suggestions.get("iterate_by"):
-            self.iterate_by = suggestions["iterate_by"]
+        for name, (section, option) in DETECTED_OPTIONS.items():
+            if suggestions.get(name) and not self.config.has_option(section, option):
+                setattr(self, name, suggestions[name])
 
     def detect(self, write_config: bool = False) -> Dict[str, Any]:
         """Detect pagination and data keys from a sample request."""
@@ -1258,19 +1339,10 @@ class ProjectBuilder:
         except (ValueError, json.JSONDecodeError):
             print("Detection failed: response is not valid JSON.")
             return {}
-        suggestions = self._detect_suggestions(data)
+        suggestions = self._detect_suggestions(data, response.headers)
         if write_config and self.config_format == "yaml" and hasattr(self.config, "_data"):
             yaml_data = self.config._data
-            yaml_data.setdefault("data", {})
-            yaml_data.setdefault("project", {})
-            if suggestions.get("data_key") and "data_key" not in yaml_data.get("data", {}):
-                yaml_data["data"]["data_key"] = suggestions["data_key"]
-            if suggestions.get("total_number_key") and "total_number_key" not in yaml_data.get(
-                "data", {}
-            ):
-                yaml_data["data"]["total_number_key"] = suggestions["total_number_key"]
-            if suggestions.get("iterate_by") and "iterate_by" not in yaml_data.get("project", {}):
-                yaml_data["project"]["iterate_by"] = suggestions["iterate_by"]
+            apply_detected_options(yaml_data, suggestions)
             if YAML_AVAILABLE:
                 with open(self.config_filename, "w", encoding="utf8") as fobj:
                     yaml.safe_dump(yaml_data, fobj, sort_keys=False, allow_unicode=True)
@@ -1920,6 +1992,25 @@ class ProjectBuilder:
                         errors.append("page_size_limit must be greater than 0")
                 except (ValueError, configparser.NoOptionError, configparser.NoSectionError):
                     errors.append("page_size_limit must be an integer")
+
+        # Validate cursor-style pagination
+        iterate_by = (
+            self.config.get("project", "iterate_by")
+            if self.config.has_option("project", "iterate_by")
+            else "page"
+        )
+        if iterate_by == "cursor":
+            if not self.config.has_option("data", "next_cursor_key"):
+                errors.append("data.next_cursor_key is required for iterate_by: cursor")
+            if not self.config.has_option("params", "cursor_param"):
+                errors.append("params.cursor_param is required for iterate_by: cursor")
+        elif iterate_by == "next_url" and not self.config.has_option("data", "next_url_key"):
+            errors.append("data.next_url_key is required for iterate_by: next_url")
+        if iterate_by in CURSOR_MODES and getattr(self, "parallelism", 1) > 1:
+            errors.append(
+                f"request.parallelism must be 1 for iterate_by: {iterate_by}, "
+                "because each request depends on the previous response"
+            )
 
         # Validate data section
         if self.config.has_section("data"):

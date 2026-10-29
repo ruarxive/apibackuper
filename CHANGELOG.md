@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reproducible localhost API quick start with five known records; CI executes the documented CLI/Python snippets and verifies archive/export contents.
 - Guides for HTTP request JSON files, pagination/completeness boundaries, export filter grammar, Python integration and storage access; expanded configuration, hook and OAuth2 contracts.
 - Documentation builds on pull requests and validation of Markdown YAML/JSON examples and shipped JSON files.
+- Cursor, next-URL and RFC 8288 Link-header pagination (`iterate_by: cursor`, `next_url`, `link_header`) with loop detection, cursor-aware resume and `detect` suggestions for common next-link fields.
 
 ### Changed
 - Retry HTTP 429 and 504, along with 500, 502 and 503, when no retry status list is configured.

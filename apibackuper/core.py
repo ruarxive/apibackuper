@@ -15,7 +15,8 @@ from urllib.parse import urlparse
 import typer
 import urllib3
 
-from .cmds.project import LOG_HANDLER_MARK, ProjectBuilder
+from .cmds.fetch import CURSOR_MODES
+from .cmds.project import LOG_HANDLER_MARK, ProjectBuilder, apply_detected_options
 
 try:
     import yaml
@@ -109,16 +110,7 @@ def _build_detect_config(url: str) -> Dict[str, Any]:
 
 
 def _apply_detect_suggestions(config_data: Dict[str, Any], suggestions: Dict[str, Any]) -> None:
-    if not suggestions:
-        return
-    data_section = config_data.setdefault("data", {})
-    project_section = config_data.setdefault("project", {})
-    if suggestions.get("data_key") and "data_key" not in data_section:
-        data_section["data_key"] = suggestions["data_key"]
-    if suggestions.get("total_number_key") and "total_number_key" not in data_section:
-        data_section["total_number_key"] = suggestions["total_number_key"]
-    if suggestions.get("iterate_by") and "iterate_by" not in project_section:
-        project_section["iterate_by"] = suggestions["iterate_by"]
+    apply_detected_options(config_data, suggestions)
 
 
 def _handle_cli_errors(func):
@@ -248,6 +240,12 @@ def _emit_dry_run_plan(
         "config_format": acmd.config_format,
         "config_filename": os.path.basename(acmd.config_filename),
     }
+    if getattr(acmd, "iterate_by", None) in CURSOR_MODES:
+        plan["iteration"].update(
+            next_cursor_key=getattr(acmd, "next_cursor_key", None),
+            next_url_key=getattr(acmd, "next_url_key", None),
+            cursor_param=getattr(acmd, "cursor_param", None),
+        )
     if extra:
         plan.update(extra)
 

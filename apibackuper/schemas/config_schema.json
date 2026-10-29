@@ -71,8 +71,8 @@
         },
         "iterate_by": {
           "type": "string",
-          "enum": ["page", "skip", "range"],
-          "description": "How to iterate through pages",
+          "enum": ["page", "skip", "range", "cursor", "next_url", "link_header"],
+          "description": "How to iterate through pages: page number, skip/offset or range bounds, a response cursor, a next-page URL in the response, or the Link header",
           "default": "page"
         },
         "detect": {
@@ -137,6 +137,15 @@
           "type": "string",
           "description": "Parameter name for page size"
         },
+        "cursor_param": {
+          "type": "string",
+          "description": "Request parameter that carries the cursor (iterate_by: cursor)"
+        },
+        "allow_cross_host_next": {
+          "type": "boolean",
+          "description": "Allow next-page URLs on a host other than project.url",
+          "default": false
+        },
         "count_skip_param": {
           "type": "string",
           "description": "Parameter name for skip count"
@@ -180,6 +189,14 @@
         "total_number_key": {
           "type": "string",
           "description": "Key path to total number of records"
+        },
+        "next_cursor_key": {
+          "type": "string",
+          "description": "Key path to the next-page cursor (iterate_by: cursor)"
+        },
+        "next_url_key": {
+          "type": "string",
+          "description": "Key path to the next-page URL (iterate_by: next_url)"
         },
         "pages_number_key": {
           "type": "string",
