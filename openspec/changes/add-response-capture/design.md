@@ -8,6 +8,8 @@ saves `json.dumps(decoded)`, not the response bytes.
 ## Goals / Non-Goals
 - Goals: record exactly what was fetched and when; keep the original bytes for
   non-JSON responses; produce standard WARC files; leave record export unchanged.
+  Capture members are listed in the generation's fixity manifest
+  (`add-fixity-manifest`) and are not carried into a new full backup.
 - Non-Goals: byte-exact replay of the wire exchange (requests decodes transfer
   and content encodings); WACZ packaging; capturing follow and file downloads
   (follow-up change once page capture is proven).
@@ -51,5 +53,5 @@ No migration. Older versions ignore the new members. Rollback by reverting;
 captured members remain inert in archives.
 
 ## Open Questions
-- Should `metadata` default to `true` for existing projects on upgrade, or only
-  for projects created after the release? The proposal assumes `true`.
+- Resolved: `metadata` defaults to `true` for all projects, including existing
+  ones; `storage.capture.metadata: false` opts out.

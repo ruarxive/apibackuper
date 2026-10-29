@@ -11,13 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reproducible localhost API quick start with five known records; CI executes the documented CLI/Python snippets and verifies archive/export contents.
 - Guides for HTTP request JSON files, pagination/completeness boundaries, export filter grammar, Python integration and storage access; expanded configuration, hook and OAuth2 contracts.
 - Documentation builds on pull requests and validation of Markdown YAML/JSON examples and shipped JSON files.
+- Streamed file downloads: `getfiles` writes each file in 1 MB chunks to a temporary file and moves it into file storage (a 50 MB download peaks at about 3 MB of memory), `files.max_file_size` skips larger files by declared or streamed size, failed downloads leave no partial file, and `files-manifest-sha256.txt` records every stored file for `verify`.
+- Response rules: ordered `request.response_rules` match `status` (code, list or class such as `4xx`), `body_key`/`body_value` and `content_type`, and `retry`, `fail`, mark as `missing` or `accept` the response, so a `200` with an error body is no longer archived as data. `request.retry.wait_headers` waits for `Retry-After`, `X-RateLimit-Reset` and similar headers (seconds, HTTP date or Unix time), and `request.retry.max_wait` fails instead of waiting longer. The run summary counts applied rule actions.
+- Response capture: every saved page gets `exchange_N.json` (request, status, headers, final URL, fetch time, SHA-256, version, run ID; credentials redacted), and non-JSON responses keep their original bytes as `raw_N.<ext>` (`storage.capture.metadata`, `storage.capture.raw_body`). `export --format warc` writes WARC/1.1 request and response records from them; `info --stats` counts captured exchanges.
 - OAuth2 client-credentials grant (`auth.grant_type: client_credentials`) with `client_id`, `client_secret`/`client_secret_file`, `scope`, `audience` and Basic or form-body client authentication; tokens are requested before the first API request, renewed 60 seconds before `expires_in` and after a 401, and shared by parallel requests. Refresh-token requests authenticate the client when `client_id` is set.
 - Fixity manifests: every successful run writes `manifest-sha256.txt` (BagIt form) and `run.json` (version, run ID, times, counts, redacted configuration hash) into the generation it publishes; `apibackuper verify [--strict] [--json]` checks stored pages against them and records the result for `info`.
 - Cursor, next-URL and RFC 8288 Link-header pagination (`iterate_by: cursor`, `next_url`, `link_header`) with loop detection, cursor-aware resume and `detect` suggestions for common next-link fields.
 
 ### Changed
+- **Breaking for direct ZIP readers:** with ZIP storage, each update generation is written to its own `storage.zip.runs/<id>.zip` instead of into `storage.zip`, so an update no longer rewrites the whole archive (a one-page update over a 20,000-page archive: 1.2 s → 0.1 s, and no second copy on disk). All commands read both layouts; a full backup retires the previous generation archives; `info --stats` reports `generation_archives`.
+- Archives now hold an `exchange_N.json` record beside each page by default; set `storage.capture.metadata: false` to write pages only.
 - Retry HTTP 429 and 504, along with 500, 502 and 503, when no retry status list is configured.
 - Default `settings.checkpoint_interval_pages` to 1, so an interrupted backup resumes after its last saved page. Set 0 to keep only lifecycle checkpoints.
+
+### Deprecated
+- `ProjectBuilder.getfiles(be_careful=...)` is ignored with a `DeprecationWarning`; use `files.max_file_size`.
 
 ### Fixed
 - Keep follow archives such as `details.zip` when a new full backup is published to filesystem storage; they were deleted with the previous backup tree.

@@ -245,6 +245,24 @@
         "split_files": {
           "type": "boolean",
           "description": "Split files when size limit reached"
+        },
+        "capture": {
+          "type": "object",
+          "description": "Provenance captured beside every saved page",
+          "properties": {
+            "metadata": {
+              "type": "boolean",
+              "description": "Store exchange_N.json with request, status, headers and fetch time",
+              "default": true
+            },
+            "raw_body": {
+              "type": "string",
+              "enum": ["auto", "always", "never"],
+              "description": "Store the original body as raw_N.<ext>: auto for non-JSON responses",
+              "default": "auto"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -365,6 +383,11 @@
         "use_aria2": {
           "type": ["string", "boolean"],
           "description": "Use aria2 for downloads"
+        },
+        "max_file_size": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Skip downloads larger than this many bytes (default: no limit)"
         }
       },
       "additionalProperties": false
@@ -574,9 +597,39 @@
             "retry_on_status": {
               "type": "array",
               "items": {"type": "integer", "minimum": 100, "maximum": 599}
+            },
+            "wait_headers": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "Headers read in order for the wait before a retry",
+              "default": ["Retry-After"]
+            },
+            "max_wait": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Fail instead of waiting longer than this many seconds"
             }
           },
           "additionalProperties": false
+        },
+        "response_rules": {
+          "type": "array",
+          "description": "Ordered rules deciding what a matching response means",
+          "items": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": ["integer", "string", "array"],
+                "items": {"type": ["integer", "string"]}
+              },
+              "body_key": {"type": "string"},
+              "body_value": {},
+              "content_type": {"type": "string"},
+              "action": {"type": "string", "enum": ["retry", "fail", "missing", "accept"]}
+            },
+            "required": ["action"],
+            "additionalProperties": false
+          }
         },
         "proxies": {
           "type": ["object", "string"],

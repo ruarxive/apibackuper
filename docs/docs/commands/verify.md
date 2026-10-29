@@ -21,7 +21,7 @@ publishes. The base pages use the archive root; each update uses `runs/<id>/`.
 
 | Member | Content |
 |--------|---------|
-| `manifest-sha256.txt` | `<sha256>  <member>` per page, sorted by member name (the BagIt manifest form) |
+| `manifest-sha256.txt` | `<sha256>  <member>` per page and captured `exchange_N`/`raw_N` member, sorted by member name (the BagIt manifest form) |
 | `run.json` | apibackuper version, run ID, mode, start and end time (UTC), page and record counts, the API total when known, and `config_sha256` |
 
 `config_sha256` hashes the resolved configuration with credential values
@@ -31,7 +31,8 @@ member starts with `page_`, so export, follow, `info` and resume ignore them.
 
 ## Result and exit status
 
-For each generation, `verify` reports the number of verified pages and lists:
+For each generation, and for downloaded files listed in
+`files-manifest-sha256.txt`, `verify` reports the number of verified members and lists:
 
 - `changed`: a listed member whose bytes no longer match its digest;
 - `missing`: a listed member that is no longer stored;

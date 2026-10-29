@@ -59,7 +59,8 @@ use a scalar string or number, not a list/object or a comma-separated composite.
 Repeated IDs in main backup history produce one target per key in a rule, not
 one detail response per historical version.
 
-A detail request answered with HTTP 404 or 410 does not stop the run. The key,
+A detail request answered with HTTP 404 or 410, or matching a `missing`
+[response rule](/configuration/rate-limiting-and-requests#response-rules), does not stop the run. The key,
 page and status are written to `details.missing.json` (`details_<name>.missing.json`
 for a named rule) beside the archive, a warning is printed, and the remaining keys
 are fetched. `follow continue` requests missing keys again. Other failures still
@@ -236,4 +237,4 @@ invoked here.
 | `max_pages` failure | Actual page size, `follow_data_key`, ignored pagination parameters or a genuinely larger result |
 | Export ignores named results | Automatic selection only uses unnamed `details.zip` |
 | Continued run fetches nothing new | Saved names are skipped; use full to refresh changed objects |
-| "followed objects were not found" warning | Keys in `details.missing.json` returned 404/410 upstream |
+| "followed objects are missing upstream" warning | Keys in `details.missing.json` returned 404/410 or matched a `missing` rule |

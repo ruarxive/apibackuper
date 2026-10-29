@@ -114,15 +114,22 @@ def export_project(project, format, filename, fields=None, where=None):
     """Export all retained generations through the same record pipeline."""
     if project.config is None:
         project._raise_config_not_found()
-    if format not in ("jsonl", "gzip", "zstd", "parquet"):
-        raise ValueError("Supported formats: jsonl, gzip, zstd, parquet")
+    if format not in ("jsonl", "gzip", "zstd", "parquet", "warc"):
+        raise ValueError("Supported formats: jsonl, gzip, zstd, parquet, warc")
     if not filename:
         raise ValueError("Output filename is required")
     if os.path.realpath(filename) == os.path.realpath(project.storage_file):
         raise ValueError("Export destination must differ from the backup storage")
+    if format == "warc" and (fields or where):
+        raise ValueError(
+            "WARC export writes whole HTTP exchanges; --fields and --where do not apply"
+        )
     condition = project._parse_where(where)
     details = project.details_storage_file
-    use_details = project.config.has_section("follow") and os.path.exists(details)
+    # WARC records come from the main backup's captured exchanges.
+    use_details = (
+        format != "warc" and project.config.has_section("follow") and os.path.exists(details)
+    )
     output_path = os.path.realpath(filename)
     if use_details and output_path == os.path.realpath(details):
         raise ValueError("Export destination must differ from the source details archive")
@@ -140,6 +147,13 @@ def export_project(project, format, filename, fields=None, where=None):
     output = None
     parquet_writer = None
     try:
+        if format == "warc":
+            written, skipped = _write_warc(backend, temporary, os.path.basename(filename))
+            os.replace(temporary, filename)
+            print(
+                f"Exported {written} exchanges to WARC; skipped {skipped} pages without exchanges"
+            )
+            return
         if format == "parquet":
             try:
                 import pyarrow as pa
@@ -201,6 +215,105 @@ def export_project(project, format, filename, fields=None, where=None):
 
 
 PARQUET_BATCH_SIZE = 5000
+
+
+def _warc_date(value: Optional[str]) -> Optional[str]:
+    """Render an ISO 8601 UTC time as a WARC date (``...Z``)."""
+    if not value:
+        return None
+    return value.replace("+00:00", "Z")
+
+
+def _write_warc(backend, path: str, name: str) -> Tuple[int, int]:
+    """Write request and response records for every page with an exchange record."""
+    try:
+        from warcio.statusandheaders import StatusAndHeaders
+        from warcio.warcwriter import WARCWriter
+    except ImportError:
+        raise RuntimeError(
+            "WARC export requires warcio; install apibackuper[recommended]"
+        ) from None
+    from urllib.parse import urlsplit
+
+    from .. import __version__
+    from .capture import exchange_name
+    from .fixity import generation_prefix
+
+    written = skipped = 0
+    with open(path, "wb") as handle:
+        writer = WARCWriter(handle, gzip=True, warc_version="1.1")
+        writer.write_record(
+            writer.create_warcinfo_record(
+                name, {"software": f"apibackuper/{__version__}", "format": "WARC File Format 1.1"}
+            )
+        )
+        for page_name in sorted(backend.list_objects("page"), key=natural_order):
+            page = int(page_name.rsplit("page_", 1)[-1].split(".")[0])
+            content = backend.get_object(
+                exchange_name(generation_prefix(page_name), page), "object"
+            )
+            if content is None:
+                skipped += 1
+                continue
+            exchange = json.loads(content)
+            request, response = exchange["request"], exchange["response"]
+            payload = None
+            if exchange.get("raw_member"):
+                payload = backend.get_object(exchange["raw_member"], "object")
+            if payload is None:
+                payload = backend.get_object(page_name, "page")
+            # The stored payload is decoded, so transfer and content encodings
+            # no longer apply and the length is the stored length.
+            headers = [
+                (key, str(value))
+                for key, value in response["headers"].items()
+                if key.lower() not in ("content-encoding", "transfer-encoding", "content-length")
+            ]
+            headers.append(("Content-Length", str(len(payload))))
+            status = f"{response['status']} {response.get('reason') or ''}".strip()
+            uri = response.get("url") or request.get("url")
+            date = (
+                {"WARC-Date": _warc_date(exchange.get("fetched_at"))}
+                if exchange.get("fetched_at")
+                else {}
+            )
+            record = writer.create_warc_record(
+                uri,
+                "response",
+                payload=io.BytesIO(payload),
+                http_headers=StatusAndHeaders(status, headers, protocol="HTTP/1.1"),
+                warc_headers_dict=date,
+            )
+            target = urlsplit(request.get("url") or uri)
+            path_and_query = (target.path or "/") + (f"?{target.query}" if target.query else "")
+            request_headers = [(key, str(value)) for key, value in request["headers"].items()]
+            if not any(key.lower() == "host" for key, _ in request_headers):
+                request_headers.insert(0, ("Host", target.netloc))
+            body = request.get("body")
+            if body is None:
+                body_bytes = b""
+            elif isinstance(body, str):
+                body_bytes = body.encode("utf8")
+            else:
+                body_bytes = json.dumps(body, ensure_ascii=False).encode("utf8")
+            linked = dict(
+                date, **{"WARC-Concurrent-To": record.rec_headers.get_header("WARC-Record-ID")}
+            )
+            request_record = writer.create_warc_record(
+                uri,
+                "request",
+                payload=io.BytesIO(body_bytes),
+                http_headers=StatusAndHeaders(
+                    f"{request.get('method') or 'GET'} {path_and_query} HTTP/1.1",
+                    request_headers,
+                    is_http_request=True,
+                ),
+                warc_headers_dict=linked,
+            )
+            writer.write_record(record)
+            writer.write_record(request_record)
+            written += 1
+    return written, skipped
 
 
 def _batches(records: Iterable[Any]) -> Iterable[List[Any]]:
