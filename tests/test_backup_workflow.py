@@ -467,7 +467,7 @@ def test_new_full_backup_does_not_inherit_old_interrupted_zip_journal(make_proje
     builder.run("full")
     interrupted = ZipStorageBackend(builder.storage_file)
     interrupted.save_page("page_1.json", b'{"items":[{"id":99}],"total":1}')
-    interrupted._zip.close()  # Simulate an exited process: keep the durable sidecar.
+    interrupted._base._zip.close()  # Simulate an exited process: keep the durable sidecar.
     serve(builder, [{"id": 2}])
     builder.run("full")
     assert stored(builder) == [{"id": 2}]

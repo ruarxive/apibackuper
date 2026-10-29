@@ -149,6 +149,16 @@ def _finish_publication(project, session, checkpoint):
         write_generation_record(session.backend, session.prefix, digests, record)
         session.backend.flush()
     session.publish()
+    # A full ZIP backup replaces history: move the previous backup's
+    # generation archives aside, and delete them only after the new state is
+    # committed. Every step is safe to repeat when resuming publication.
+    generations = session.destination + ".runs"
+    retired = generations + ".previous"
+    if project.storage_type == "zip" and checkpoint.get("mode") == "full":
+        if os.path.isdir(generations):
+            if os.path.isdir(retired):
+                shutil.rmtree(retired)
+            os.replace(generations, retired)
     project._save_state(checkpoint["pending_state"], strict=True)
     project._save_checkpoint(
         dict(checkpoint, storage_file=session.destination, status="complete"), strict=True
@@ -156,6 +166,8 @@ def _finish_publication(project, session, checkpoint):
     previous = session.destination + ".previous"
     if project.storage_type == "filesystem" and os.path.isdir(previous):
         shutil.rmtree(previous)
+    if os.path.isdir(retired):
+        shutil.rmtree(retired)
 
 
 def run_backup(project, mode, resume=False):

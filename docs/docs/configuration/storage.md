@@ -123,9 +123,18 @@ catalog/
   apibackuper_checkpoint.json
   storage/
     storage.zip                  # previous complete backup
+    storage.zip.runs/<id>.zip    # one archive per update generation
     storage.zip.partial          # in-progress replacement
     storage.zip.partial.journal/ # durable pages not yet compacted
 ```
+
+Each `update` writes its generation (`runs/<id>/page_N.json` and its manifest
+and exchange records) to its own `storage.zip.runs/<id>.zip`, so an update
+compacts only that small archive instead of rewriting `storage.zip`. Commands
+read all archives as one backup; generations stored inside `storage.zip` by
+earlier versions stay readable. A new full backup retires the previous
+generation archives after publication. Tools that open `storage.zip` directly
+do not see newer update generations; use `export` or the storage API.
 
 Inside a published archive, each generation (the root for full backups,
 `runs/<id>/` for updates) holds its pages plus `manifest-sha256.txt` and

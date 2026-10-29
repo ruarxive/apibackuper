@@ -1876,6 +1876,9 @@ class ProjectBuilder:
                         "file_exists": True,
                         "total_files": len(file_list),
                         "captured_exchanges": captured,
+                        "generation_archives": len(
+                            getattr(storage_backend, "generation_archives", list)()
+                        ),
                         "total_size_bytes": total_size,
                         "total_size_mb": round(total_size / (1024 * 1024), 2),
                         "total_size_gb": round(total_size / (1024 * 1024 * 1024), 3),

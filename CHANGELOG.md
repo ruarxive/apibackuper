@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cursor, next-URL and RFC 8288 Link-header pagination (`iterate_by: cursor`, `next_url`, `link_header`) with loop detection, cursor-aware resume and `detect` suggestions for common next-link fields.
 
 ### Changed
+- **Breaking for direct ZIP readers:** with ZIP storage, each update generation is written to its own `storage.zip.runs/<id>.zip` instead of into `storage.zip`, so an update no longer rewrites the whole archive (a one-page update over a 20,000-page archive: 1.2 s → 0.1 s, and no second copy on disk). All commands read both layouts; a full backup retires the previous generation archives; `info --stats` reports `generation_archives`.
 - Archives now hold an `exchange_N.json` record beside each page by default; set `storage.capture.metadata: false` to write pages only.
 - Retry HTTP 429 and 504, along with 500, 502 and 503, when no retry status list is configured.
 - Default `settings.checkpoint_interval_pages` to 1, so an interrupted backup resumes after its last saved page. Set 0 to keep only lifecycle checkpoints.

@@ -65,8 +65,8 @@ def _is_page(name: str) -> bool:
     return name.rsplit("/", 1)[-1].startswith("page_")
 
 
-class ZipStorageBackend(StorageBackend):
-    """ZIP with a durable per-member journal and atomic archive publication.
+class _ZipArchive(StorageBackend):
+    """One ZIP with a durable per-member journal and atomic archive publication.
 
     Appending directly can destroy the central directory on process termination.
     Journal pages remain readable after a crash; close compacts them once into a
@@ -190,6 +190,100 @@ class ZipStorageBackend(StorageBackend):
                 finally:
                     os.close(descriptor)
             self._dirty.clear()
+
+
+# Update generation IDs, as validated by the backup session.
+_RUN_ID = re.compile(r"[A-Za-z0-9_-]+")
+
+
+class ZipStorageBackend(StorageBackend):
+    """ZIP storage with one archive per update generation.
+
+    Members named ``runs/<id>/...`` live in ``<archive>.runs/<id>.zip``, so an
+    update compacts only its own small archive instead of rewriting the whole
+    backup. All archives are listed and read as one set of names; generations
+    stored inside the main archive by earlier versions stay readable, and a
+    generation archive wins when both hold a name.
+    """
+
+    def __init__(self, filename: str, mode: str = "a", compression=ZIP_DEFLATED) -> None:
+        self._filename = filename
+        self._mode = mode
+        self._compression = compression
+        self._runs_dir = filename + ".runs"
+        if mode == "w" and os.path.isdir(self._runs_dir):
+            shutil.rmtree(self._runs_dir)
+        self._base = _ZipArchive(filename, mode, compression)
+        self._generations: dict = {}
+        if os.path.isdir(self._runs_dir):
+            for entry in sorted(os.listdir(self._runs_dir)):
+                run_id = entry[: -len(".zip")]
+                if entry.endswith(".zip") and _RUN_ID.fullmatch(run_id):
+                    self._generations[run_id] = _ZipArchive(
+                        os.path.join(self._runs_dir, entry),
+                        "r" if mode == "r" else "a",
+                        compression,
+                    )
+
+    @staticmethod
+    def _generation_id(name: str) -> Optional[str]:
+        parts = name.split("/", 2)
+        if len(parts) == 3 and parts[0] == "runs" and _RUN_ID.fullmatch(parts[1]):
+            return parts[1]
+        return None
+
+    def _writer(self, name: str) -> _ZipArchive:
+        run_id = self._generation_id(name)
+        if run_id is None:
+            return self._base
+        archive = self._generations.get(run_id)
+        if archive is None:
+            if self._mode == "r":
+                raise ValueError("Storage is not open for writing")
+            os.makedirs(self._runs_dir, exist_ok=True)
+            archive = _ZipArchive(
+                os.path.join(self._runs_dir, run_id + ".zip"), "a", self._compression
+            )
+            self._generations[run_id] = archive
+        return archive
+
+    def save_page(self, name: str, content: bytes) -> None:
+        self.save_object(name, content)
+
+    def save_object(self, name: str, content: bytes) -> None:
+        name = safe_member_name(name)
+        self._writer(name).save_object(name, content)
+
+    def list_objects(self, kind: str = "page") -> List[str]:
+        names = set(self._base.list_objects(kind))
+        for archive in self._generations.values():
+            names.update(archive.list_objects(kind))
+        return sorted(names)
+
+    def get_object(self, name: str, kind: str = "page") -> Optional[bytes]:
+        run_id = self._generation_id(name)
+        archive = self._generations.get(run_id) if run_id else None
+        if archive is not None:
+            content = archive.get_object(name, kind)
+            if content is not None:
+                return content
+        return self._base.get_object(name, kind)
+
+    def generation_archives(self) -> List[str]:
+        """Paths of the per-generation archives, sorted by run ID."""
+        return [self._generations[run_id]._filename for run_id in sorted(self._generations)]
+
+    def flush(self) -> None:
+        for archive in self._generations.values():
+            archive.flush()
+        self._base.flush()
+
+    def close(self) -> None:
+        try:
+            for archive in self._generations.values():
+                archive.close()
+        finally:
+            self._base.close()
 
 
 def publish_zip(staging: str, destination: str) -> None:
