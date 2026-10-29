@@ -64,8 +64,9 @@ Use absolute paths for jobs launched from multiple locations.
 
 An inline `token` takes precedence over `token_file`; `password` similarly
 precedes `password_file`. Remove an old inline value when switching to a file.
-A missing or empty file supplies no usable credential, and the schema alone
-does not verify file existence. Files are read at project load, not on every
+A missing or empty file is a configuration error: `validate-config` reports it,
+and commands that send requests stop before the first request instead of
+continuing without credentials. The schema alone does not verify file existence. Files are read at project load, not on every
 request. Use a new command invocation to load a replacement file.
 
 ## Basic authentication
@@ -164,7 +165,10 @@ the request. Use one source for a given credential instead of maintaining both
 
 Follow and attachment requests also receive the project's authentication.
 Use URLs that are allowed to receive those credentials, especially when records
-contain absolute URLs on another host. The optional aria2 downloader is a
+contain absolute URLs on another host. When a response redirects to another
+host, `Authorization`, the configured API-key header and other headers with
+credential-like names (`Cookie`, `X-Auth-Token`, `api_key`, …) are dropped from
+the redirected request. The optional aria2 downloader is a
 separate service and does not inherit the built-in authentication policy.
 
 ## Check authentication problems

@@ -150,11 +150,11 @@ def wrap_request_exception(
             f"SSL certificate verification failed for {url}\n"
             f"  Error details: {error_details}\n"
             "  Suggestions:\n"
-            "    - If this is a trusted server, disable SSL verification in [request] section:\n"
-            "      verify_ssl = False\n"
-            "    - Or provide a path to a trusted certificate bundle:\n"
-            "      verify_ssl = /path/to/certificate.pem\n"
-            "    - Update your system's certificate store\n"
+            "    - Add the server's CA to the system store, or point the\n"
+            "      REQUESTS_CA_BUNDLE environment variable at a trusted bundle\n"
+            "    - Only for a trusted test server, disable verification:\n"
+            "      request:\n"
+            "        verify_ssl: false\n"
             "    - Check if the server's certificate has expired"
         )
         logging.error("SSL error for URL %s: %s", url, error_details)

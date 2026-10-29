@@ -165,7 +165,7 @@ from the first unresolved page.
 | Field | Default | Notes |
 |-------|---------|-------|
 | `verify_ssl` | true | Boolean only; a CA-bundle path is not accepted in this option |
-| `allow_redirects` | true | Follow redirects using the HTTP client |
+| `allow_redirects` | true | Follow redirects using the HTTP client; credential headers are dropped when the host changes |
 | `max_redirects` | 5 | Maximum followed redirects; 0 permits none |
 | `user_agent` | `apibackuper/<version>` | Session User-Agent; per-request headers may override it |
 

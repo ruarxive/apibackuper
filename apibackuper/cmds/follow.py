@@ -188,6 +188,8 @@ def follow_project(project, mode="full"):
         finally:
             source.close()
         target = ZipStorageBackend(working, mode="w" if mode == "full" else "a")
+        # Listed once: rescanning the archive for every key made continue O(n^2).
+        saved = set(target.list_objects("object")) if mode == "continue" else set()
         missing = []
         try:
             for key, item in targets.items():
@@ -217,7 +219,7 @@ def follow_project(project, mode="full"):
                         changes[pagination["page_number_param"]] = page
                         if pagination.get("page_size_param"):
                             changes[pagination["page_size_param"]] = limit
-                    if mode == "continue" and name in target.list_objects("object"):
+                    if name in saved:
                         content = target.get_object(name, "object")
                     else:
                         try:

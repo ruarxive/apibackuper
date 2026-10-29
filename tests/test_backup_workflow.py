@@ -767,3 +767,72 @@ def test_getfiles_rejects_unknown_fetch_mode(make_project):
     builder.fetch_mode = "magic"  # e.g. from a deprecated INI file without schema checks
     with pytest.raises(ValueError, match="fetch_mode"):
         builder.getfiles()
+
+
+@pytest.mark.parametrize(
+    "target,stripped",
+    [("https://cdn.example.test/file", True), ("https://api.example.test/next", False)],
+)
+def test_redirect_drops_credential_headers_only_across_hosts(target, stripped):
+    from apibackuper.cmds.project import RedirectSafeSession
+
+    session = RedirectSafeSession()
+    session.trust_env = False
+    session.protected_headers.add("Ocp-Subscription")
+    headers = {"X-API-Key": "k", "Ocp-Subscription": "s", "Cookie": "c", "Accept": "json"}
+    redirected = requests.Request("GET", target, headers=headers).prepare()
+    response = requests.Response()
+    response.request = requests.Request("GET", "https://api.example.test/items").prepare()
+    session.rebuild_auth(redirected, response)
+    remaining = {name for name in headers if name in redirected.headers}
+    assert remaining == ({"Accept"} if stripped else set(headers))
+
+
+def test_missing_credential_file_fails_before_any_request(make_project, tmp_path):
+    builder = make_project(auth={"type": "bearer", "token_file": str(tmp_path / "absent")})
+    serve(builder, [{"id": 1}])
+    with pytest.raises(ValueError, match="Invalid project configuration"):
+        builder.run("full")
+    with pytest.raises(ValueError, match="token_file not found"):
+        builder._request(builder.start_url)
+    builder.http.get.assert_not_called()
+
+
+def test_oauth2_without_token_or_refresh_is_invalid(make_project):
+    builder = make_project(auth={"type": "oauth2", "auth_url": "https://auth.example.test/t"})
+    valid, errors, _ = builder.validate_config()
+    assert not valid and errors == 1
+
+
+@pytest.mark.parametrize("storage", ["zip", "filesystem"])
+def test_info_statistics_count_backend_pages(make_project, storage):
+    builder = make_project(storage)
+    serve(builder, [{"id": n} for n in range(3)])
+    builder.run("full")
+    if storage == "zip":
+        from apibackuper.storage import ZipStorageBackend
+
+        journal = ZipStorageBackend(builder.storage_file)
+        journal.save_page("page_3.json", json.dumps({"items": [{"id": 3}]}).encode())
+        journal.flush()
+    expected = 4 if storage == "zip" else 3
+    stats = builder.info(stats=True)["statistics"]["storage"]
+    assert stats["file_exists"] and stats["total_records"] == expected
+
+
+def test_estimate_reads_xml_responses(make_project, capsys):
+    builder = make_project(
+        project={"resp_type": "xml"},
+        data={"data_key": "root.items.item", "total_number_key": "root.total"},
+    )
+    response = requests.Response()
+    response.status_code = 200
+    response.headers = {}
+    response._content = b"<root><total>5</total><items><item><id>1</id></item></items></root>"
+    builder.http.get.return_value = response
+    builder.estimate("full")
+    output = capsys.readouterr().out
+    assert "Total records: 5" in output and "Total requests: 3" in output
+    builder.page_limit = 0
+    with pytest.raises(ValueError, match="page_size_limit"):
+        builder.estimate("full")

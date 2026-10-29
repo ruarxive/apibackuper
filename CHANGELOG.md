@@ -30,10 +30,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Parquet export settles one schema across all batches and writes fields with conflicting types as JSON text, instead of failing when a type changed after the first 5,000 records.
 - `ProjectBuilder` no longer removes the host application's root-logger handlers or ignores `DeprecationWarning` process-wide; `--verbose` installs its own console handler.
 - `getfiles` reads source pages through the storage backend, including pages still in the ZIP journal, records HTTP 404/410 downloads in `files_skipped.list` and continues, and rejects unsupported `fetch_mode`/`file_storage_type` values.
+- `info --stats` counts pages through the storage backend, so filesystem storage and pages still in a ZIP journal are included, and reads follow details next to SQLite storage.
+- `estimate` decodes XML responses, resolves `code.postfetch` from the project directory, and reports a missing total or a zero page size instead of crashing.
+- Continuing a follow run lists saved objects once instead of rescanning the archive for every key.
+- The SSL error hint no longer suggests a certificate path in `verify_ssl`, which accepts only booleans; it points to `REQUESTS_CA_BUNDLE`.
+- `validate-config` requires a token, token file, or refresh token with `auth_url` for `oauth2`.
 - Preserve console logging for `--verbose` after project initialization and honor `logging.level` when verbose is not enabled.
 - Reject malformed and compound export filters before opening storage or replacing output instead of silently disabling filtering or returning misleading results.
 - Correct example descriptions and release instructions, remove references to deleted history/setup files, and retain E-Trust as a separate POST API walkthrough.
 - Align the documentation site's Node.js minimum with the locked Docusaurus requirement (Node 20+).
+
+### Security
+- Drop the configured API-key header and other credential-like headers, not only `Authorization`, when a redirect leaves the original host.
+- Treat a missing or empty `token_file`/`password_file` as a configuration error instead of silently sending unauthenticated requests.
 
 ## [2.0.0] - 2026-10-17
 

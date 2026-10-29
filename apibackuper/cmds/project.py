@@ -65,6 +65,7 @@ from .config_loader import (
     validate_yaml_config,
 )
 from .utils import (
+    _is_sensitive_key,
     _url_replacer,
     append_query,
     flat_param_value,
@@ -118,11 +119,33 @@ def _atomic_write_json(path: str, payload: Dict[str, Any]) -> None:
     os.replace(tmp_path, path)
 
 
+class RedirectSafeSession(requests.Session):
+    """Session that drops credential headers when a redirect leaves the host.
+
+    ``requests`` strips only ``Authorization`` on a cross-host redirect, so an
+    API key in ``X-API-Key`` or a custom header from ``headers.json`` would be
+    sent to the redirect target. ``protected_headers`` adds names such as a
+    configured ``auth.api_key_header`` that do not look sensitive.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.protected_headers: set = set()
+
+    def rebuild_auth(self, prepared_request, response):
+        super().rebuild_auth(prepared_request, response)
+        if self.should_strip_auth(response.request.url, prepared_request.url):
+            protected = {name.lower() for name in self.protected_headers}
+            for name in list(prepared_request.headers):
+                if name.lower() in protected or _is_sensitive_key(name):
+                    del prepared_request.headers[name]
+
+
 class ProjectBuilder:
     """Project builder"""
 
     def __init__(self, project_path: Optional[str] = None) -> None:
-        self.http = requests.Session()
+        self.http = RedirectSafeSession()
         self.project_path = os.path.abspath(project_path or os.getcwd())
         # Initialize logfile with default value early to ensure it's always available
         self.logfile = "apibackuper.log"
@@ -554,6 +577,10 @@ class ProjectBuilder:
             self.auth_handler = None
             if self.config.has_section("auth"):
                 self.auth_handler = AuthHandler(self.config)
+                if self.auth_handler.auth_type == "apikey":
+                    self.http.protected_headers.add(
+                        self.auth_handler.auth_data.get("header", "X-API-Key")
+                    )
 
             # Rate limiting
             self.rate_limiter = None
@@ -1081,6 +1108,10 @@ class ProjectBuilder:
         from .http_client import RequestFailed
         from .utils import redact_text, redact_url
 
+        auth_handler = getattr(self, "auth_handler", None)
+        if auth_handler and auth_handler.error:
+            # Never fall back to unauthenticated requests.
+            raise ValueError(auth_handler.error)
         response = None
         budget = max(0, self.retry_max_retries)
         for attempt in range(budget + 1):
@@ -1475,100 +1506,72 @@ class ProjectBuilder:
         if self.config is None:
             self._raise_config_not_found()
             return
-        data = []
-        params = {}
-        data_size = 0
+        from .backup import _decode
+        from .export import process_record
+
+        if not self.total_number_key:
+            print("Can't estimate without total_number_key field in config file")
+            return
+        if self.page_limit <= 0:
+            raise ValueError("params.page_size_limit must be greater than zero")
 
         process_func = None
         if self.code_postfetch is not None:
-            script = run_path(self.code_postfetch)
+            path = self.code_postfetch
+            # Resolve like ``run`` does, relative to the project directory.
+            script = run_path(
+                path if os.path.isabs(path) else os.path.join(self.project_path, path)
+            )
             process_func = script["process"]
 
-        headers = None
-        headers_file = os.path.join(self.project_path, "headers.json")
-        if os.path.exists(headers_file):
-            with open(headers_file, "r", encoding="utf8") as f:
-                headers = json.load(f)
-        else:
-            headers = {}
-
-        params_file = os.path.join(self.project_path, "params.json")
-        if os.path.exists(params_file):
-            with open(params_file, "r", encoding="utf8") as f:
-                params = json.load(f)
+        headers = load_json_file(os.path.join(self.project_path, "headers.json"), default={})
+        params = load_json_file(os.path.join(self.project_path, "params.json"), default={})
         if self.flat_params:
             params = {k: flat_param_value(v) for k, v in params.items()}
+        url_params = load_json_file(
+            os.path.join(self.project_path, "url_params.json"), default=None
+        )
 
-        url_params = None
-        params_file = os.path.join(self.project_path, "url_params.json")
-        if os.path.exists(params_file):
-            with open(params_file, "r", encoding="utf8") as f:
-                url_params = json.load(f)
-        if len(self.total_number_key) > 0:
-            start = timer()
-            if self.query_mode == "params":
-                url = _url_replacer(self.start_url, url_params)
-            elif self.query_mode == "mixed":
-                url = _url_replacer(self.start_url, url_params, query_mode=True)
-            else:
-                url = self.start_url
-            if self.http_mode == "GET":
-                if self.flat_params and len(params.keys()) > 0:
-                    start_page_data = self._request(
-                        append_query(url, params), headers=headers or None, http_mode="GET"
-                    ).json()
-                else:
-                    logging.debug(
-                        "Start request params: %s headers: %s",
-                        redact_params(params),
-                        redact_headers(headers),
-                    )
-                    if headers and len(headers.keys()) > 0:
-                        if params and len(params.keys()) > 0:
-                            response = self._request(
-                                url, params=params, headers=headers, http_mode="GET"
-                            )
-                        else:
-                            response = self._request(url, headers=headers, http_mode="GET")
-                    else:
-                        if params and len(params.keys()) > 0:
-                            response = self._request(url, params=params, http_mode="GET")
-                        else:
-                            response = self._request(url, http_mode="GET")
-
-                    if self.resp_type == "json":
-                        start_page_data = response.json()
-                    elif self.resp_type == "html":
-                        start_page_data = process_func(response.content)
-            else:
-                logging.info(redact_url(url))
-                if headers:
-                    response = self._request(url, params=params, headers=headers, http_mode="POST")
-                else:
-                    response = self._request(url, params=params, http_mode="POST")
-
-                if self.resp_type == "json":
-                    start_page_data = response.json()
-                elif self.resp_type == "html":
-                    start_page_data = process_func(response.content)
-
-            total = get_dict_value(
-                start_page_data, self.total_number_key, splitter=self.field_splitter
-            )
-            end = timer()
+        start = timer()
+        if self.query_mode == "params":
+            url = _url_replacer(self.start_url, url_params)
+        elif self.query_mode == "mixed":
+            url = _url_replacer(self.start_url, url_params, query_mode=True)
         else:
-            print("Can't estimate without total_number_key field in config file")
+            url = self.start_url
+        http_mode = "GET" if self.http_mode == "GET" else "POST"
+        if http_mode == "GET" and self.flat_params and params:
+            response = self._request(append_query(url, params), headers=headers or None)
+        else:
+            logging.debug(
+                "Start request %s params: %s headers: %s",
+                redact_url(url),
+                redact_params(params),
+                redact_headers(headers),
+            )
+            response = self._request(
+                url, headers=headers or None, params=params or None, http_mode=http_mode
+            )
+        start_page_data = _decode(self, response.content, process_func)
+        end = timer()
+
+        raw_total = get_dict_value(
+            start_page_data, self.total_number_key, splitter=self.field_splitter
+        )
+        try:
+            total = int(raw_total)
+        except (TypeError, ValueError):
+            print(
+                f"Can't estimate: total_number_key {self.total_number_key!r} is missing or "
+                "not a number in the response"
+            )
             return
         request_time = end - start
-        nr = 1 if total % self.page_limit > 0 else 0
-        req_number = (total // self.page_limit) + nr
-        if self.data_key:
-            req_data = get_dict_value(start_page_data, self.data_key, splitter=self.field_splitter)
-            data.extend(req_data)
-        else:
-            data.extend(start_page_data)
-        for r in data:
-            data_size += len(json.dumps(r))
+        req_number = -(-total // self.page_limit)
+        data = process_record(
+            start_page_data, data_key=self.data_key, field_splitter=self.field_splitter
+        )
+        data_size = sum(len(json.dumps(r, ensure_ascii=False)) for r in data)
         avg_size = float(data_size) / len(data) if len(data) > 0 else 0.0
 
         print("Total records: %d" % (total))
@@ -1704,17 +1707,24 @@ class ProjectBuilder:
         if stats:
             stats_data = {}
 
-            # Storage statistics
-            if self.storage_type == "sqlite":
-                if os.path.exists(self.storage_file):
+            # Storage statistics, read through the backend so filesystem
+            # storage and pages still in a ZIP journal are counted too.
+            if os.path.exists(self.storage_file):
+                try:
+                    storage_backend = build_storage_backend(
+                        self.storage_type, self.storage_file, "read"
+                    )
                     try:
-                        storage_backend = build_storage_backend(
-                            "sqlite", self.storage_file, "continue"
-                        )
                         file_list = storage_backend.list_objects("page")
                         total_size = 0
                         total_records = 0
-                        for fname in file_list:
+                        for fname in tqdm(
+                            file_list,
+                            desc="Counting records",
+                            unit="file",
+                            leave=False,
+                            disable=len(file_list) <= 100,
+                        ):
                             try:
                                 content = storage_backend.get_object(fname, "page")
                                 if content is None:
@@ -1736,113 +1746,27 @@ class ProjectBuilder:
                                         total_records += 1
                             except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
                                 logging.debug("Error counting records in %s: %s", fname, e)
-                        stats_data["storage"] = {
-                            "file_exists": True,
-                            "total_files": len(file_list),
-                            "total_size_bytes": total_size,
-                            "total_size_mb": round(total_size / (1024 * 1024), 2),
-                            "total_size_gb": round(total_size / (1024 * 1024 * 1024), 3),
-                            "total_records": total_records,
-                            "avg_records_per_file": (
-                                round(total_records / len(file_list), 2)
-                                if len(file_list) > 0
-                                else 0
-                            ),
-                        }
+                    finally:
                         storage_backend.close()
-                    except (IOError, OSError, ValueError) as e:
-                        logging.error("Error reading sqlite storage: %s", e)
-                        stats_data["storage"] = {"file_exists": True, "error": str(e)}
-                else:
-                    stats_data["storage"] = {"file_exists": False}
+                    stats_data["storage"] = {
+                        "file_exists": True,
+                        "total_files": len(file_list),
+                        "total_size_bytes": total_size,
+                        "total_size_mb": round(total_size / (1024 * 1024), 2),
+                        "total_size_gb": round(total_size / (1024 * 1024 * 1024), 3),
+                        "total_records": total_records,
+                        "avg_records_per_file": (
+                            round(total_records / len(file_list), 2) if len(file_list) > 0 else 0
+                        ),
+                    }
+                except (IOError, OSError, ValueError, zipfile.BadZipFile) as e:
+                    logging.error("Error reading storage: %s", e)
+                    stats_data["storage"] = {"file_exists": True, "error": str(e)}
             else:
-                storage_file = os.path.join(self.storagedir, "storage.zip")
-                if os.path.exists(storage_file):
-                    try:
-                        mzip = ZipFile(storage_file, mode="r", compression=ZIP_DEFLATED)
-                        file_list = mzip.namelist()
-                        total_size = sum(mzip.getinfo(f).file_size for f in file_list)
-
-                        # Count all records accurately
-                        total_records = 0
-                        sample_count = 0
-                        sample_records = 0
-
-                        # Use progress bar for large files
-                        if len(file_list) > 0:
-                            progress_bar = None
-                            if len(file_list) > 100:
-                                progress_bar = tqdm(
-                                    total=len(file_list),
-                                    desc="Counting records",
-                                    unit="file",
-                                    leave=False,
-                                )
-
-                            for fname in file_list:
-                                try:
-                                    tf = mzip.open(fname, "r")
-                                    data = json.load(tf)
-                                    tf.close()
-
-                                    if self.data_key:
-                                        items = get_dict_value(
-                                            data, self.data_key, splitter=self.field_splitter
-                                        )
-                                        if isinstance(items, list):
-                                            total_records += len(items)
-                                        elif items is not None:
-                                            total_records += 1
-                                    else:
-                                        if isinstance(data, list):
-                                            total_records += len(data)
-                                        elif data is not None:
-                                            total_records += 1
-
-                                    # Track sample for average calculation
-                                    if sample_count < 10:
-                                        if self.data_key:
-                                            items = get_dict_value(
-                                                data, self.data_key, splitter=self.field_splitter
-                                            )
-                                            if isinstance(items, list):
-                                                sample_records += len(items)
-                                        else:
-                                            if isinstance(data, list):
-                                                sample_records += len(data)
-                                        sample_count += 1
-                                except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
-                                    logging.debug("Error counting records in %s: %s", fname, e)
-
-                                if progress_bar:
-                                    progress_bar.update(1)
-
-                            if progress_bar:
-                                progress_bar.close()
-
-                        stats_data["storage"] = {
-                            "file_exists": True,
-                            "total_files": len(file_list),
-                            "total_size_bytes": total_size,
-                            "total_size_mb": round(total_size / (1024 * 1024), 2),
-                            "total_size_gb": round(total_size / (1024 * 1024 * 1024), 3),
-                            "total_records": total_records,
-                            "avg_records_per_file": (
-                                round(total_records / len(file_list), 2)
-                                if len(file_list) > 0
-                                else 0
-                            ),
-                        }
-
-                        mzip.close()
-                    except (IOError, OSError, zipfile.BadZipFile) as e:
-                        logging.error("Error reading storage file: %s", e)
-                        stats_data["storage"] = {"file_exists": True, "error": str(e)}
-                else:
-                    stats_data["storage"] = {"file_exists": False}
+                stats_data["storage"] = {"file_exists": False}
 
             # Details storage statistics
-            details_file = os.path.join(self.storagedir, "details.zip")
+            details_file = self.details_storage_file
             if os.path.exists(details_file):
                 try:
                     mzip = ZipFile(details_file, mode="r", compression=ZIP_DEFLATED)
@@ -2041,6 +1965,21 @@ class ProjectBuilder:
             elif auth_type == "apikey":
                 if not self.config.has_option("auth", "api_key"):
                     errors.append("auth.api_key is required for apikey authentication")
+            elif auth_type == "oauth2":
+                has_token = self.config.has_option("auth", "token") or self.config.has_option(
+                    "auth", "token_file"
+                )
+                can_refresh = self.config.has_option(
+                    "auth", "refresh_token"
+                ) and self.config.has_option("auth", "auth_url")
+                if not (has_token or can_refresh):
+                    errors.append(
+                        "auth.token, auth.token_file, or auth.refresh_token with auth.auth_url "
+                        "is required for oauth2 authentication"
+                    )
+            auth_handler = getattr(self, "auth_handler", None)
+            if auth_handler is not None and auth_handler.error:
+                errors.append(auth_handler.error)
 
         # Validate rate limiting if configured
         if self.config.has_section("rate_limit"):

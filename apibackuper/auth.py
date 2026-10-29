@@ -26,7 +26,22 @@ class AuthHandler:
         self.config = config
         self.auth_type = None
         self.auth_data = {}
+        # Set when a configured credential file is missing or empty, so
+        # requests fail instead of being sent without credentials.
+        self.error: Optional[str] = None
         self._load_auth_config()
+
+    def _read_secret(self, option: str) -> Optional[str]:
+        path = self.config.get("auth", option)
+        if not os.path.exists(path):
+            self.error = f"auth.{option} not found: {path}"
+            return None
+        with open(path, "r", encoding="utf-8") as f:
+            secret = f.read().strip()
+        if not secret:
+            self.error = f"auth.{option} is empty: {path}"
+            return None
+        return secret
 
     def _load_auth_config(self):
         """Load authentication configuration"""
@@ -47,10 +62,7 @@ class AuthHandler:
             if self.config.has_option("auth", "password"):
                 password = self.config.get("auth", "password")
             elif self.config.has_option("auth", "password_file"):
-                password_file = self.config.get("auth", "password_file")
-                if os.path.exists(password_file):
-                    with open(password_file, "r", encoding="utf-8") as f:
-                        password = f.read().strip()
+                password = self._read_secret("password_file")
 
             if username and password:
                 self.auth_data = {"username": username, "password": password}
@@ -60,10 +72,7 @@ class AuthHandler:
             if self.config.has_option("auth", "token"):
                 token = self.config.get("auth", "token")
             elif self.config.has_option("auth", "token_file"):
-                token_file = self.config.get("auth", "token_file")
-                if os.path.exists(token_file):
-                    with open(token_file, "r", encoding="utf-8") as f:
-                        token = f.read().strip()
+                token = self._read_secret("token_file")
 
             if token:
                 self.auth_data = {"token": token}
@@ -86,10 +95,7 @@ class AuthHandler:
             if self.config.has_option("auth", "token"):
                 token = self.config.get("auth", "token")
             elif self.config.has_option("auth", "token_file"):
-                token_file = self.config.get("auth", "token_file")
-                if os.path.exists(token_file):
-                    with open(token_file, "r", encoding="utf-8") as f:
-                        token = f.read().strip()
+                token = self._read_secret("token_file")
 
             if self.config.has_option("auth", "auth_url"):
                 auth_url = self.config.get("auth", "auth_url")
