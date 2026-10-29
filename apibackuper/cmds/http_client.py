@@ -25,11 +25,16 @@ from .utils import (
 
 
 class RequestFailed(RuntimeError):
-    """A completed HTTP exchange with an unsuccessful response status."""
+    """A completed HTTP exchange with an unsuccessful response status.
 
-    def __init__(self, message: str, status_code: int):
+    ``missing`` marks responses meaning the object is gone (404/410 by
+    default, or a ``missing`` response rule).
+    """
+
+    def __init__(self, message: str, status_code: int, missing: bool = False):
         super().__init__(message)
         self.status_code = status_code
+        self.missing = missing
 
 
 def build_request_kwargs(

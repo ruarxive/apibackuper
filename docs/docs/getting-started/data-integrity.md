@@ -168,10 +168,24 @@ checksums. A URL inventory or HTTP 200 can still correspond to an expired signed
 link or an HTML error page. Clearing discovery does not revalidate bytes at a
 saved filename. See [follow and files](/use-cases/follow-and-files).
 
+## Verify archive fixity
+
+Each successful run stores a SHA-256 manifest of its pages in the archive.
+Check the stored bytes against it before copying or retiring a collection:
+
+```bash doc-test
+apibackuper verify --strict
+```
+
+`verify` exits `1` when a page has changed or disappeared; `--strict` also
+fails on pages that no manifest lists. See [`verify`](/commands/verify).
+
 ## Record byte-level evidence after completion
 
-Stop writers before recording checksums or copying a collection. For a completed
-local ZIP project, this script writes a small manifest:
+The archive manifests do not cover files outside storage, such as the
+configuration and state. Stop writers before recording checksums or copying a
+collection. For a completed local ZIP project, this script writes a small
+manifest of those files and the archive itself:
 
 ```python doc-test
 import hashlib

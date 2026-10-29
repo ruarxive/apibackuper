@@ -70,6 +70,7 @@ first and retained update generations after them, oldest first.
 | `.gz` or `.gzip` | gzip-compressed JSON Lines | Base installation |
 | `.zst` | Zstandard-compressed JSON Lines | Base installation |
 | `.parquet` | Columnar records | `recommended` extra, including pyarrow |
+| `.warc` or `.warc.gz` | WARC/1.1 request and response records of captured exchanges | `recommended` extra, including warcio |
 
 For a downstream system that does not use a recognized suffix, choose explicitly:
 
@@ -83,6 +84,14 @@ To create Parquet after installing the extra:
 python -m pip install 'apibackuper[recommended]'
 apibackuper export all-records.parquet
 ```
+
+WARC export writes, for every page with an exchange record, a `response`
+record (status, captured headers and the original body; `Content-Encoding` and
+`Transfer-Encoding` are dropped because the stored body is decoded) and a
+`request` record. `WARC-Date` is the fetch time. Pages saved without an
+exchange record, such as those from earlier versions, are skipped and counted.
+Credentials redacted in exchange records stay redacted, so request records are
+not byte-exact copies of the wire request. `--fields` and `--where` do not apply.
 
 Parquet export reads the records twice: first to settle one schema, then to
 write it. Compatible types are promoted (integers and decimals become doubles,
@@ -154,6 +163,7 @@ Check representative nested fields and boundary dates as well as counts.
 
 After `update`, export reads the original pages and all retained
 `runs/<id>/` generations. Repeated IDs and inclusive-boundary records remain.
+Each generation's `manifest-sha256.txt` and `run.json` are not exported.
 Export ordering alone is not a version-selection rule.
 
 Suppose each historical record has a non-null `id` and a string
