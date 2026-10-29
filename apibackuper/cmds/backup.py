@@ -196,6 +196,8 @@ def run_backup(project, mode, resume=False):
         return
 
     baseline = project._load_state() if mode == "update" else {}
+    if hasattr(project, "_rule_counts"):
+        project._rule_counts = {}
     started = checkpoint.get("run_start") or datetime.now(timezone.utc).isoformat()
     process = None
     if project.code_postfetch:
@@ -392,7 +394,14 @@ def run_backup(project, mode, resume=False):
                     fetched_at = datetime.now(timezone.utc).isoformat()
                 if cursor_mode or capturing:
                     responses[page] = (result, fetched_at)
-                return {"page": page, "status": result.status_code, "content": result.content}
+                # ``_request`` returns only responses its status policy and
+                # response rules accepted, including accepted non-2xx ones.
+                return {
+                    "page": page,
+                    "status": result.status_code,
+                    "content": result.content,
+                    "accepted": True,
+                }
             except (RuntimeError, ValueError, OSError) as exc:
                 return {
                     "page": page,
@@ -548,6 +557,10 @@ def run_backup(project, mode, resume=False):
         print(f"  Total records: {summary['records_processed']}")
         print(f"  Total bytes: {summary['bytes_processed']}")
         print("  Errors by status: none")
+        counts = getattr(project, "_rule_counts", None)
+        if counts:
+            listed = ", ".join(f"{action}={count}" for action, count in sorted(counts.items()))
+            print(f"  Response rules applied: {listed}")
     finally:
         if bar is not None:
             bar.close()

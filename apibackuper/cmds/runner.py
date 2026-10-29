@@ -87,8 +87,9 @@ def fetch_all_pages(
         Number of worker threads. ``<= 1`` means sequential.
     fetch_one
         Per-page worker. Takes a page number, returns a dict with
-        ``{page, status, content, error}``. ``status`` is None on transport
-        failure; ``error`` is a string when the request raised.
+        ``{page, status, content, error, accepted}``. ``status`` is None on
+        transport failure; ``error`` is a string when the request raised;
+        ``accepted`` marks a non-2xx response that a response rule accepted.
     on_page
         Per-page success handler. Takes ``(page, content)`` and returns
         a PageOutcome, or a legacy boolean (False stops without saving).
@@ -196,7 +197,8 @@ def fetch_all_pages(
         """Process ordered results; return True to end the entire run."""
         nonlocal consecutive_errors, saved_pages
         status = response.get("status")
-        if response.get("error") or status is None or not 200 <= status < 300:
+        accepted = response.get("accepted") or (status is not None and 200 <= status < 300)
+        if response.get("error") or status is None or not accepted:
             inc_error(page, str(status) if status is not None else "transport")
             if progress_bar is not None:
                 progress_bar.update(1)
