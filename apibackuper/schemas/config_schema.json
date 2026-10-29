@@ -383,6 +383,11 @@
         "use_aria2": {
           "type": ["string", "boolean"],
           "description": "Use aria2 for downloads"
+        },
+        "max_file_size": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Skip downloads larger than this many bytes (default: no limit)"
         }
       },
       "additionalProperties": false

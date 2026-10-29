@@ -79,8 +79,28 @@ def _status_matches(expected: Any, status: int) -> bool:
     return status == expected
 
 
-def matches(rule: Dict[str, Any], response, splitter: str = ".") -> bool:
-    """Return True when every condition of ``rule`` holds for ``response``."""
+# Largest streamed JSON body that a ``body_key`` condition reads.
+_STREAM_BODY_LIMIT = 1024 * 1024
+
+
+def _body_readable(response, stream: bool) -> bool:
+    """Whether a body condition may read ``response`` without loading a download."""
+    if not stream:
+        return True
+    headers = response.headers or {}
+    if "json" not in (headers.get("Content-Type") or "").lower():
+        return False
+    try:
+        return int(headers.get("Content-Length")) <= _STREAM_BODY_LIMIT
+    except (TypeError, ValueError):
+        return False
+
+
+def matches(rule: Dict[str, Any], response, splitter: str = ".", stream: bool = False) -> bool:
+    """Return True when every condition of ``rule`` holds for ``response``.
+
+    For streamed downloads, ``body_key`` conditions only read small JSON bodies.
+    """
     if "status" in rule and not _status_matches(rule["status"], response.status_code):
         return False
     if "content_type" in rule:
@@ -88,6 +108,8 @@ def matches(rule: Dict[str, Any], response, splitter: str = ".") -> bool:
         if str(rule["content_type"]).lower() not in content_type.lower():
             return False
     if "body_key" in rule:
+        if not _body_readable(response, stream):
+            return False
         try:
             body = response.json()
         except ValueError:
@@ -99,10 +121,12 @@ def matches(rule: Dict[str, Any], response, splitter: str = ".") -> bool:
     return True
 
 
-def action_for(rules: List[Dict[str, Any]], response, splitter: str = ".") -> Optional[str]:
+def action_for(
+    rules: List[Dict[str, Any]], response, splitter: str = ".", stream: bool = False
+) -> Optional[str]:
     """Return the action of the first matching rule, or None."""
     for rule in rules:
-        if matches(rule, response, splitter=splitter):
+        if matches(rule, response, splitter=splitter, stream=stream):
             return rule["action"]
     return None
 
