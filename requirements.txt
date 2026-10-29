@@ -5,7 +5,7 @@
 # please update the version pins there first and regenerate this file with
 # ``pip-compile`` (or manually) when dependencies change.
 #
-# Optional dependencies (aria2p, pandas, pyarrow) are intentionally excluded
+# Optional dependencies (aria2p, pandas, pyarrow, warcio) are intentionally excluded
 # from this file so installing ``-r requirements.txt`` does not pull in
 # transitively huge packages that the package does not require to run.
 # Install them with ``pip install 'apibackuper[recommended]'`` instead.

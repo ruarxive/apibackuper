@@ -73,6 +73,7 @@ a pending publication intent. `--resume` completes publication and state recover
 from the saved data, which may require no further HTTP requests.
 
 Checkpoints are controlled by `settings.checkpoint_interval_pages` and
-`settings.checkpoint_file`. The interval controls periodic saves; the backup
-workflow also saves at startup, after collection and during publication.
+`settings.checkpoint_file`. The interval (default: every page) controls periodic
+saves; the backup workflow also saves at startup, after collection, during
+publication and when collection is interrupted.
 See [incremental and update](/use-cases/incremental-and-update).

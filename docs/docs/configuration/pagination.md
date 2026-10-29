@@ -16,6 +16,9 @@ parameters and POST JSON bodies in the default `query_mode: query`.
 | Page number and size | `page` | `page_number_param`; usually `page_size_param` | `page=1`, then `page=2` |
 | Offset and limit | `skip` | `count_skip_param`; usually `page_size_param` | `offset=0`, then `offset=100` |
 | Numeric start/end interval | `range` | `count_from_param`, `count_to_param` | `from=0&to=100`, then `from=100&to=200` |
+| Opaque cursor in the response | `cursor` | `cursor_param`, `data.next_cursor_key` | no cursor, then `cursor=<token from page 1>` |
+| Next-page URL in the response | `next_url` | `data.next_url_key` | `project.url`, then the returned URL |
+| `Link: <…>; rel="next"` header | `link_header` | none | `project.url`, then the header's next URL |
 
 The page size must equal the number of records the API actually returns on a
 full page. If the server caps `per_page=100` at 50, set `page_size_limit: 50`.
@@ -95,16 +98,62 @@ be disjoint. Inclusive endpoints repeat boundary records. There is no setting
 for subtracting 1 from the upper bound. Range mode calculates record-position
 bounds; it is not a date-range iterator or a cursor-based traversal.
 
+## Cursor, next-URL and Link-header APIs
+
+In these modes each request depends on the previous response, so pages are
+fetched one at a time; `validate-config` rejects `request.parallelism` above 1.
+
+```yaml
+project:
+  url: https://api.example.com/items
+  iterate_by: cursor
+params:
+  cursor_param: cursor
+  page_size_param: limit
+  page_size_limit: 100
+data:
+  data_key: items
+  next_cursor_key: meta.next_cursor
+```
+
+- `cursor` sends the token found at `data.next_cursor_key` as `params.cursor_param`,
+  together with the usual parameters (`params.json`, page size, update watermark).
+- `next_url` requests the URL found at `data.next_url_key`. A relative URL is
+  resolved against the current one. A literal key such as `@odata.nextLink` is
+  read as written, not as a dotted path.
+- `link_header` follows the RFC 8288 `Link` header target with `rel="next"`.
+- For `next_url` and `link_header` the next URL already carries the query, so
+  `params.json` values and the update watermark are sent only with the first GET
+  request.
+
+Collection ends when the response has no next token or URL, or a page has no
+records. A short page does not end a cursor run. A token or URL that repeats
+within the run fails it as incomplete, because the API pagination loops. A next
+URL on a host other than `project.url` fails the run unless
+`params.allow_cross_host_next: true` is set.
+
+Checkpoints store the next token or URL, so `run full --resume` continues
+from the last saved page without requesting earlier pages again. A checkpoint
+without a stored cursor replays the chain from the first page. `run continue`
+cannot start inside a cursor chain; use `run full --resume` or `update`.
+
 ## How many pages are fetched?
 
 The first response is used to derive the collection bound:
 
 1. A usable `data.total_number_key` gives `ceil(total / page_size_limit)`.
 2. Otherwise, `data.pages_number_key` supplies the page count.
-3. Without usable count metadata, the fallback is 20,000 internal pages.
+3. Without usable count metadata, collection continues until a short or empty
+   page; there is no fixed page cap.
 
 For 250 records and a size of 100, the count is 3 pages. Without count metadata,
-responses of 100, 100 and 50 records stop after the short page. If all pages
+responses of 100, 100 and 50 records stop after the short page. A page that
+repeats the previous page's records fails the run, because the API is
+ignoring the pagination parameter.
+
+When count metadata is available, a short or empty page before the last page it
+implies fails the run instead of publishing a partial backup. This usually means
+the API caps the page size below `page_size_limit`. If all pages
 are exactly full, an additional empty page can be needed to discover the end.
 
 An empty page ends collection without adding an empty data page to the archive.
@@ -147,7 +196,8 @@ paginate each detail endpoint. See [paginated follow rules](/configuration/follo
 | Symptom | Likely cause / action |
 |---------|-----------------------|
 | Only one page saved | Missing parameter name for the chosen mode, short page, or wrong `data_key` |
-| Every page contains the same records | Wrong parameter name/location; the API ignores the changing value |
+| Every page contains the same records / "ignore the pagination parameter" error | Wrong parameter name/location; the API ignores the changing value |
+| "returned N records … before page M" error | The API caps the page size: set `page_size_limit` to the returned size and run a new full backup; or remove an inexact count key |
 | Collection stops after the first 50 records | Server page-size cap differs from `page_size_limit` |
 | Unexpected page count | Record total confused with page total, or metadata path does not exist |
 | Repeated/missing IDs | Unstable sorting, changing source, or inclusive range bounds |

@@ -6,7 +6,35 @@ import shutil
 import uuid
 from datetime import datetime, timezone
 
-from .backends import build_storage_backend, publish_zip
+from .backends import _is_page, build_storage_backend, publish_zip
+
+# Members a backup generation owns besides its pages: capture records and the
+# fixity manifest. They are replaced with the pages, never carried over.
+_BACKUP_MEMBER_PREFIXES = ("exchange_", "raw_")
+_BACKUP_MEMBER_NAMES = ("manifest-sha256.txt", "run.json")
+
+
+def _is_backup_member(name):
+    return (
+        _is_page(name) or name.startswith(_BACKUP_MEMBER_PREFIXES) or name in _BACKUP_MEMBER_NAMES
+    )
+
+
+def _carry_over_non_backup_entries(destination, staging):
+    """Move entries a full backup does not own into its staging directory.
+
+    A filesystem backup root also holds follow archives such as
+    ``details.zip``. Moving them before the swap keeps them out of the
+    ``.previous`` tree that publication deletes, and a rerun after a crash
+    moves whatever is left.
+    """
+    for entry in os.listdir(destination):
+        source = os.path.join(destination, entry)
+        if entry == "runs" or (os.path.isfile(source) and _is_backup_member(entry)):
+            continue
+        target = os.path.join(staging, entry)
+        if not os.path.exists(target):
+            os.replace(source, target)
 
 
 class BackupSession:
@@ -81,6 +109,7 @@ class BackupSession:
                 raise RuntimeError(f"A previous publication needs recovery: {previous}")
             had_previous = os.path.exists(self.destination)
             if had_previous:
+                _carry_over_non_backup_entries(self.destination, self.path)
                 os.replace(self.destination, previous)
             try:
                 os.replace(self.path, self.destination)

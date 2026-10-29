@@ -14,15 +14,27 @@ from urllib.parse import urlencode
 
 import requests
 
-from .utils import append_query, redact_headers, redact_params, redact_text, redact_url
+from .utils import (
+    append_query,
+    flat_param_value,
+    redact_headers,
+    redact_params,
+    redact_text,
+    redact_url,
+)
 
 
 class RequestFailed(RuntimeError):
-    """A completed HTTP exchange with an unsuccessful response status."""
+    """A completed HTTP exchange with an unsuccessful response status.
 
-    def __init__(self, message: str, status_code: int):
+    ``missing`` marks responses meaning the object is gone (404/410 by
+    default, or a ``missing`` response rule).
+    """
+
+    def __init__(self, message: str, status_code: int, missing: bool = False):
         super().__init__(message)
         self.status_code = status_code
+        self.missing = missing
 
 
 def build_request_kwargs(
@@ -57,17 +69,12 @@ def build_request_kwargs(
 
     if http_mode == "GET":
         if flatten:
-            # Coerce values to str so we can call str.replace on them.
-            str_flatten = {k: (str(v) if not isinstance(v, str) else v) for k, v in flatten.items()}
             # Redact before stringifying so credentials in nested objects stay safe.
-            redacted_flatten = {
-                k: str(v).replace("'", '"').replace("True", "true")
-                for k, v in redact_params(flatten).items()
-            }
+            redacted_flatten = {k: flat_param_value(v) for k, v in redact_params(flatten).items()}
             # P2.23: URL-encode the query so values with ``&``, ``=``, ``#``
             # or whitespace do not corrupt or extend the query.
             actual_query_string = urlencode(
-                {k: v.replace("'", '"').replace("True", "true") for k, v in str_flatten.items()},
+                {k: flat_param_value(v) for k, v in flatten.items()},
                 doseq=True,
             )
             log_safe_url = redact_url(append_query(url, redacted_flatten))
@@ -148,11 +155,11 @@ def wrap_request_exception(
             f"SSL certificate verification failed for {url}\n"
             f"  Error details: {error_details}\n"
             "  Suggestions:\n"
-            "    - If this is a trusted server, disable SSL verification in [request] section:\n"
-            "      verify_ssl = False\n"
-            "    - Or provide a path to a trusted certificate bundle:\n"
-            "      verify_ssl = /path/to/certificate.pem\n"
-            "    - Update your system's certificate store\n"
+            "    - Add the server's CA to the system store, or point the\n"
+            "      REQUESTS_CA_BUNDLE environment variable at a trusted bundle\n"
+            "    - Only for a trusted test server, disable verification:\n"
+            "      request:\n"
+            "        verify_ssl: false\n"
             "    - Check if the server's certificate has expired"
         )
         logging.error("SSL error for URL %s: %s", url, error_details)

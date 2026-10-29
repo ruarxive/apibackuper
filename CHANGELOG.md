@@ -11,12 +11,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reproducible localhost API quick start with five known records; CI executes the documented CLI/Python snippets and verifies archive/export contents.
 - Guides for HTTP request JSON files, pagination/completeness boundaries, export filter grammar, Python integration and storage access; expanded configuration, hook and OAuth2 contracts.
 - Documentation builds on pull requests and validation of Markdown YAML/JSON examples and shipped JSON files.
+- Streamed file downloads: `getfiles` writes each file in 1 MB chunks to a temporary file and moves it into file storage (a 50 MB download peaks at about 3 MB of memory), `files.max_file_size` skips larger files by declared or streamed size, failed downloads leave no partial file, and `files-manifest-sha256.txt` records every stored file for `verify`.
+- Response rules: ordered `request.response_rules` match `status` (code, list or class such as `4xx`), `body_key`/`body_value` and `content_type`, and `retry`, `fail`, mark as `missing` or `accept` the response, so a `200` with an error body is no longer archived as data. `request.retry.wait_headers` waits for `Retry-After`, `X-RateLimit-Reset` and similar headers (seconds, HTTP date or Unix time), and `request.retry.max_wait` fails instead of waiting longer. The run summary counts applied rule actions.
+- Response capture: every saved page gets `exchange_N.json` (request, status, headers, final URL, fetch time, SHA-256, version, run ID; credentials redacted), and non-JSON responses keep their original bytes as `raw_N.<ext>` (`storage.capture.metadata`, `storage.capture.raw_body`). `export --format warc` writes WARC/1.1 request and response records from them; `info --stats` counts captured exchanges.
+- OAuth2 client-credentials grant (`auth.grant_type: client_credentials`) with `client_id`, `client_secret`/`client_secret_file`, `scope`, `audience` and Basic or form-body client authentication; tokens are requested before the first API request, renewed 60 seconds before `expires_in` and after a 401, and shared by parallel requests. Refresh-token requests authenticate the client when `client_id` is set.
+- Fixity manifests: every successful run writes `manifest-sha256.txt` (BagIt form) and `run.json` (version, run ID, times, counts, redacted configuration hash) into the generation it publishes; `apibackuper verify [--strict] [--json]` checks stored pages against them and records the result for `info`.
+- Cursor, next-URL and RFC 8288 Link-header pagination (`iterate_by: cursor`, `next_url`, `link_header`) with loop detection, cursor-aware resume and `detect` suggestions for common next-link fields.
+
+### Changed
+- **Breaking for direct ZIP readers:** with ZIP storage, each update generation is written to its own `storage.zip.runs/<id>.zip` instead of into `storage.zip`, so an update no longer rewrites the whole archive (a one-page update over a 20,000-page archive: 1.2 s → 0.1 s, and no second copy on disk). All commands read both layouts; a full backup retires the previous generation archives; `info --stats` reports `generation_archives`.
+- Archives now hold an `exchange_N.json` record beside each page by default; set `storage.capture.metadata: false` to write pages only.
+- Retry HTTP 429 and 504, along with 500, 502 and 503, when no retry status list is configured.
+- Default `settings.checkpoint_interval_pages` to 1, so an interrupted backup resumes after its last saved page. Set 0 to keep only lifecycle checkpoints.
+
+### Deprecated
+- `ProjectBuilder.getfiles(be_careful=...)` is ignored with a `DeprecationWarning`; use `files.max_file_size`.
 
 ### Fixed
+- Keep follow archives such as `details.zip` when a new full backup is published to filesystem storage; they were deleted with the previous backup tree.
+- Fail a backup as incomplete when a short or empty page arrives before the last page implied by the API's count metadata, for example when the API caps the page size, instead of publishing a partial archive.
+- Without count metadata, collect until a short or empty page instead of silently stopping at 20,000 pages, and fail when a page repeats the previous page's records.
+- Print a warning when a run collects fewer records than the API's reported total.
+- Record followed objects answered with HTTP 404 or 410 in `details.missing.json` and continue with the other keys instead of aborting the follow run.
+- Save a checkpoint for the saved pages when collection is interrupted, and sync only changed ZIP journal directories when checkpointing.
+- Honor `Retry-After` HTTP-date values.
+- Export records in page order (`page_2` before `page_10`) instead of lexicographic member order.
+- Apply `request.max_redirects` to HTTP requests; it was parsed but ignored.
+- With `force_flat_params`, send string values unchanged and objects, arrays and booleans as JSON; values containing `True` or apostrophes were rewritten.
+- Parquet export settles one schema across all batches and writes fields with conflicting types as JSON text, instead of failing when a type changed after the first 5,000 records.
+- `ProjectBuilder` no longer removes the host application's root-logger handlers or ignores `DeprecationWarning` process-wide; `--verbose` installs its own console handler.
+- `getfiles` reads source pages through the storage backend, including pages still in the ZIP journal, records HTTP 404/410 downloads in `files_skipped.list` and continues, and rejects unsupported `fetch_mode`/`file_storage_type` values.
+- `info --stats` counts pages through the storage backend, so filesystem storage and pages still in a ZIP journal are included, and reads follow details next to SQLite storage.
+- `estimate` decodes XML responses, resolves `code.postfetch` from the project directory, and reports a missing total or a zero page size instead of crashing.
+- Continuing a follow run lists saved objects once instead of rescanning the archive for every key.
+- The SSL error hint no longer suggests a certificate path in `verify_ssl`, which accepts only booleans; it points to `REQUESTS_CA_BUNDLE`.
+- `validate-config` requires a token, token file, or refresh token with `auth_url` for `oauth2`.
 - Preserve console logging for `--verbose` after project initialization and honor `logging.level` when verbose is not enabled.
 - Reject malformed and compound export filters before opening storage or replacing output instead of silently disabling filtering or returning misleading results.
 - Correct example descriptions and release instructions, remove references to deleted history/setup files, and retain E-Trust as a separate POST API walkthrough.
 - Align the documentation site's Node.js minimum with the locked Docusaurus requirement (Node 20+).
+
+### Security
+- Drop the configured API-key header and other credential-like headers, not only `Authorization`, when a redirect leaves the original host.
+- Treat a missing or empty `token_file`/`password_file` as a configuration error instead of silently sending unauthenticated requests.
 
 ## [2.0.0] - 2026-10-17
 

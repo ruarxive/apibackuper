@@ -118,8 +118,21 @@ For this example, delays before retries are 1, 2 and 4 seconds. `fixed` uses
 `initial_delay` each time, capped by `max_delay`; exponential uses
 `min(initial_delay * 2^(retry_number - 1), max_delay)`.
 A server `Retry-After: 15` overrides the configured backoff delay, even when it
-exceeds `max_delay`. HTTP-date Retry-After values are not parsed; the configured
+exceeds `max_delay`. An HTTP-date Retry-After waits until that time; otherwise the configured
 delay is used instead.
+
+`retry.wait_headers` lists the headers read, in order, for that server wait
+(default `["Retry-After"]`). Values can be seconds, an HTTP date, or a Unix
+timestamp such as GitHub's `X-RateLimit-Reset`; numbers of at least 10^9 are read
+as Unix time. `retry.max_wait` fails the request instead of sleeping longer:
+
+```yaml
+request:
+  retry:
+    max_retries: 5
+    wait_headers: [Retry-After, X-RateLimit-Reset, RateLimit-Reset]
+    max_wait: 900
+```
 
 POST requests can also be retried. Use this tool for read/query endpoints where
 replaying a request is acceptable to the API; it does not provide an idempotency-key
@@ -136,9 +149,48 @@ For each corresponding setting, flat compatibility keys override nested keys:
    fixed backoff and maximum delay `max(retry_delay, retry_delay * 4)`.
 
 The fallback retry status list is `error_handling.retry_on_errors`, or
-`[500, 502, 503]` when omitted. Configure a non-empty explicit list to remove
-ambiguity; 429 is not included in that default. Prefer the nested YAML form and
+`[429, 500, 502, 503, 504]` when omitted. Configure a non-empty explicit list to
+remove ambiguity. Prefer the nested YAML form and
 remove leftover flat overrides when migrating a configuration.
+
+## Response rules
+
+The HTTP status alone does not always tell whether a response is usable. Some
+APIs answer `200` with `{"error": "quota exceeded"}` or an HTML maintenance
+page; others answer `404` for an empty result. `request.response_rules` is an
+ordered list; the first rule whose conditions all match decides:
+
+```yaml
+request:
+  response_rules:
+    - body_key: error          # a JSON body with an "error" field
+      action: retry
+    - content_type: text/html  # a maintenance page instead of JSON
+      action: fail
+    - status: 404
+      body_key: items          # 404 with an empty list means "no data"
+      action: accept
+    - status: [403, 451]
+      action: missing
+```
+
+| Condition | Matches when |
+|-----------|--------------|
+| `status` | The status equals the code, is in the list, or is in a class such as `4xx` |
+| `body_key` | The dotted path exists in a JSON body; with `body_value`, it also equals that value |
+| `content_type` | The `Content-Type` header contains the text (case-insensitive) |
+
+| Action | Effect |
+|--------|--------|
+| `retry` | Retry under the retry policy, even for a 2xx response; fail when the budget runs out |
+| `fail` | Fail without retrying |
+| `missing` | Follow and `getfiles` record the object as gone and continue; a page request fails |
+| `accept` | Treat the response as successful, even with a non-2xx status |
+
+A rule needs at least one condition; `validate-config` checks rule shape. When
+no rule matches, the status policy applies as before: 2xx succeeds, configured
+statuses are retried, and 404/410 count as missing for follow and file
+downloads. The run summary counts how often each action was applied.
 
 ## Failed pages and continued collection
 
@@ -165,7 +217,7 @@ from the first unresolved page.
 | Field | Default | Notes |
 |-------|---------|-------|
 | `verify_ssl` | true | Boolean only; a CA-bundle path is not accepted in this option |
-| `allow_redirects` | true | Follow redirects using the HTTP client |
+| `allow_redirects` | true | Follow redirects using the HTTP client; credential headers are dropped when the host changes |
 | `max_redirects` | 5 | Maximum followed redirects; 0 permits none |
 | `user_agent` | `apibackuper/<version>` | Session User-Agent; per-request headers may override it |
 

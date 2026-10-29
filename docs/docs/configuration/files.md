@@ -104,6 +104,7 @@ is known; it does not convert the bytes to that format.
 | `default_ext` | Omitted | Extension appended to ID-mode filenames |
 | `file_storage_type` | `zip` | `zip` or `filesystem`, independent of main ZIP source |
 | `use_aria2` | false | Use a running external aria2 RPC service instead of the built-in downloader |
+| `max_file_size` | No limit | Skip files larger than this many bytes |
 
 Use keys without spaces around commas, such as `document_url,attachments.url`.
 Record paths use `settings.splitter`. Values should be scalar strings/numbers
@@ -123,6 +124,9 @@ This is independent of `data.item_key` and record identity.
 `https://a.example/report.pdf` and `https://b.example/report.pdf`, or two signed
 URLs differing only in their query, can map to the same destination filename.
 An already saved filename is skipped; it is not compared with remote content.
+A download answered with HTTP 404 or 410, or matching a `missing` response rule,
+is recorded in `files_skipped.list` with its status as the reason, and the remaining files are downloaded; the
+next `getfiles` run tries it again. Other failures stop the command.
 Choose references and storage mode that give unique names for your dataset.
 
 `id` uses the extracted value, optionally followed by `default_ext`. It does not
@@ -141,7 +145,8 @@ storage/
   files.zip            # downloaded objects when output is ZIP
   files/               # downloaded objects when output is filesystem
   files.list           # URLs recorded by the built-in downloader
-  files_skipped.list   # legacy skipped-file report
+  files_skipped.list   # skipped files: 404/410, missing rules, max_file_size
+  files-manifest-sha256.txt  # SHA-256 of every stored file, checked by verify
 ```
 
 Only the selected output backend receives the built-in file payloads. Despite
@@ -169,10 +174,22 @@ verification, connection/read timeouts, retries and rate limits. `params.json`
 is not applied as an attachment request body. Follow/file URLs may point at
 another host; use endpoints allowed to receive the project authentication.
 
-The built-in path reads a response into memory before storing it. It does not
-provide automatic large-file splitting, a CLI size-cap option or streaming
-resume of partial attachment bytes. Main page checkpoints do not track partial
-file transfers; the repeated command skips fully saved filenames.
+The built-in downloader streams each response in 1 MB chunks to a temporary
+file in the storage directory, hashing it with SHA-256 as it arrives, and then
+moves the file into ZIP or filesystem file storage; memory use does not grow
+with the file size. A failed or interrupted download leaves no stored file and
+no manifest line, so the next `getfiles` downloads it again; partial bytes are
+not resumed.
+
+Set `files.max_file_size` (bytes) to skip larger files. A file whose
+`Content-Length` exceeds it is not read at all; a file without a declared size
+is stopped when the stream passes the limit. Both are recorded in
+`files_skipped.list`, and the remaining files are downloaded.
+
+Every stored file is appended to `files-manifest-sha256.txt` beside file
+storage (`<sha256>  <name>` per line). [`verify`](/commands/verify) checks file
+storage against it and reports changed, missing and unlisted files. Files saved
+by older versions get their line on the next `getfiles` run.
 
 ## aria2 integration
 

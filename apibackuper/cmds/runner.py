@@ -21,7 +21,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional
+from itertools import chain, islice
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional
 
 from ..common import get_dict_value
 from ..constants import DEFAULT_NUMBER_OF_PAGES
@@ -57,7 +58,7 @@ class FetchResult(dict):
 
 def fetch_all_pages(
     *,
-    pages: List[int],
+    pages: Iterable[int],
     parallelism: int,
     fetch_one: Callable[[int], Dict[str, Any]],
     on_page: Callable[[int, bytes], bool | PageOutcome],
@@ -80,13 +81,15 @@ def fetch_all_pages(
     Parameters
     ----------
     pages
-        Ordered list of page numbers to fetch.
+        Ordered page numbers to fetch; an unbounded iterator runs until a
+        page outcome or error stops the loop.
     parallelism
         Number of worker threads. ``<= 1`` means sequential.
     fetch_one
         Per-page worker. Takes a page number, returns a dict with
-        ``{page, status, content, error}``. ``status`` is None on transport
-        failure; ``error`` is a string when the request raised.
+        ``{page, status, content, error, accepted}``. ``status`` is None on
+        transport failure; ``error`` is a string when the request raised;
+        ``accepted`` marks a non-2xx response that a response rule accepted.
     on_page
         Per-page success handler. Takes ``(page, content)`` and returns
         a PageOutcome, or a legacy boolean (False stops without saving).
@@ -121,8 +124,13 @@ def fetch_all_pages(
         Mapping of status code (or ``"transport"``) to failure count, with
         completion status and counters for the contiguous saved prefix.
     """
+    # ``pages`` may be an unbounded iterator when the API reports no counts.
+    iterator: Iterator[int] = iter(pages)
+    first = next(iterator, None)
+    if first is not None:
+        iterator = chain([first], iterator)
     result = FetchResult(
-        pages[0] - 1 if pages else initial_pages_processed,
+        first - 1 if first is not None else initial_pages_processed,
         initial_pages_processed,
         initial_records_processed,
         initial_bytes_processed,
@@ -142,7 +150,7 @@ def fetch_all_pages(
             logging.error("Error closing storage backend: %s", e)
 
     def close_progress() -> None:
-        if progress_bar:
+        if progress_bar is not None:
             try:
                 progress_bar.close()
             except Exception:
@@ -157,7 +165,7 @@ def fetch_all_pages(
         result[key] = result.get(key, 0) + 1
 
     def finalize_progress(current: int) -> None:
-        if progress_bar:
+        if progress_bar is not None:
             elapsed = max(1e-6, time.time() - start_timer)
             speed = current / elapsed
             eta_seconds = int(max(0, total_pages - current) / speed) if speed else 0
@@ -168,29 +176,31 @@ def fetch_all_pages(
                 }
             )
 
+    def progress() -> Dict[str, Any]:
+        return {
+            "last_page": result.last_page,
+            "next_page": result.next_page,
+            "failed_pages": list(result.failed_pages),
+            "pages_processed": result.pages_processed,
+            "records_processed": result.records_processed,
+            "storage_bytes": result.bytes_processed,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
     def save_checkpoint_if_due() -> None:
         if not checkpoint_interval or not result.pages_processed:
             return
         if result.pages_processed % checkpoint_interval == 0:
-            save_checkpoint(
-                {
-                    "last_page": result.last_page,
-                    "next_page": result.next_page,
-                    "failed_pages": list(result.failed_pages),
-                    "pages_processed": result.pages_processed,
-                    "records_processed": result.records_processed,
-                    "storage_bytes": result.bytes_processed,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                }
-            )
+            save_checkpoint(progress())
 
     def consume(page: int, response: Dict[str, Any]) -> bool:
         """Process ordered results; return True to end the entire run."""
         nonlocal consecutive_errors, saved_pages
         status = response.get("status")
-        if response.get("error") or status is None or not 200 <= status < 300:
+        accepted = response.get("accepted") or (status is not None and 200 <= status < 300)
+        if response.get("error") or status is None or not accepted:
             inc_error(page, str(status) if status is not None else "transport")
-            if progress_bar:
+            if progress_bar is not None:
                 progress_bar.update(1)
             return not continue_on_error or consecutive_errors >= max_consecutive_errors
 
@@ -210,7 +220,7 @@ def fetch_all_pages(
                     len(content) if outcome.bytes_written is None else outcome.bytes_written
                 )
                 save_checkpoint_if_due()
-            if progress_bar:
+            if progress_bar is not None:
                 progress_bar.update(1)
             finalize_progress(saved_pages)
         elif not outcome.stop:
@@ -219,13 +229,15 @@ def fetch_all_pages(
         return outcome.stop
 
     def _run_sequential() -> None:
-        for page in pages:
+        for page in iterator:
             if consume(page, fetch_one(page)):
                 return
 
     def _run_parallel() -> None:
-        for offset in range(0, len(pages), parallelism):
-            batch = pages[offset : offset + parallelism]
+        while True:
+            batch = list(islice(iterator, parallelism))
+            if not batch:
+                return
             results: Dict[int, Dict[str, Any]] = {}
             with ThreadPoolExecutor(max_workers=parallelism) as executor:
                 future_map = {executor.submit(fetch_one, page): page for page in batch}
@@ -240,6 +252,15 @@ def fetch_all_pages(
             _run_sequential()
         else:
             _run_parallel()
+    except BaseException:
+        # Record the durable prefix so an interrupted run (Ctrl+C, a decode
+        # error) resumes after it instead of at the last periodic checkpoint.
+        if result.pages_processed > initial_pages_processed:
+            try:
+                save_checkpoint(progress())
+            except Exception as error:
+                logging.error("Could not save checkpoint after interruption: %s", error)
+        raise
     finally:
         close_progress()
         safe_close_backend()

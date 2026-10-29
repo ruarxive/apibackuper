@@ -55,6 +55,7 @@ const sidebars = {
         'commands/getfiles',
         'commands/export',
         'commands/info',
+        'commands/verify',
         'commands/validate-config',
       ],
     },

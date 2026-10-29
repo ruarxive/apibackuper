@@ -61,6 +61,8 @@ apibackuper export all-records.jsonl.zst
 
 Export is local: it does not call the source API. A normal page export extracts
 `data.data_key` from each saved response, removing its response wrapper.
+Records follow page order (`page_2` before `page_10`), with the original pages
+first and retained update generations after them, oldest first.
 
 | Output extension | Meaning | Dependencies |
 |------------------|---------|--------------|
@@ -68,6 +70,7 @@ Export is local: it does not call the source API. A normal page export extracts
 | `.gz` or `.gzip` | gzip-compressed JSON Lines | Base installation |
 | `.zst` | Zstandard-compressed JSON Lines | Base installation |
 | `.parquet` | Columnar records | `recommended` extra, including pyarrow |
+| `.warc` or `.warc.gz` | WARC/1.1 request and response records of captured exchanges | `recommended` extra, including warcio |
 
 For a downstream system that does not use a recognized suffix, choose explicitly:
 
@@ -82,9 +85,20 @@ python -m pip install 'apibackuper[recommended]'
 apibackuper export all-records.parquet
 ```
 
-Use stable field types for Parquet. Nested fields, schema changes across retained
-versions and inconsistent number/string values may require normalization before
-columnar processing. JSONL preserves flexible record shapes more directly.
+WARC export writes, for every page with an exchange record, a `response`
+record (status, captured headers and the original body; `Content-Encoding` and
+`Transfer-Encoding` are dropped because the stored body is decoded) and a
+`request` record. `WARC-Date` is the fetch time. Pages saved without an
+exchange record, such as those from earlier versions, are skipped and counted.
+Credentials redacted in exchange records stay redacted, so request records are
+not byte-exact copies of the wire request. `--fields` and `--where` do not apply.
+
+Parquet export reads the records twice: first to settle one schema, then to
+write it. Compatible types are promoted (integers and decimals become doubles,
+new nested fields are merged). A top-level field whose values cannot share one
+type, such as numbers in some records and strings in others, is written as a
+JSON text column. Records must be objects. JSONL preserves flexible record
+shapes more directly.
 
 Create the output parent directory first and keep exports outside source backup
 paths. In particular, filesystem backups reject output anywhere inside their
@@ -149,6 +163,7 @@ Check representative nested fields and boundary dates as well as counts.
 
 After `update`, export reads the original pages and all retained
 `runs/<id>/` generations. Repeated IDs and inclusive-boundary records remain.
+Each generation's `manifest-sha256.txt` and `run.json` are not exported.
 Export ordering alone is not a version-selection rule.
 
 Suppose each historical record has a non-null `id` and a string
@@ -222,5 +237,5 @@ the update successfully before producing a verified downstream dataset.
 | Export contains repeated IDs | All retained versions are exported; derive a current view explicitly |
 | Fields differ from the list endpoint | Existing unnamed details archive is selected |
 | No records match a visible ID | Source ID type versus filter numeric conversion, or a missing/null field |
-| Parquet export fails | Optional dependencies and consistent record schema/types |
+| Parquet export fails | Optional dependencies; records that are not objects |
 | Export path is rejected | Destination overlaps the source archive or filesystem backup root |

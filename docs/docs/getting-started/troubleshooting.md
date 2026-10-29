@@ -129,7 +129,7 @@ request:
 ```
 
 Use provider-approved values. Account for other processes/apps using the same
-quota; the project's limiter is per process. An integer Retry-After can cause
+quota; the project's limiter is per process. A Retry-After value can cause
 waits longer than `max_delay`. Minute/hour windows and retries can also explain
 long pauses without new requests. More concurrency or retries can worsen quota
 failures. See [request policy](/configuration/rate-limiting-and-requests).
@@ -225,8 +225,8 @@ Install optional dependencies into the environment running the command:
 python -m pip install 'apibackuper[recommended]'
 ```
 
-Then check for inconsistent record types/schema if Parquet still fails. JSONL
-can be a useful format for inspecting flexible records before normalization.
+Fields with conflicting types are exported as JSON text columns. If Parquet still
+fails, check for records that are not objects; JSONL keeps them as they are.
 Create the output parent directory and keep the filename outside source storage.
 Filesystem backups reject export anywhere under their own root. Export replaces
 existing output only after success, but it needs space for the temporary output.

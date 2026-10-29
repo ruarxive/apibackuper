@@ -19,6 +19,11 @@ import logging
 from copy import deepcopy
 from typing import Any, Callable, Dict, Optional, Tuple
 
+from .utils import flat_param_value
+
+# Iteration modes whose next request depends on the previous response.
+CURSOR_MODES = ("cursor", "next_url", "link_header")
+
 
 def build_page_request(
     *,
@@ -39,6 +44,8 @@ def build_page_request(
     url_replacer: Callable[..., str],
     update_dict_values: Callable[..., Dict[str, Any]],
     flat_params: bool,
+    cursor_param: Optional[str] = None,
+    cursor: Optional[str] = None,
 ) -> Tuple[str, Dict[str, Any], Optional[Dict[str, Any]], Optional[Dict[str, str]]]:
     """Build the per-page URL, params, url_params, and flatten.
 
@@ -74,6 +81,9 @@ def build_page_request(
         ``"url"`` (default) query mode.
     flat_params
         Whether to serialise params as a flat query string.
+    cursor_param, cursor
+        For ``iterate_by="cursor"``: the parameter name and the token taken
+        from the previous response. ``cursor`` is None for the first request.
 
     Returns
     -------
@@ -95,7 +105,10 @@ def build_page_request(
     elif iterate_by == "range" and count_from_param and count_to_param:
         local_change_params[count_from_param] = (target_page - 1) * page_limit
         local_change_params[count_to_param] = target_page * page_limit
-    elif iterate_by not in ("page", "skip", "range") and page_number_param:
+    elif iterate_by == "cursor":
+        if cursor_param and cursor is not None:
+            local_change_params[cursor_param] = cursor
+    elif iterate_by not in ("page", "skip", "range", *CURSOR_MODES) and page_number_param:
         logging.warning("Unknown iterate_by %r — using 'page' fallback", iterate_by)
         local_change_params[page_number_param] = target_page
 
@@ -106,7 +119,7 @@ def build_page_request(
     else:
         local_params = update_dict_values(local_params, local_change_params)
         if flat_params and local_params:
-            local_flatten = {k: str(v) for k, v in local_params.items()}
+            local_flatten = {k: flat_param_value(v) for k, v in local_params.items()}
 
     if query_mode == "params":
         request_url = url_replacer(start_url, local_url_params or {})
@@ -122,4 +135,4 @@ def build_page_request(
     return request_url, local_params, local_url_params, local_flatten
 
 
-__all__ = ["build_page_request"]
+__all__ = ["CURSOR_MODES", "build_page_request"]

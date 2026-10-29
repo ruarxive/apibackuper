@@ -33,15 +33,15 @@ the preceding run's success. Always use the latest command result as well.
 |-----------------------|----------|
 | Usable `total_number_key` record count | `ceil(total / page_size_limit)` pages |
 | No usable record total, but usable `pages_number_key` | Reported page count |
-| Neither usable count | Fallback boundary of at most 20,000 pages |
-| Extracted page shorter than configured size | Stop early, including an empty terminating page |
+| Neither usable count | Continue until a short or empty page; a repeated page fails |
+| Extracted page shorter than configured size | Stop, including an empty terminating page; before the end implied by count metadata, fail as incomplete |
 | Bare single-object response | Save the object and stop |
 
 Configure the service's **actual returned full-page size**, not only the requested
 maximum. If it caps a request for 100 records at 50, a configured size of 100 can
-make the first response look like the end. A low/incorrect total can also truncate
-a collection that exits successfully. Reaching the fallback boundary is not
-proof there are no later objects.
+make the first response look like the end; with count metadata the run then fails
+as incomplete. A low/incorrect total can still truncate a collection that exits
+successfully; a summary warning reports fewer records than the API's total.
 
 For the local fixture, the total is 5 and page size is 2. Pages contain IDs
 `[1,2]`, `[3,4]`, `[5]`, so three saved pages and five rows are expected. For six
@@ -168,10 +168,24 @@ checksums. A URL inventory or HTTP 200 can still correspond to an expired signed
 link or an HTML error page. Clearing discovery does not revalidate bytes at a
 saved filename. See [follow and files](/use-cases/follow-and-files).
 
+## Verify archive fixity
+
+Each successful run stores a SHA-256 manifest of its pages in the archive.
+Check the stored bytes against it before copying or retiring a collection:
+
+```bash doc-test
+apibackuper verify --strict
+```
+
+`verify` exits `1` when a page has changed or disappeared; `--strict` also
+fails on pages that no manifest lists. See [`verify`](/commands/verify).
+
 ## Record byte-level evidence after completion
 
-Stop writers before recording checksums or copying a collection. For a completed
-local ZIP project, this script writes a small manifest:
+The archive manifests do not cover files outside storage, such as the
+configuration and state. Stop writers before recording checksums or copying a
+collection. For a completed local ZIP project, this script writes a small
+manifest of those files and the archive itself:
 
 ```python doc-test
 import hashlib

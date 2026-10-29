@@ -29,6 +29,7 @@ from ..storage import ZipStorageBackend, build_storage_backend, safe_member_name
 from ..storage.backends import publish_zip
 from .config_loader import load_json_file
 from .export import process_record
+from .http_client import RequestFailed
 
 
 def extract_keys_from_pages(
@@ -184,6 +185,9 @@ def follow_project(project, mode="full"):
         finally:
             source.close()
         target = ZipStorageBackend(working, mode="w" if mode == "full" else "a")
+        # Listed once: rescanning the archive for every key made continue O(n^2).
+        saved = set(target.list_objects("object")) if mode == "continue" else set()
+        missing = []
         try:
             for key, item in targets.items():
                 pattern = option("follow_pattern")
@@ -212,15 +216,23 @@ def follow_project(project, mode="full"):
                         changes[pagination["page_number_param"]] = page
                         if pagination.get("page_size_param"):
                             changes[pagination["page_size_param"]] = limit
-                    if mode == "continue" and name in target.list_objects("object"):
+                    if name in saved:
                         content = target.get_object(name, "object")
                     else:
-                        response = project._request(
-                            url,
-                            headers,
-                            update_dict_values(deepcopy(params), changes),
-                            http_mode=option("follow_http_mode", "GET"),
-                        )
+                        try:
+                            response = project._request(
+                                url,
+                                headers,
+                                update_dict_values(deepcopy(params), changes),
+                                http_mode=option("follow_http_mode", "GET"),
+                            )
+                        except RequestFailed as error:
+                            # A deleted object must not block the rest of the
+                            # follow run; record it and move to the next key.
+                            if not error.missing:
+                                raise
+                            missing.append({"key": key, "page": page, "status": error.status_code})
+                            break
                         content = response.content
                         if project.resp_type == "html":
                             if process is None:
@@ -243,11 +255,27 @@ def follow_project(project, mode="full"):
                         break
                 else:
                     raise RuntimeError("Follow pagination reached max_pages before end of data")
+            _write_missing(os.path.splitext(destination)[0] + ".missing.json", missing)
             target.close()
             if working != destination:
                 publish_zip(working, destination)
         finally:
             target.close()
+
+
+def _write_missing(path, missing):
+    """Replace the list of followed objects the API reported as gone."""
+    if not missing:
+        if os.path.exists(path):
+            os.unlink(path)
+        return
+    temporary = path + ".tmp"
+    with open(temporary, "w", encoding="utf8") as handle:
+        json.dump(missing, handle, ensure_ascii=False, indent=2, default=str)
+    os.replace(temporary, path)
+    message = f"{len(missing)} followed objects are missing upstream; see {path}"
+    logging.warning(message)
+    print(f"Warning: {message}")
 
 
 __all__ = [

@@ -132,7 +132,17 @@ records = [json.loads(line) for line in Path("items.jsonl").read_text().splitlin
 assert len(records) == 5
 assert sorted(record["id"] for record in records) == [1, 2, 3, 4, 5]
 with ZipFile("storage/storage.zip") as archive:
-    assert set(archive.namelist()) == {"page_1.json", "page_2.json", "page_3.json"}
+    # Three pages, their exchange records, and the fixity manifest and run record.
+    assert sorted(archive.namelist()) == [
+        "exchange_1.json",
+        "exchange_2.json",
+        "exchange_3.json",
+        "manifest-sha256.txt",
+        "page_1.json",
+        "page_2.json",
+        "page_3.json",
+        "run.json",
+    ]
     last_page = json.loads(archive.read("page_3.json"))
     assert [record["id"] for record in last_page["items"]] == [5]
 print("Verified: 5 records, 5 distinct IDs, 3 pages")

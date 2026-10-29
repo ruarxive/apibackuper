@@ -73,10 +73,11 @@ Some configuration errors are deferred until validation or execution, so
 validate explicitly before starting a job. `getfiles` has legacy early-return
 paths for unsupported or missing sources; inspect its output and files.
 
-`ProjectBuilder` currently reconfigures the **root logger**, replaces its
-handlers and opens `settings.logfile` (default `apibackuper.log`) in the process
-working directory. `logging.level` controls the file threshold; absent that
-section, the default is DEBUG. Restore your application's logging configuration
+`ProjectBuilder` adds a file handler for `settings.logfile` (default
+`apibackuper.log`, in the process working directory) to the **root logger** and
+sets the root level. It replaces only file handlers that apibackuper installed
+earlier; your application's handlers stay attached. `logging.level` controls
+the threshold; absent that section, the default is DEBUG. Restore the root level
 after construction if necessary, or invoke the CLI in a subprocess to isolate
 it. Construction can read credential files and open a log file, so keep it
 inside your application's resource/error-handling boundary.

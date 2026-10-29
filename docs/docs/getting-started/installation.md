@@ -125,6 +125,7 @@ matching source revision before following a source-only example.
 |-------------|---------|--------------|
 | JSONL, gzip, zstd and built-in downloads | Base package | No export/download extra required |
 | Parquet export | `apibackuper[recommended]` | Includes pyarrow and pandas |
+| WARC export | `apibackuper[recommended]` | Includes warcio |
 | External aria2 integration | Same extra, or `aria2p` separately | Python RPC client, not the aria2 service |
 | Repository development | Editable `.[dev]` | Tests, linters, type checks and pre-commit |
 

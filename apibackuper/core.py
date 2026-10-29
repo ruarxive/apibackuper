@@ -15,7 +15,8 @@ from urllib.parse import urlparse
 import typer
 import urllib3
 
-from .cmds.project import ProjectBuilder
+from .cmds.fetch import CURSOR_MODES
+from .cmds.project import LOG_HANDLER_MARK, ProjectBuilder, apply_detected_options
 
 try:
     import yaml
@@ -57,28 +58,32 @@ def _configure_logging_for_cli() -> None:
     file_handler.setFormatter(
         logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     )
+    # The project's own log file replaces this handler once a config loads.
+    setattr(file_handler, LOG_HANDLER_MARK, True)
     root_logger.addHandler(file_handler)
     root_logger.setLevel(logging.DEBUG)
+
+
+CONSOLE_HANDLER_MARK = "_apibackuper_console"
 
 
 def enable_verbose() -> None:
     """Enable verbose output to console in addition to file logging"""
     root_logger = logging.getLogger()
-    # Only add a console handler if no console handler already exists.
-    # NOTE: ``logging.FileHandler`` is a subclass of ``StreamHandler``, so a naive
-    # ``isinstance(h, StreamHandler)`` check would falsely treat the file handler
-    # as the console handler and skip installing one — making ``--verbose`` a
-    # silent no-op (see §4.3 of the 2026-10 analysis report).
-    has_console = any(
-        isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
-        for h in root_logger.handlers
+    # Keep exactly one apibackuper console handler, bound to the current
+    # stderr. Other stream handlers (file handlers, a host application's or
+    # pytest's capture handlers) are left alone and do not count as the
+    # console: they would make ``--verbose`` a silent no-op (see §4.3 of the
+    # 2026-10 analysis report).
+    for handler in list(root_logger.handlers):
+        if getattr(handler, CONSOLE_HANDLER_MARK, False):
+            root_logger.removeHandler(handler)
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     )
-    if not has_console:
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-        )
-        root_logger.addHandler(console_handler)
+    setattr(console_handler, CONSOLE_HANDLER_MARK, True)
+    root_logger.addHandler(console_handler)
     root_logger.setLevel(logging.DEBUG)
 
 
@@ -105,16 +110,7 @@ def _build_detect_config(url: str) -> Dict[str, Any]:
 
 
 def _apply_detect_suggestions(config_data: Dict[str, Any], suggestions: Dict[str, Any]) -> None:
-    if not suggestions:
-        return
-    data_section = config_data.setdefault("data", {})
-    project_section = config_data.setdefault("project", {})
-    if suggestions.get("data_key") and "data_key" not in data_section:
-        data_section["data_key"] = suggestions["data_key"]
-    if suggestions.get("total_number_key") and "total_number_key" not in data_section:
-        data_section["total_number_key"] = suggestions["total_number_key"]
-    if suggestions.get("iterate_by") and "iterate_by" not in project_section:
-        project_section["iterate_by"] = suggestions["iterate_by"]
+    apply_detected_options(config_data, suggestions)
 
 
 def _handle_cli_errors(func):
@@ -244,6 +240,12 @@ def _emit_dry_run_plan(
         "config_format": acmd.config_format,
         "config_filename": os.path.basename(acmd.config_filename),
     }
+    if getattr(acmd, "iterate_by", None) in CURSOR_MODES:
+        plan["iteration"].update(
+            next_cursor_key=getattr(acmd, "next_cursor_key", None),
+            next_url_key=getattr(acmd, "next_url_key", None),
+            cursor_param=getattr(acmd, "cursor_param", None),
+        )
     if extra:
         plan.update(extra)
 
@@ -458,6 +460,14 @@ def _print_project_info_text(report: Dict[str, Any]) -> None:
                 ("last_page", "Last page"),
                 ("last_change_key", "Last change key"),
             ],
+        )
+
+    verification = report.get("verification") or {}
+    if verification:
+        _print_section(
+            "Last Verification",
+            dict(verification, result="passed" if verification.get("ok") else "failed"),
+            [("checked_at", "Checked at"), ("result", "Result"), ("strict", "Strict")],
         )
 
     if statistics:
@@ -804,7 +814,7 @@ def export(
         "--format",
         "-f",
         help=(
-            "Export format (jsonl, gzip, zstd, or parquet). "
+            "Export format (jsonl, gzip, zstd, parquet, or warc). "
             "If not specified, will be guessed from file extension"
         ),
     ),
@@ -819,7 +829,7 @@ def export(
         False, "--verbose", "-v", help="Verbose output. Print additional info"
     ),
 ):
-    """Exports data as jsonl, gzip, zstd, or parquet file"""
+    """Exports data as jsonl, gzip, zstd, parquet, or WARC file"""
     try:
         acmd = ProjectBuilder(projectpath)
         if verbose:
@@ -828,7 +838,9 @@ def export(
         # Auto-detect format from filename extension if not specified
         if format is None:
             filename_lower = filename.lower()
-            if filename_lower.endswith(".parquet"):
+            if filename_lower.endswith((".warc", ".warc.gz")):
+                format = "warc"
+            elif filename_lower.endswith(".parquet"):
                 format = "parquet"
             elif filename_lower.endswith(".zst"):
                 format = "zstd"
@@ -984,6 +996,37 @@ def getfiles(
     """Download files associated with records"""
     acmd = ProjectBuilder(projectpath)
     acmd.getfiles()
+
+
+@app.command()
+@_handle_cli_errors
+def verify(
+    projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
+    strict: bool = typer.Option(
+        False, "--strict", help="Also fail on unlisted pages and generations without a manifest"
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Print the report as JSON"),
+):
+    """Check archive members against their fixity manifests"""
+    acmd = ProjectBuilder(projectpath)
+    report = acmd.verify(strict=strict)
+    if as_json:
+        typer.echo(json.dumps(report, indent=2, ensure_ascii=False))
+    else:
+        for entry in report["generations"]:
+            name = entry["generation"]
+            if not entry["manifest"]:
+                typer.echo(f"{name}: no manifest ({len(entry['unlisted'])} pages unverified)")
+                continue
+            typer.echo(f"{name}: {entry['verified']} verified")
+            for problem in ("changed", "missing", "unlisted"):
+                for member in entry[problem]:
+                    typer.echo(f"  {problem}: {member}")
+        if not report["generations"]:
+            typer.echo("No pages to verify")
+        typer.echo("Verification passed" if report["ok"] else "Verification failed")
+    if not report["ok"]:
+        sys.exit(1)
 
 
 @app.command()
