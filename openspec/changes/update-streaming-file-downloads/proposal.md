@@ -15,8 +15,8 @@ most valuable part of an archive.
 - New `files.max_file_size` (bytes; default unlimited). A download that
   declares or reaches a larger size is stopped, recorded in `files_skipped.list`
   with its reason, and the remaining files are downloaded.
-- Each stored file is recorded in `files-manifest-sha256.txt` (BagIt form) in
-  file storage. `apibackuper verify` checks downloaded files against it and
+- Each stored file is recorded in `files-manifest-sha256.txt` (BagIt form)
+  beside file storage. `apibackuper verify` checks downloaded files against it and
   reports changed and missing files like pages.
 - A failed or interrupted download leaves no partial member; the next
   `getfiles` downloads it again.

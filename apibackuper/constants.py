@@ -6,6 +6,7 @@ RETRY_DELAY = 5
 FIELD_SPLITTER = "."
 DEFAULT_RETRY_COUNT = 5
 
+# No longer used: set files.max_file_size instead (kept for imports).
 FILE_SIZE_DOWNLOAD_LIMIT = 270000000
 DEFAULT_TIMEOUT = 120
 PARAM_SPLITTER = ";"

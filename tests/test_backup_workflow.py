@@ -17,6 +17,7 @@ def reply(payload, status=200):
     response = requests.Response()
     response.status_code = status
     response._content = json.dumps(payload).encode()
+    response._content_consumed = True  # as after a real read; iter_content uses _content
     response.headers = {}
     return response
 

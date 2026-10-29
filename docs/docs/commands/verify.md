@@ -31,7 +31,8 @@ member starts with `page_`, so export, follow, `info` and resume ignore them.
 
 ## Result and exit status
 
-For each generation, `verify` reports the number of verified pages and lists:
+For each generation, and for downloaded files listed in
+`files-manifest-sha256.txt`, `verify` reports the number of verified members and lists:
 
 - `changed`: a listed member whose bytes no longer match its digest;
 - `missing`: a listed member that is no longer stored;

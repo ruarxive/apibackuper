@@ -1,9 +1,10 @@
+import io
 import os
 import re
 import shutil
 import sqlite3
 import tempfile
-from typing import List, Optional
+from typing import IO, List, Optional
 from zipfile import ZIP_DEFLATED, ZipFile
 
 
@@ -59,6 +60,21 @@ class StorageBackend:
 
     def flush(self) -> None:
         """Make saved pages durable before advancing a checkpoint."""
+
+    def save_object_from_path(self, name: str, path: str) -> None:
+        """Store the complete file at ``path`` as object ``name`` and remove it.
+
+        Backends that can move the file into place override this to avoid
+        reading it into memory.
+        """
+        with open(path, "rb") as handle:
+            self.save_object(name, handle.read())
+        os.unlink(path)
+
+    def open_object(self, name: str) -> Optional[IO[bytes]]:
+        """Open object ``name`` for reading, or return None if it is absent."""
+        content = self.get_object(name, "object")
+        return None if content is None else io.BytesIO(content)
 
 
 def _is_page(name: str) -> bool:
@@ -120,12 +136,32 @@ class _ZipArchive(StorageBackend):
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)
+        self._mark_pending(name, destination)
+
+    def save_object_from_path(self, name: str, path: str) -> None:
+        """Move a complete, fsynced file into the journal as member ``name``."""
+        if self._mode == "r" or self._closed:
+            raise ValueError("Storage is not open for writing")
+        name = safe_member_name(name)
+        destination = os.path.join(self._journal, name + ".pending")
+        os.makedirs(os.path.dirname(destination), exist_ok=True)
+        os.replace(path, destination)
+        self._mark_pending(name, destination)
+
+    def _mark_pending(self, name: str, destination: str) -> None:
         self._pending.add(name)
         self._names.add(name)
         directory = os.path.dirname(destination)
         while directory.startswith(self._journal):
             self._dirty.add(directory)
             directory = os.path.dirname(directory)
+
+    def open_object(self, name: str) -> Optional[IO[bytes]]:
+        if name not in self._names:
+            return None
+        if name in self._pending:
+            return open(os.path.join(self._journal, name + ".pending"), "rb")
+        return self._zip.open(name, "r")
 
     def list_objects(self, kind: str = "page") -> List[str]:
         return sorted(name for name in self._names if kind != "page" or _is_page(name))
@@ -268,6 +304,19 @@ class ZipStorageBackend(StorageBackend):
             if content is not None:
                 return content
         return self._base.get_object(name, kind)
+
+    def save_object_from_path(self, name: str, path: str) -> None:
+        name = safe_member_name(name)
+        self._writer(name).save_object_from_path(name, path)
+
+    def open_object(self, name: str) -> Optional[IO[bytes]]:
+        run_id = self._generation_id(name)
+        archive = self._generations.get(run_id) if run_id else None
+        if archive is not None:
+            handle = archive.open_object(name)
+            if handle is not None:
+                return handle
+        return self._base.open_object(name)
 
     def generation_archives(self) -> List[str]:
         """Paths of the per-generation archives, sorted by run ID."""
@@ -447,6 +496,19 @@ class FilesystemStorageBackend(StorageBackend):
             return None
         with open(fullname, "rb") as fobj:
             return fobj.read()
+
+    def save_object_from_path(self, name: str, path: str) -> None:
+        fullname = self._safe_path(name)
+        os.makedirs(os.path.dirname(fullname), exist_ok=True)
+        os.replace(path, fullname)
+        self._index[self._OBJECT_PREFIX].add(name)
+
+    def open_object(self, name: str) -> Optional[IO[bytes]]:
+        try:
+            fullname = self._safe_path(name)
+        except ValueError:
+            return None
+        return open(fullname, "rb") if os.path.exists(fullname) else None
 
     def close(self) -> None:
         # No persistent handle; nothing to flush.

@@ -250,6 +250,7 @@ records independently; they do not chain their output. Only unnamed
 | `storage_mode` | `filepath` or `id`; `filepath` | URL-path name or extracted-value name |
 | `file_storage_type` | `zip` or `filesystem`; `zip` | Downloaded-byte output; main source must still be ZIP |
 | `use_aria2` | boolean or compatibility string; false | Queue transfers through fixed local aria2 RPC endpoint |
+| `max_file_size` | integer ≥ 1; omitted | Skip downloads larger than this many bytes |
 
 The discovery cache is reused until removed; existing output filenames are
 skipped. `default_ext` does not convert content and `filepath` does not include
