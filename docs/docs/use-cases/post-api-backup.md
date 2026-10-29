@@ -81,7 +81,11 @@ records = [json.loads(line) for line in Path("post-items.jsonl").read_text().spl
 assert len(records) == 5
 assert sorted(record["id"] for record in records) == [1, 2, 3, 4, 5]
 with ZipFile("storage/storage.zip") as archive:
-    assert len(archive.namelist()) == 3
+    assert sorted(name for name in archive.namelist() if name.startswith("page_")) == [
+        "page_1.json",
+        "page_2.json",
+        "page_3.json",
+    ]
     assert json.loads(archive.read("page_1.json"))["total"] == 5
 print("Verified POST backup: 5 records in 3 pages")
 ```

@@ -71,8 +71,8 @@
         },
         "iterate_by": {
           "type": "string",
-          "enum": ["page", "skip", "range"],
-          "description": "How to iterate through pages",
+          "enum": ["page", "skip", "range", "cursor", "next_url", "link_header"],
+          "description": "How to iterate through pages: page number, skip/offset or range bounds, a response cursor, a next-page URL in the response, or the Link header",
           "default": "page"
         },
         "detect": {
@@ -137,6 +137,15 @@
           "type": "string",
           "description": "Parameter name for page size"
         },
+        "cursor_param": {
+          "type": "string",
+          "description": "Request parameter that carries the cursor (iterate_by: cursor)"
+        },
+        "allow_cross_host_next": {
+          "type": "boolean",
+          "description": "Allow next-page URLs on a host other than project.url",
+          "default": false
+        },
         "count_skip_param": {
           "type": "string",
           "description": "Parameter name for skip count"
@@ -180,6 +189,14 @@
         "total_number_key": {
           "type": "string",
           "description": "Key path to total number of records"
+        },
+        "next_cursor_key": {
+          "type": "string",
+          "description": "Key path to the next-page cursor (iterate_by: cursor)"
+        },
+        "next_url_key": {
+          "type": "string",
+          "description": "Key path to the next-page URL (iterate_by: next_url)"
         },
         "pages_number_key": {
           "type": "string",
@@ -228,6 +245,24 @@
         "split_files": {
           "type": "boolean",
           "description": "Split files when size limit reached"
+        },
+        "capture": {
+          "type": "object",
+          "description": "Provenance captured beside every saved page",
+          "properties": {
+            "metadata": {
+              "type": "boolean",
+              "description": "Store exchange_N.json with request, status, headers and fetch time",
+              "default": true
+            },
+            "raw_body": {
+              "type": "string",
+              "enum": ["auto", "always", "never"],
+              "description": "Store the original body as raw_N.<ext>: auto for non-JSON responses",
+              "default": "auto"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -348,6 +383,11 @@
         "use_aria2": {
           "type": ["string", "boolean"],
           "description": "Use aria2 for downloads"
+        },
+        "max_file_size": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Skip downloads larger than this many bytes (default: no limit)"
         }
       },
       "additionalProperties": false
@@ -422,6 +462,38 @@
         "refresh_token": {
           "type": "string",
           "description": "OAuth2 refresh token"
+        },
+        "grant_type": {
+          "type": "string",
+          "enum": ["refresh_token", "client_credentials"],
+          "description": "OAuth2 grant used to obtain tokens from auth_url",
+          "default": "refresh_token"
+        },
+        "client_id": {
+          "type": "string",
+          "description": "OAuth2 client identifier"
+        },
+        "client_secret": {
+          "type": "string",
+          "description": "OAuth2 client secret"
+        },
+        "client_secret_file": {
+          "type": "string",
+          "description": "Path to file containing the OAuth2 client secret"
+        },
+        "scope": {
+          "type": "string",
+          "description": "Space-separated OAuth2 scopes requested with client credentials"
+        },
+        "audience": {
+          "type": "string",
+          "description": "OAuth2 audience requested with client credentials"
+        },
+        "client_auth_method": {
+          "type": "string",
+          "enum": ["client_secret_basic", "client_secret_post"],
+          "description": "How the client authenticates to auth_url",
+          "default": "client_secret_basic"
         }
       },
       "additionalProperties": false
@@ -525,9 +597,39 @@
             "retry_on_status": {
               "type": "array",
               "items": {"type": "integer", "minimum": 100, "maximum": 599}
+            },
+            "wait_headers": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "Headers read in order for the wait before a retry",
+              "default": ["Retry-After"]
+            },
+            "max_wait": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Fail instead of waiting longer than this many seconds"
             }
           },
           "additionalProperties": false
+        },
+        "response_rules": {
+          "type": "array",
+          "description": "Ordered rules deciding what a matching response means",
+          "items": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": ["integer", "string", "array"],
+                "items": {"type": ["integer", "string"]}
+              },
+              "body_key": {"type": "string"},
+              "body_value": {},
+              "content_type": {"type": "string"},
+              "action": {"type": "string", "enum": ["retry", "fail", "missing", "accept"]}
+            },
+            "required": ["action"],
+            "additionalProperties": false
+          }
         },
         "proxies": {
           "type": ["object", "string"],
