@@ -2,10 +2,11 @@
 
 > A command-line tool to archive and backup REST APIs
 
-**Version:** 2.0.0
+**Version:** 3.0.0
 
-This README describes version 2.0.0. See the
-[changelog](CHANGELOG.md#200---2026-10-17) for release details and migration notes.
+This README describes version 3.0.0. See the
+[changelog](CHANGELOG.md#300---2026-10-29) for release details and the
+[3.0 migration notes](#upgrading-to-30) before upgrading from 2.x.
 
 **apibackuper** downloads paginated REST APIs into local storage and exports
 the archive as JSON Lines, gzip, zstd, Parquet or WARC. It is designed for
@@ -13,14 +14,19 @@ repeatable, long-running backups rather than one-off HTTP requests.
 
 ## Features
 
-- GET and POST iterative APIs (page, skip/offset, or range pagination)
+- GET and POST iterative APIs: page, skip/offset, range, cursor, next-URL and
+  `Link` header pagination, with checks that fail incomplete collections
 - Full, incremental, and update work modes, with resume from checkpoints
-- ZIP, filesystem, or SQLite storage
-- Export to JSON Lines, gzip, Zstandard, or Parquet
+- ZIP, filesystem, or SQLite storage; each update in ZIP storage gets its own archive
+- Provenance for every page (`exchange_N.json`: request, status, headers, fetch
+  time, SHA-256) and the original bytes of XML/HTML responses
+- Fixity manifests for every run and downloaded file, checked by `apibackuper verify`
+- Export to JSON Lines, gzip, Zstandard, Parquet or WARC
 - YAML configuration (INI still loaded, but deprecated)
-- Authentication: Basic, Bearer, API Key, OAuth2
-- Rate limiting, retries, concurrency, and SSL controls
-- Follow-up requests for related objects and associated file downloads
+- Authentication: Basic, Bearer, API Key, OAuth2 (refresh token or client credentials)
+- Rate limiting, retries with `Retry-After`/`X-RateLimit-Reset` waits, response
+  rules for error bodies, concurrency, and SSL controls
+- Follow-up requests for related objects and streamed downloads of associated files
 - Optional Python hooks for custom pipeline steps
 
 ## Documentation
@@ -124,8 +130,8 @@ apibackuper validate-config
 
 See [HTTP request files](docs/docs/configuration/http-requests.md) for custom
 headers, query filters and POST bodies, and [export filters](docs/docs/configuration/export-filters.md)
-for the `--where`/`--fields` contract. Malformed filters now fail instead of
-silently producing unfiltered output; this fix is listed under `Unreleased`.
+for the `--where`/`--fields` contract. Malformed filters fail instead of
+silently producing unfiltered output.
 
 `getfiles` currently reads ZIP backups. Its downloaded files can be stored in
 ZIP or filesystem storage; see [file configuration](docs/docs/configuration/files.md).
@@ -181,6 +187,41 @@ Before scheduling backups, read [backup completeness](docs/docs/getting-started/
 for source consistency, deletion handling, verification and rotation.
 
 ## Migration notes
+
+### Upgrading to 3.0
+
+Version 3.0 changes the archive layout and several defaults. Backups made by
+2.x remain readable; read these points before upgrading scheduled jobs.
+
+- **ZIP update generations live in their own archives.** Each `update` now
+  writes `storage/storage.zip.runs/<id>.zip` instead of adding `runs/<id>/`
+  members to `storage.zip`. All commands read both layouts. Tools that open
+  `storage.zip` directly no longer see new update generations; use `export`
+  or the [storage API](docs/docs/development/python-api.md). Version 2.x does
+  not read `storage.zip.runs/`, so after rolling back, run a new full backup.
+- **Provenance records are written by default.** Every saved page gets an
+  `exchange_N.json` member, and XML/HTML responses keep `raw_N.<ext>`. Set
+  `storage.capture.metadata: false` (and `raw_body: never`) for pages-only
+  archives. Each run also writes `manifest-sha256.txt` and `run.json`, and
+  `getfiles` writes `files-manifest-sha256.txt`. Scripts that expect only
+  `page_N.json` members must ignore these names.
+- **Incomplete collections fail instead of "succeeding".** A short or empty
+  page before the end implied by `total_number_key`/`pages_number_key` (for
+  example, an API that caps the page size) now fails the run, and the previous
+  backup stays published. Set `page_size_limit` to the size the API returns, or
+  remove an inexact count key. Without count metadata there is no 20,000-page
+  cap any more; a page that repeats the previous one fails the run.
+- **Missing credential files are errors.** An absent or empty `token_file`,
+  `password_file` or `client_secret_file` fails `validate-config` and stops
+  requests, instead of sending them without credentials.
+- **New defaults.** `settings.checkpoint_interval_pages` defaults to 1
+  (checkpoint after every page; set 0 for the previous behaviour). Without an
+  explicit list, HTTP 429 and 504 are retried along with 500, 502 and 503.
+- **Follow and file downloads continue past missing objects.** HTTP 404/410
+  responses are recorded in `details.missing.json` or `files_skipped.list`
+  instead of stopping the command.
+- **Deprecated:** `ProjectBuilder.getfiles(be_careful=...)` is ignored with a
+  warning; use `files.max_file_size`.
 
 ### Python support
 

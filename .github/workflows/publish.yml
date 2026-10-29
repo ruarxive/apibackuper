@@ -37,7 +37,7 @@ jobs:
           fi
           sed -i.bak -E "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
           # Bump the runtime user-agent and __version__ fallback to match.
-          sed -i.bak -E "s|^    \"1\.0\.[0-9]+\"$|    \"$VERSION\"|" apibackuper/__init__.py
+          sed -i.bak -E "s|^( *__version__ = )\"[^\"]+\"$|\1\"$VERSION\"|" apibackuper/__init__.py
           # Verify the change took effect.
           grep -E "^version = \"" pyproject.toml
           git diff --stat
