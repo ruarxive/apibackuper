@@ -14,11 +14,19 @@ from urllib.parse import urljoin, urlsplit
 import xmltodict
 from tqdm import tqdm
 
+from .. import __version__
 from ..common import get_dict_value, update_dict_values
 from ..storage.session import BackupSession
 from .config_loader import load_json_file
 from .export import process_record
 from .fetch import CURSOR_MODES, build_page_request
+from .fixity import (
+    MANIFEST_NAME,
+    config_digest,
+    digest,
+    generation_pages,
+    write_generation_record,
+)
 from .runner import PageOutcome, fetch_all_pages, parse_total_pages
 from .utils import flat_param_value, redact_text
 
@@ -70,8 +78,12 @@ def _next_position(project, response, data):
 
 
 def _summary(project, session, baseline):
-    """Read retained run pages so legacy resume and replay have exact totals."""
+    """Read retained run pages so legacy resume and replay have exact totals.
+
+    Returns the summary and the SHA-256 of every page of the generation.
+    """
     pages = records = size = 0
+    digests = {}
     last_page = project.start_page - 1
     change = baseline.get("last_change_key")
     for name in session.backend.list_objects("page"):
@@ -80,6 +92,7 @@ def _summary(project, session, baseline):
         if not session.prefix and "/" in name:
             continue
         content = session.backend.get_object(name)
+        digests[name] = digest(content)
         items = _records(project, json.loads(content))
         pages += 1
         records += len(items)
@@ -90,17 +103,41 @@ def _summary(project, session, baseline):
                 value = get_dict_value(item, project.change_key, splitter=project.field_splitter)
                 if value is not None and (change is None or value > change):
                     change = value
-    return {
+    summary = {
         "pages_processed": pages,
         "records_processed": records,
         "bytes_processed": size,
         "last_page": last_page,
         "last_change_key": change,
     }
+    return summary, digests
+
+
+def _run_record(project, session, mode, state, total=None):
+    """Describe one published generation for its ``run.json``."""
+    return {
+        "apibackuper_version": __version__,
+        "run_id": session.run_id or None,
+        "mode": mode,
+        "started": state["last_run_start"],
+        "ended": state["last_run_end"],
+        "pages": state["pages_processed"],
+        "records": state["records_processed"],
+        "api_total": total,
+        "config_sha256": config_digest(project),
+    }
 
 
 def _finish_publication(project, session, checkpoint):
     """Replay a durable publication intent after any interrupted commit step."""
+    if session.backend.get_object(session.prefix + MANIFEST_NAME, "object") is None:
+        # Intents saved before manifests existed: hash the staged generation.
+        names = generation_pages(session.backend.list_objects("page"), session.prefix)
+        digests = {name: digest(session.backend.get_object(name)) for name in names}
+        state = checkpoint["pending_state"]
+        record = _run_record(project, session, checkpoint.get("mode"), state)
+        write_generation_record(session.backend, session.prefix, digests, record)
+        session.backend.flush()
     session.publish()
     project._save_state(checkpoint["pending_state"], strict=True)
     project._save_checkpoint(
@@ -446,7 +483,7 @@ def run_backup(project, mode, resume=False):
                 f"size, set params.page_size_limit to the size it returns and run a new full "
                 f"backup; if its count is not exact, remove the count key from the data section."
             )
-        summary = _summary(project, session, baseline)
+        summary, digests = _summary(project, session, baseline)
         if total is not None and summary["records_processed"] < total:
             print(
                 f"Warning: collected {summary['records_processed']} of {total} records "
@@ -454,6 +491,12 @@ def run_backup(project, mode, resume=False):
             )
         ended = datetime.now(timezone.utc).isoformat()
         state = dict(summary, last_run_start=started, last_run_end=ended, update_watermark=started)
+        write_generation_record(
+            session.backend,
+            session.prefix,
+            digests,
+            _run_record(project, session, mode, state, total),
+        )
         session.backend.flush()
         publication = dict(
             current,

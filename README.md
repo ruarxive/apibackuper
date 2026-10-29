@@ -114,6 +114,7 @@ apibackuper follow full|continue
 apibackuper getfiles
 apibackuper export output.jsonl
 apibackuper info [--json]
+apibackuper verify [--strict] [--json]
 apibackuper validate-config
 ```
 

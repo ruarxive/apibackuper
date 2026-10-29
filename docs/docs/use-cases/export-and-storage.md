@@ -154,6 +154,7 @@ Check representative nested fields and boundary dates as well as counts.
 
 After `update`, export reads the original pages and all retained
 `runs/<id>/` generations. Repeated IDs and inclusive-boundary records remain.
+Each generation's `manifest-sha256.txt` and `run.json` are not exported.
 Export ordering alone is not a version-selection rule.
 
 Suppose each historical record has a non-null `id` and a string

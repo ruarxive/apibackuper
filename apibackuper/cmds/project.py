@@ -1348,6 +1348,26 @@ class ProjectBuilder:
                     yaml.safe_dump(yaml_data, fobj, sort_keys=False, allow_unicode=True)
         return suggestions
 
+    def verify(self, strict: bool = False) -> Dict[str, Any]:
+        """Check archive members against their fixity manifests.
+
+        The result is recorded in the state file as ``last_verification``.
+        """
+        if self.config is None:
+            self._raise_config_not_found()
+        from .fixity import verify_storage
+
+        report = verify_storage(self, strict=strict)
+        state = self._load_state()
+        if state:
+            state["last_verification"] = {
+                "checked_at": report["checked_at"],
+                "ok": report["ok"],
+                "strict": strict,
+            }
+            self._save_state(state)
+        return report
+
     def follow(self, mode: str = "full") -> None:
         """Collect related objects using the shared HTTP execution policy."""
         from .follow import follow_project
@@ -1896,6 +1916,8 @@ class ProjectBuilder:
                 "last_page": state.get("last_page"),
                 "last_change_key": state.get("last_change_key"),
             }
+            if state.get("last_verification"):
+                report["verification"] = state["last_verification"]
 
         return report
 

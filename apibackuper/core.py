@@ -462,6 +462,14 @@ def _print_project_info_text(report: Dict[str, Any]) -> None:
             ],
         )
 
+    verification = report.get("verification") or {}
+    if verification:
+        _print_section(
+            "Last Verification",
+            dict(verification, result="passed" if verification.get("ok") else "failed"),
+            [("checked_at", "Checked at"), ("result", "Result"), ("strict", "Strict")],
+        )
+
     if statistics:
         storage_stats = statistics.get("storage") or {}
         if storage_stats:
@@ -986,6 +994,37 @@ def getfiles(
     """Download files associated with records"""
     acmd = ProjectBuilder(projectpath)
     acmd.getfiles()
+
+
+@app.command()
+@_handle_cli_errors
+def verify(
+    projectpath: Optional[str] = typer.Option(None, "--projectpath", "-p", help="Project path"),
+    strict: bool = typer.Option(
+        False, "--strict", help="Also fail on unlisted pages and generations without a manifest"
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Print the report as JSON"),
+):
+    """Check archive members against their fixity manifests"""
+    acmd = ProjectBuilder(projectpath)
+    report = acmd.verify(strict=strict)
+    if as_json:
+        typer.echo(json.dumps(report, indent=2, ensure_ascii=False))
+    else:
+        for entry in report["generations"]:
+            name = entry["generation"]
+            if not entry["manifest"]:
+                typer.echo(f"{name}: no manifest ({len(entry['unlisted'])} pages unverified)")
+                continue
+            typer.echo(f"{name}: {entry['verified']} verified")
+            for problem in ("changed", "missing", "unlisted"):
+                for member in entry[problem]:
+                    typer.echo(f"  {problem}: {member}")
+        if not report["generations"]:
+            typer.echo("No pages to verify")
+        typer.echo("Verification passed" if report["ok"] else "Verification failed")
+    if not report["ok"]:
+        sys.exit(1)
 
 
 @app.command()

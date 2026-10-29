@@ -28,5 +28,6 @@ The full report also includes configuration, request policy, authentication
 type, storage and size information. `run` is absent before a successful state
 exists. Its status describes saved successful state; a later interrupted run
 can leave that state unchanged. Use the command exit status and checkpoint/logs
-to assess the interrupted run. Counts include retained history rather than
+to assess the interrupted run. After [`verify`](/commands/verify), `verification`
+holds its time and result until the next successful run. Counts include retained history rather than
 distinct current IDs. See [backup completeness](/getting-started/data-integrity).

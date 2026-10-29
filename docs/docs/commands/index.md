@@ -30,6 +30,7 @@ takes the destination directory as its positional argument.
 | `estimate` | [`/commands/estimate`](/commands/estimate) |
 | `run` | [`/commands/run`](/commands/run) |
 | `update` | [`/commands/update`](/commands/update) |
+| `verify` | [`/commands/verify`](/commands/verify) |
 
 ## Follow-up
 

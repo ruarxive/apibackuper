@@ -127,6 +127,10 @@ catalog/
     storage.zip.partial.journal/ # durable pages not yet compacted
 ```
 
+Inside a published archive, each generation (the root for full backups,
+`runs/<id>/` for updates) holds its pages plus `manifest-sha256.txt` and
+`run.json`, which [`verify`](/commands/verify) uses to check the stored bytes.
+
 The ZIP journal saves member data durably before checkpoint progress advances.
 It is compacted into the archive on close. A journal next to `storage.zip`
 rather than `.partial` can also exist for continued collection or updates.
