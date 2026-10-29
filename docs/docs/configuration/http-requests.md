@@ -96,9 +96,10 @@ These modes do not substitute `{name}` placeholders into path segments.
 
 ## Legacy flat serialization
 
-In the default `query` mode, `params.force_flat_params: true` stringifies each top-level GET parameter,
-including nested objects, before URL encoding. It does not expand nested
-objects into dotted query keys and is not a general JSON serializer. Use a
+In the default `query` mode, `params.force_flat_params: true` sends each top-level GET parameter
+as one query value before URL encoding. Strings are sent unchanged; objects,
+arrays and booleans are sent as JSON text (`{"active": true}`, `true`). It
+does not expand nested objects into dotted query keys. Use a
 plain scalar `params.json` when possible; check the target API's expected
 encoding before enabling this compatibility option. It does not change POST
 JSON body serialization.

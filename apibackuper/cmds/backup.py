@@ -19,7 +19,7 @@ from .config_loader import load_json_file
 from .export import process_record
 from .fetch import build_page_request
 from .runner import PageOutcome, fetch_all_pages, parse_total_pages
-from .utils import redact_text
+from .utils import flat_param_value, redact_text
 
 
 def _decode(project, content, process):
@@ -203,7 +203,7 @@ def run_backup(project, mode, resume=False):
                 hook.get("params", page_params),
             )
             if project.flat_params:
-                flatten = {key: str(value) for key, value in page_params.items()}
+                flatten = {key: flat_param_value(value) for key, value in page_params.items()}
         response = project._request(url, local_headers, page_params, flatten)
         project._run_hook(
             "after_response",

@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Record followed objects answered with HTTP 404 or 410 in `details.missing.json` and continue with the other keys instead of aborting the follow run.
 - Save a checkpoint for the saved pages when collection is interrupted, and sync only changed ZIP journal directories when checkpointing.
 - Honor `Retry-After` HTTP-date values.
+- Export records in page order (`page_2` before `page_10`) instead of lexicographic member order.
+- Apply `request.max_redirects` to HTTP requests; it was parsed but ignored.
+- With `force_flat_params`, send string values unchanged and objects, arrays and booleans as JSON; values containing `True` or apostrophes were rewritten.
+- Parquet export settles one schema across all batches and writes fields with conflicting types as JSON text, instead of failing when a type changed after the first 5,000 records.
+- `ProjectBuilder` no longer removes the host application's root-logger handlers or ignores `DeprecationWarning` process-wide; `--verbose` installs its own console handler.
+- `getfiles` reads source pages through the storage backend, including pages still in the ZIP journal, records HTTP 404/410 downloads in `files_skipped.list` and continues, and rejects unsupported `fetch_mode`/`file_storage_type` values.
 - Preserve console logging for `--verbose` after project initialization and honor `logging.level` when verbose is not enabled.
 - Reject malformed and compound export filters before opening storage or replacing output instead of silently disabling filtering or returning misleading results.
 - Correct example descriptions and release instructions, remove references to deleted history/setup files, and retain E-Trust as a separate POST API walkthrough.

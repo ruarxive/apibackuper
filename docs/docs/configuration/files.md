@@ -123,6 +123,9 @@ This is independent of `data.item_key` and record identity.
 `https://a.example/report.pdf` and `https://b.example/report.pdf`, or two signed
 URLs differing only in their query, can map to the same destination filename.
 An already saved filename is skipped; it is not compared with remote content.
+A download answered with HTTP 404 or 410 is recorded in `files_skipped.list`
+with reason `HTTP 404`/`HTTP 410`, and the remaining files are downloaded; the
+next `getfiles` run tries it again. Other failures stop the command.
 Choose references and storage mode that give unique names for your dataset.
 
 `id` uses the extracted value, optionally followed by `default_ext`. It does not
@@ -141,7 +144,7 @@ storage/
   files.zip            # downloaded objects when output is ZIP
   files/               # downloaded objects when output is filesystem
   files.list           # URLs recorded by the built-in downloader
-  files_skipped.list   # legacy skipped-file report
+  files_skipped.list   # skipped files, including HTTP 404/410 responses
 ```
 
 Only the selected output backend receives the built-in file payloads. Despite

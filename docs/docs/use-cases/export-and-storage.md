@@ -61,6 +61,8 @@ apibackuper export all-records.jsonl.zst
 
 Export is local: it does not call the source API. A normal page export extracts
 `data.data_key` from each saved response, removing its response wrapper.
+Records follow page order (`page_2` before `page_10`), with the original pages
+first and retained update generations after them, oldest first.
 
 | Output extension | Meaning | Dependencies |
 |------------------|---------|--------------|
@@ -82,9 +84,12 @@ python -m pip install 'apibackuper[recommended]'
 apibackuper export all-records.parquet
 ```
 
-Use stable field types for Parquet. Nested fields, schema changes across retained
-versions and inconsistent number/string values may require normalization before
-columnar processing. JSONL preserves flexible record shapes more directly.
+Parquet export reads the records twice: first to settle one schema, then to
+write it. Compatible types are promoted (integers and decimals become doubles,
+new nested fields are merged). A top-level field whose values cannot share one
+type, such as numbers in some records and strings in others, is written as a
+JSON text column. Records must be objects. JSONL preserves flexible record
+shapes more directly.
 
 Create the output parent directory first and keep exports outside source backup
 paths. In particular, filesystem backups reject output anywhere inside their
@@ -222,5 +227,5 @@ the update successfully before producing a verified downstream dataset.
 | Export contains repeated IDs | All retained versions are exported; derive a current view explicitly |
 | Fields differ from the list endpoint | Existing unnamed details archive is selected |
 | No records match a visible ID | Source ID type versus filter numeric conversion, or a missing/null field |
-| Parquet export fails | Optional dependencies and consistent record schema/types |
+| Parquet export fails | Optional dependencies; records that are not objects |
 | Export path is rejected | Destination overlaps the source archive or filesystem backup root |

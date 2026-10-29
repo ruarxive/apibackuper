@@ -631,3 +631,139 @@ def test_checkpoint_interval_defaults_to_every_page(tmp_path, monkeypatch):
     }
     (tmp_path / "apibackuper.yaml").write_text(yaml.safe_dump(config))
     assert ProjectBuilder(str(tmp_path)).checkpoint_interval_pages == 1
+
+
+def write_project(path, **sections):
+    config = {
+        "settings": {"name": "real-session"},
+        "project": {"url": "https://api.example.test/items", "http_mode": "GET"},
+        "params": {"page_size_limit": 2},
+        "data": {},
+        "storage": {"storage_type": "zip"},
+    }
+    for name, values in sections.items():
+        config.setdefault(name, {}).update(values)
+    (path / "apibackuper.yaml").write_text(yaml.safe_dump(config))
+    return str(path)
+
+
+def test_export_follows_page_order(make_project, tmp_path):
+    builder = make_project()
+    records = [{"id": n} for n in range(25)]
+    serve(builder, records)
+    builder.run("full")
+    output = tmp_path / "ordered.jsonl"
+    builder.export("jsonl", str(output))
+    assert [json.loads(line) for line in output.read_text().splitlines()] == records
+
+
+def test_max_redirects_is_applied_to_session(tmp_path, monkeypatch):
+    monkeypatch.setattr(ProjectBuilder, "enable_logging", lambda self: None)
+    builder = ProjectBuilder(write_project(tmp_path, request={"max_redirects": 0}))
+    assert builder.http.max_redirects == 0
+
+
+def test_flat_params_keep_string_values_and_send_objects_as_json(make_project):
+    from pathlib import Path
+    from urllib.parse import parse_qs, urlsplit
+
+    builder = make_project(params={"force_flat_params": True})
+    Path(builder.project_path, "params.json").write_text(
+        json.dumps({"q": "TrueNorth O'Reilly", "filter": {"active": True}})
+    )
+    serve(builder, [{"id": 1}])
+    builder.run("full")
+    query = parse_qs(urlsplit(builder.http.get.call_args.args[0]).query)
+    assert query["q"] == ["TrueNorth O'Reilly"]
+    assert json.loads(query["filter"][0]) == {"active": True}
+
+
+def test_parquet_export_reconciles_types_across_batches(make_project, tmp_path, monkeypatch):
+    pq = pytest.importorskip("pyarrow.parquet")
+    import pyarrow as pa
+
+    monkeypatch.setattr("apibackuper.cmds.export.PARQUET_BATCH_SIZE", 2)
+    builder = make_project()
+    records = [
+        {"id": 1, "v": 1, "n": 1},
+        {"id": 2, "v": 2, "n": 2},
+        {"id": 3, "v": "x", "n": 1.5},
+        {"id": 4, "v": {"k": 1}, "n": 2},
+    ]
+    serve(builder, records)
+    builder.run("full")
+    output = tmp_path / "drift.parquet"
+    builder.export("parquet", str(output))
+    table = pq.read_table(output)
+    assert table.schema.field("n").type == pa.float64()
+    assert table.column("n").to_pylist() == [1.0, 2.0, 1.5, 2.0]
+    assert [json.loads(value) for value in table.column("v").to_pylist()] == [1, 2, "x", {"k": 1}]
+
+
+def test_project_logging_keeps_host_handlers(tmp_path, monkeypatch):
+    import logging
+
+    from apibackuper.cmds.project import LOG_HANDLER_MARK
+
+    monkeypatch.chdir(tmp_path)
+    root = logging.getLogger()
+    saved, level = root.handlers[:], root.level
+    host = logging.NullHandler()
+    root.addHandler(host)
+    try:
+        path = write_project(tmp_path)
+        ProjectBuilder(path)
+        ProjectBuilder(path)
+        assert host in root.handlers
+        assert sum(getattr(h, LOG_HANDLER_MARK, False) for h in root.handlers) == 1
+    finally:
+        for handler in root.handlers:
+            if handler not in saved:
+                handler.close()
+        root.handlers[:] = saved
+        root.setLevel(level)
+
+
+def test_getfiles_reads_journal_pages_and_skips_missing_files(make_project):
+    from pathlib import Path
+    from zipfile import ZipFile
+
+    from apibackuper.storage import ZipStorageBackend
+
+    builder = make_project(
+        files={
+            "fetch_mode": "prefix",
+            "keys": "file",
+            "root_url": "https://files.example.test/",
+            "storage_mode": "id",
+            "file_storage_type": "zip",
+        },
+    )
+    serve(builder, [{"id": 1, "file": "gone"}])
+    builder.run("full")
+    # A page left in the journal by an interrupted run, not yet compacted.
+    journal = ZipStorageBackend(builder.storage_file)
+    journal.save_page("page_2.json", json.dumps({"items": [{"id": 2, "file": 7}]}).encode())
+    journal.flush()
+
+    def download(url, **kwargs):
+        return reply({}, 404) if url.endswith("/gone") else reply({"file": url})
+
+    builder.http.get.reset_mock()
+    builder.http.get.side_effect = download
+    builder.getfiles()
+    with ZipFile(Path(builder.storagedir) / "files.zip") as archive:
+        assert archive.namelist() == ["7"]
+    skipped = (Path(builder.storagedir) / "files_skipped.list").read_text()
+    assert "gone;;HTTP 404" in skipped
+
+
+def test_getfiles_rejects_unknown_fetch_mode(make_project):
+    builder = make_project(
+        files={"fetch_mode": "prefix", "keys": "file", "root_url": "https://files.example.test/"}
+    )
+    serve(builder, [{"id": 1, "file": "a"}])
+    builder.run("full")
+    builder.fetch_mode = "magic"  # e.g. from a deprecated INI file without schema checks
+    with pytest.raises(ValueError, match="fetch_mode"):
+        builder.getfiles()

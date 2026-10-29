@@ -16,8 +16,9 @@ import gzip
 import io
 import json
 import os
+import re
 import tempfile
-from typing import Any, Callable, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 from ..common import get_dict_value
 from ..storage import ZipStorageBackend, build_storage_backend
@@ -92,6 +93,15 @@ def process_record(
     return result
 
 
+def natural_order(name: str) -> List[Any]:
+    """Sort key that orders ``page_2.json`` before ``page_10.json``.
+
+    Storage backends list members lexicographically; exports follow the
+    collection order instead, with base pages before ``runs/<id>/`` updates.
+    """
+    return [int(part) if index % 2 else part for index, part in enumerate(re.split(r"(\d+)", name))]
+
+
 def serialize_record(record: Any) -> str:
     """Render one record as a JSON string with the trailing newline.
 
@@ -148,36 +158,32 @@ def export_project(project, format, filename, fields=None, where=None):
             )
         else:
             output = open(temporary, "w", encoding="utf8")
-        batch = []
         data_key = project.follow_data_key if use_details else project.data_key
-        for name in backend.list_objects("object" if use_details else "page"):
-            content = backend.get_object(name, "object" if use_details else "page")
-            if content is None:
-                continue
-            records = process_record(
-                json.loads(content),
-                data_key=data_key,
-                field_splitter=project.field_splitter,
-                fields=fields,
-                where=lambda item: project._match_where(item, condition),
-            )
-            for record in records:
-                if output is not None:
-                    output.write(serialize_record(record))
-                else:
-                    batch.append(record)
-                    if len(batch) >= 5000:
-                        table = pa.Table.from_pylist(batch)
-                        if parquet_writer is None:
-                            parquet_writer = pq.ParquetWriter(temporary, table.schema)
-                        parquet_writer.write_table(table)
-                        batch.clear()
-        if format == "parquet":
-            if batch or parquet_writer is None:
-                table = pa.Table.from_pylist(batch)
-                if parquet_writer is None:
-                    parquet_writer = pq.ParquetWriter(temporary, table.schema)
-                parquet_writer.write_table(table)
+        kind = "object" if use_details else "page"
+        names = sorted(backend.list_objects(kind), key=natural_order)
+
+        def exported_records():
+            for name in names:
+                content = backend.get_object(name, kind)
+                if content is None:
+                    continue
+                yield from process_record(
+                    json.loads(content),
+                    data_key=data_key,
+                    field_splitter=project.field_splitter,
+                    fields=fields,
+                    where=lambda item: project._match_where(item, condition),
+                )
+
+        if output is not None:
+            for record in exported_records():
+                output.write(serialize_record(record))
+        else:
+            # Pass 1 settles one schema for every batch; pass 2 writes it.
+            schema, json_columns = _parquet_schema(pa, _batches(exported_records()))
+            parquet_writer = pq.ParquetWriter(temporary, schema)
+            for batch in _batches(exported_records()):
+                parquet_writer.write_table(_parquet_table(pa, batch, schema, json_columns))
             parquet_writer.close()
             parquet_writer = None
         if output is not None:
@@ -192,6 +198,74 @@ def export_project(project, format, filename, fields=None, where=None):
             parquet_writer.close()
         if os.path.exists(temporary):
             os.unlink(temporary)
+
+
+PARQUET_BATCH_SIZE = 5000
+
+
+def _batches(records: Iterable[Any]) -> Iterable[List[Any]]:
+    batch: List[Any] = []
+    for record in records:
+        if not isinstance(record, dict):
+            raise ValueError("Parquet export requires object records; use jsonl for other values")
+        batch.append(record)
+        if len(batch) >= PARQUET_BATCH_SIZE:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
+
+
+def _parquet_schema(pa: Any, batches: Iterable[List[Dict[str, Any]]]) -> Tuple[Any, Set[str]]:
+    """Infer one schema for all records.
+
+    API records often change a field's type between pages, which made a schema
+    taken from the first batch reject later ones. Types are inferred per column
+    and promoted (for example int to double); a column whose types cannot be
+    reconciled, such as numbers and strings, is exported as JSON text.
+    """
+    types: Dict[str, Any] = {}
+    json_columns: Set[str] = set()
+    for batch in batches:
+        names = dict.fromkeys(key for record in batch for key in record)
+        for name in names:
+            if name in json_columns:
+                continue
+            try:
+                kind = pa.array([record.get(name) for record in batch]).type
+                types[name] = _promote(pa, types[name], kind) if name in types else kind
+            except (pa.ArrowInvalid, pa.ArrowTypeError, OverflowError):
+                types.setdefault(name, None)
+                json_columns.add(name)
+    fields = [
+        pa.field(name, pa.string() if name in json_columns else kind)
+        for name, kind in types.items()
+    ]
+    return pa.schema(fields), json_columns
+
+
+def _promote(pa: Any, left: Any, right: Any) -> Any:
+    schemas = [pa.schema([("value", left)]), pa.schema([("value", right)])]
+    try:
+        merged = pa.unify_schemas(schemas, promote_options="permissive")
+    except TypeError:  # pyarrow < 14 has no promote_options
+        merged = pa.unify_schemas(schemas)
+    return merged.field("value").type
+
+
+def _parquet_table(
+    pa: Any, batch: List[Dict[str, Any]], schema: Any, json_columns: Set[str]
+) -> Any:
+    columns = []
+    for field in schema:
+        values = [record.get(field.name) for record in batch]
+        if field.name in json_columns:
+            values = [
+                None if value is None else json.dumps(value, ensure_ascii=False, default=str)
+                for value in values
+            ]
+        columns.append(pa.array(values, type=field.type))
+    return pa.Table.from_arrays(columns, schema=schema)
 
 
 __all__ = ["process_record", "serialize_record", "match_where"]

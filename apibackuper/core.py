@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 import typer
 import urllib3
 
-from .cmds.project import ProjectBuilder
+from .cmds.project import LOG_HANDLER_MARK, ProjectBuilder
 
 try:
     import yaml
@@ -57,28 +57,32 @@ def _configure_logging_for_cli() -> None:
     file_handler.setFormatter(
         logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     )
+    # The project's own log file replaces this handler once a config loads.
+    setattr(file_handler, LOG_HANDLER_MARK, True)
     root_logger.addHandler(file_handler)
     root_logger.setLevel(logging.DEBUG)
+
+
+CONSOLE_HANDLER_MARK = "_apibackuper_console"
 
 
 def enable_verbose() -> None:
     """Enable verbose output to console in addition to file logging"""
     root_logger = logging.getLogger()
-    # Only add a console handler if no console handler already exists.
-    # NOTE: ``logging.FileHandler`` is a subclass of ``StreamHandler``, so a naive
-    # ``isinstance(h, StreamHandler)`` check would falsely treat the file handler
-    # as the console handler and skip installing one — making ``--verbose`` a
-    # silent no-op (see §4.3 of the 2026-10 analysis report).
-    has_console = any(
-        isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
-        for h in root_logger.handlers
+    # Keep exactly one apibackuper console handler, bound to the current
+    # stderr. Other stream handlers (file handlers, a host application's or
+    # pytest's capture handlers) are left alone and do not count as the
+    # console: they would make ``--verbose`` a silent no-op (see §4.3 of the
+    # 2026-10 analysis report).
+    for handler in list(root_logger.handlers):
+        if getattr(handler, CONSOLE_HANDLER_MARK, False):
+            root_logger.removeHandler(handler)
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     )
-    if not has_console:
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-        )
-        root_logger.addHandler(console_handler)
+    setattr(console_handler, CONSOLE_HANDLER_MARK, True)
+    root_logger.addHandler(console_handler)
     root_logger.setLevel(logging.DEBUG)
 
 

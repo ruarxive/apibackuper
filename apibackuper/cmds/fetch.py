@@ -19,6 +19,8 @@ import logging
 from copy import deepcopy
 from typing import Any, Callable, Dict, Optional, Tuple
 
+from .utils import flat_param_value
+
 
 def build_page_request(
     *,
@@ -106,7 +108,7 @@ def build_page_request(
     else:
         local_params = update_dict_values(local_params, local_change_params)
         if flat_params and local_params:
-            local_flatten = {k: str(v) for k, v in local_params.items()}
+            local_flatten = {k: flat_param_value(v) for k, v in local_params.items()}
 
     if query_mode == "params":
         request_url = url_replacer(start_url, local_url_params or {})

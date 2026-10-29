@@ -14,7 +14,14 @@ from urllib.parse import urlencode
 
 import requests
 
-from .utils import append_query, redact_headers, redact_params, redact_text, redact_url
+from .utils import (
+    append_query,
+    flat_param_value,
+    redact_headers,
+    redact_params,
+    redact_text,
+    redact_url,
+)
 
 
 class RequestFailed(RuntimeError):
@@ -57,17 +64,12 @@ def build_request_kwargs(
 
     if http_mode == "GET":
         if flatten:
-            # Coerce values to str so we can call str.replace on them.
-            str_flatten = {k: (str(v) if not isinstance(v, str) else v) for k, v in flatten.items()}
             # Redact before stringifying so credentials in nested objects stay safe.
-            redacted_flatten = {
-                k: str(v).replace("'", '"').replace("True", "true")
-                for k, v in redact_params(flatten).items()
-            }
+            redacted_flatten = {k: flat_param_value(v) for k, v in redact_params(flatten).items()}
             # P2.23: URL-encode the query so values with ``&``, ``=``, ``#``
             # or whitespace do not corrupt or extend the query.
             actual_query_string = urlencode(
-                {k: v.replace("'", '"').replace("True", "true") for k, v in str_flatten.items()},
+                {k: flat_param_value(v) for k, v in flatten.items()},
                 doseq=True,
             )
             log_safe_url = redact_url(append_query(url, redacted_flatten))

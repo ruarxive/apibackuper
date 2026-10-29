@@ -10,7 +10,6 @@ import sys
 import tempfile
 import threading
 import time
-import warnings
 import zipfile
 from contextlib import suppress
 from datetime import datetime, timezone
@@ -23,9 +22,9 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 import requests
 
-# Suppress deprecation warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
+# Marks root-logger handlers apibackuper installed, so they can be replaced
+# without touching handlers that belong to an embedding application.
+LOG_HANDLER_MARK = "_apibackuper_handler"
 
 
 try:
@@ -67,6 +66,8 @@ from .config_loader import (
 )
 from .utils import (
     _url_replacer,
+    append_query,
+    flat_param_value,
     load_csv_data,
     load_file_list,
     redact_headers,
@@ -156,11 +157,15 @@ class ProjectBuilder:
         )
         rootLogger = logging.getLogger()
 
-        # Remove existing handlers to avoid duplicates
-        rootLogger.handlers.clear()
+        # Replace only apibackuper's own file handlers to avoid duplicates.
+        for handler in list(rootLogger.handlers):
+            if getattr(handler, LOG_HANDLER_MARK, False):
+                rootLogger.removeHandler(handler)
+                handler.close()
 
         fileHandler = logging.FileHandler("{0}".format(self.logfile))
         fileHandler.setFormatter(logFormatter)
+        setattr(fileHandler, LOG_HANDLER_MARK, True)
         rootLogger.addHandler(fileHandler)
 
         # Preserve the historical DEBUG default while respecting an explicit
@@ -748,6 +753,7 @@ class ProjectBuilder:
             # Initialize HTTP session with new settings
             self.http.headers.update({"User-Agent": self.user_agent})
             self.http.verify = self.verify_ssl  # Set verify at session level for all requests
+            self.http.max_redirects = self.max_redirects
             if not self.verify_ssl:
                 logging.warning(
                     "SSL certificate verification is disabled. "
@@ -1262,98 +1268,49 @@ class ProjectBuilder:
 
         headers = load_json_file(os.path.join(self.project_path, "headers.json"), default={})
 
+        if not self.config.has_section("files"):
+            raise ValueError("getfiles requires a files section in the configuration")
+        if self.fetch_mode not in ("prefix", "pattern"):
+            raise ValueError(f"Unsupported files.fetch_mode: {self.fetch_mode}")
+        if self.file_storage_type not in ("zip", "filesystem"):
+            raise ValueError(f"Unsupported files.file_storage_type: {self.file_storage_type}")
+
+        from .export import process_record
+        from .follow import MISSING_STATUSES
+        from .http_client import RequestFailed
+
         uniq_ids: set = set()
 
         allfiles_name = os.path.join(self.storagedir, "allfiles.csv")
         if not os.path.exists(allfiles_name):
-            if not self.config.has_section("follow"):
-                logging.info("Extract file urls from downloaded data")
-                mzip = ZipFile(storage_file, mode="r", compression=ZIP_DEFLATED)
-                file_list = mzip.namelist()
-                extract_progress = None
-                if len(file_list) > 0:
-                    extract_progress = tqdm(
-                        total=len(file_list), desc="Extracting file URLs", unit="file"
-                    )
-                n = 0
-                for fname in file_list:
-                    n += 1
-                    if n % 10 == 0:
-                        logging.info("Processed %d files, uniq ids %d" % (n, len(uniq_ids)))
-                    tf = mzip.open(fname, "r")
-                    data = json.load(tf)
-                    tf.close()
-                    try:
-                        if self.data_key:
-                            iterate_data = get_dict_value(
-                                data, self.data_key, splitter=self.field_splitter
-                            )
-                        else:
-                            iterate_data = data
-                        for item in iterate_data:
-                            if item:
-                                for key in self.files_keys:
-                                    file_data = get_dict_value(
-                                        item,
-                                        key,
-                                        as_array=True,
-                                        splitter=self.field_splitter,
-                                    )
-                                    if file_data:
-                                        for uniq_id in file_data:
-                                            if uniq_id is not None:
-                                                if isinstance(uniq_id, list):
-                                                    uniq_ids.update(set(uniq_id))
-                                                else:
-                                                    uniq_ids.add(uniq_id)
-                    except KeyError:
-                        logging.info("Data key: %s not found" % (str(self.data_key)))
-                    if extract_progress:
-                        extract_progress.update(1)
-                if extract_progress:
-                    extract_progress.close()
-                mzip.close()
+            # Read through the storage backend so pages still in the ZIP
+            # journal after an interrupted run are included.
+            if self.config.has_section("follow"):
+                source, kind, data_key = self.details_storage_file, "object", self.follow_data_key
             else:
-                details_storage_file = os.path.join(self.storagedir, "details.zip")
-                mzip = ZipFile(details_storage_file, mode="r", compression=ZIP_DEFLATED)
-                file_list = mzip.namelist()
-                extract_progress = None
-                if len(file_list) > 0:
-                    extract_progress = tqdm(
-                        total=len(file_list), desc="Extracting file URLs", unit="file"
+                source, kind, data_key = storage_file, "page", self.data_key
+            logging.info("Extract file urls from downloaded data")
+            backend = ZipStorageBackend(source, mode="r")
+            try:
+                names = backend.list_objects(kind)
+                for fname in tqdm(
+                    names, desc="Extracting file URLs", unit="file", disable=not names
+                ):
+                    data = json.loads(backend.get_object(fname, kind))
+                    records = process_record(
+                        data, data_key=data_key, field_splitter=self.field_splitter
                     )
-                n = 0
-                for fname in file_list:
-                    n += 1
-                    if n % 1000 == 0:
-                        logging.info("Processed %d records", n)
-                    tf = mzip.open(fname, "r")
-                    data = json.load(tf)
-                    tf.close()
-                    items = []
-                    if self.follow_data_key:
-                        for item in get_dict_value(
-                            data, self.follow_data_key, splitter=self.field_splitter
-                        ):
-                            items.append(item)
-                    else:
-                        items = [
-                            data,
-                        ]
-                    for item in items:
+                    for item in records:
                         for key in self.files_keys:
-                            urls = get_dict_value(
+                            values = get_dict_value(
                                 item, key, as_array=True, splitter=self.field_splitter
                             )
-                            if urls is not None:
-                                for uniq_id in urls:
-                                    if uniq_id is not None and len(str(uniq_id).strip()) > 0:
+                            for value in values or []:
+                                for uniq_id in value if isinstance(value, list) else [value]:
+                                    if uniq_id is not None and str(uniq_id).strip():
                                         uniq_ids.add(str(uniq_id))
-                    if extract_progress:
-                        extract_progress.update(1)
-                if extract_progress:
-                    extract_progress.close()
-            mzip.close()
+            finally:
+                backend.close()
 
             logging.info("Storing all filenames")
             with open(allfiles_name, "w", encoding="utf8") as f:
@@ -1405,6 +1362,7 @@ class ProjectBuilder:
             )
 
         n = 0
+        missing_files = 0
         total_files = len(uniq_ids)
         download_progress = None
         if total_files > 0:
@@ -1428,9 +1386,9 @@ class ProjectBuilder:
                             r.headers["content-disposition"].rsplit("filename=", 1)[-1].strip('"')
                         )
                     elif self.default_ext is not None:
-                        filename = uniq_id + "." + self.default_ext
+                        filename = str(uniq_id) + "." + self.default_ext
                     else:
-                        filename = uniq_id
+                        filename = str(uniq_id)
                     if (
                         "content-length" in r.headers.keys()
                         and int(r.headers["content-length"]) > FILE_SIZE_DOWNLOAD_LIMIT
@@ -1466,7 +1424,23 @@ class ProjectBuilder:
                         download_progress.update(1)
                     continue
                 if not use_aria2:
-                    response = self._request(url, headers=headers, http_mode="GET")
+                    try:
+                        response = self._request(url, headers=headers, http_mode="GET")
+                    except RequestFailed as error:
+                        # A removed attachment must not stop the other downloads.
+                        if error.status_code not in MISSING_STATUSES:
+                            raise
+                        skipped.writerow(
+                            {
+                                "filename": filename,
+                                "filesize": "",
+                                "reason": f"HTTP {error.status_code}",
+                            }
+                        )
+                        missing_files += 1
+                        if download_progress:
+                            download_progress.update(1)
+                        continue
                     fstorage.save_object(filename, response.content)
                     list_file.write(url + "\n")
                 else:
@@ -1490,6 +1464,11 @@ class ProjectBuilder:
                     fobj.close()
                 except (IOError, OSError):
                     pass
+        if missing_files:
+            print(
+                f"Warning: {missing_files} files were not found (HTTP 404/410); "
+                f"see {files_skipped}"
+            )
 
     def estimate(self, mode: str) -> None:  # noqa: ARG002
         """Measures time, size and count of records"""
@@ -1518,10 +1497,7 @@ class ProjectBuilder:
             with open(params_file, "r", encoding="utf8") as f:
                 params = json.load(f)
         if self.flat_params:
-            flatten = {}
-            for k, v in params.items():
-                flatten[k] = str(v)
-            params = flatten
+            params = {k: flat_param_value(v) for k, v in params.items()}
 
         url_params = None
         params_file = os.path.join(self.project_path, "url_params.json")
@@ -1538,17 +1514,9 @@ class ProjectBuilder:
                 url = self.start_url
             if self.http_mode == "GET":
                 if self.flat_params and len(params.keys()) > 0:
-                    s = []
-                    for k, v in params.items():
-                        s.append("%s=%s" % (k, v.replace("'", '"').replace("True", "true")))
-                    if headers:
-                        start_page_data = self._request(
-                            url + "?" + "&".join(s), headers=headers, http_mode="GET"
-                        ).json()
-                    else:
-                        start_page_data = self._request(
-                            url + "?" + "&".join(s), http_mode="GET"
-                        ).json()
+                    start_page_data = self._request(
+                        append_query(url, params), headers=headers or None, http_mode="GET"
+                    ).json()
                 else:
                     logging.debug(
                         "Start request params: %s headers: %s",

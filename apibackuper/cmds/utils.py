@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Utility functions for project operations"""
 import csv
+import json
 import re
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
@@ -122,6 +123,19 @@ def append_query(url: str, params: Any) -> str:
     pairs = parse_qsl(parsed.query, keep_blank_values=True)
     pairs.extend(parse_qsl(extra, keep_blank_values=True))
     return urlunsplit(parsed._replace(query=urlencode(pairs, doseq=True)))
+
+
+def flat_param_value(value: Any) -> str:
+    """Render one ``force_flat_params`` value as its query-string text.
+
+    Objects, arrays and booleans are sent as JSON; strings are sent as they
+    are, so their own quotes or the word ``True`` are never rewritten.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list, tuple, bool)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
 
 
 def load_file_list(filename: str, encoding: str = "utf8") -> List[str]:
