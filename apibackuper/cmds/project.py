@@ -3,7 +3,6 @@ import configparser
 import csv
 import json
 import logging
-import math
 import os
 import subprocess
 import sys
@@ -12,8 +11,6 @@ import threading
 import time
 import zipfile
 from contextlib import suppress
-from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
 from runpy import run_path
 from timeit import default_timer as timer
 from typing import Any, Dict, List, Optional, Tuple
@@ -729,6 +726,12 @@ class ProjectBuilder:
             self.retry_initial_delay = self.retry_delay
             self.retry_max_delay = max(self.retry_delay, self.retry_delay * 4)
             self.retry_on_status = self.error_retry_codes
+            # Response rules and rate-limit header waits (YAML only).
+            self.response_rules: List[Dict[str, Any]] = []
+            self.retry_wait_headers: List[str] = ["Retry-After"]
+            self.retry_max_wait = None
+            self._rule_counts: Dict[str, int] = {}
+            self._rule_lock = threading.Lock()
 
             if self.config.has_section("request"):
                 if self.config.has_option("request", "timeout"):
@@ -776,8 +779,17 @@ class ProjectBuilder:
                     if isinstance(request_data, dict):
                         if isinstance(request_data.get("parallelism"), int):
                             self.parallelism = max(1, request_data.get("parallelism"))
+                        rules = request_data.get("response_rules")
+                        if isinstance(rules, list):
+                            self.response_rules = [rule for rule in rules if isinstance(rule, dict)]
                         retry_data = request_data.get("retry")
                         if isinstance(retry_data, dict):
+                            if isinstance(retry_data.get("wait_headers"), list):
+                                self.retry_wait_headers = [
+                                    str(name) for name in retry_data["wait_headers"]
+                                ]
+                            if retry_data.get("max_wait") is not None:
+                                self.retry_max_wait = retry_data["max_wait"]
                             self.retry_max_retries = retry_data.get(
                                 "max_retries", self.retry_max_retries
                             )
@@ -1040,22 +1052,13 @@ class ProjectBuilder:
         return status_code in retry_codes
 
     def _get_retry_delay(self, attempt: int, response: Optional[requests.Response]) -> int:
-        if response is not None:
-            retry_after = response.headers.get("Retry-After")
-            if retry_after:
-                try:
-                    return int(retry_after)
-                except ValueError:
-                    pass
-                # RFC 9110 also allows an HTTP-date.
-                try:
-                    moment = parsedate_to_datetime(retry_after)
-                except (TypeError, ValueError):
-                    moment = None
-                if moment is not None:
-                    if moment.tzinfo is None:
-                        moment = moment.replace(tzinfo=timezone.utc)
-                    return max(0, math.ceil((moment - datetime.now(timezone.utc)).total_seconds()))
+        from .response_rules import header_wait
+
+        # Server-provided waits (``Retry-After`` by default; seconds, HTTP
+        # dates or Unix timestamps) override the configured backoff.
+        wait = header_wait(response, getattr(self, "retry_wait_headers", ["Retry-After"]))
+        if wait is not None:
+            return wait
         if self.retry_backoff_strategy == "exponential":
             delay = self.retry_initial_delay * (2 ** (attempt - 1))
         else:
@@ -1202,6 +1205,9 @@ class ProjectBuilder:
         if auth_handler and auth_handler.error:
             # Never fall back to unauthenticated requests.
             raise ValueError(auth_handler.error)
+        from .response_rules import DEFAULT_MISSING_STATUSES, action_for
+
+        rules = getattr(self, "response_rules", None) or []
         response = None
         budget = max(0, self.retry_max_retries)
         for attempt in range(budget + 1):
@@ -1213,16 +1219,50 @@ class ProjectBuilder:
                 if attempt == budget:
                     raise RuntimeError(redact_text(exc)) from None
             else:
-                if 200 <= response.status_code < 300:
+                status = response.status_code
+                action = action_for(rules, response, self.field_splitter) if rules else None
+                if action is not None:
+                    self._count_rule(action)
+                if action == "accept" or (action is None and 200 <= status < 300):
                     if self.default_delay:
                         time.sleep(self.default_delay)
                     return response
-                if attempt == budget or not self._should_retry(response.status_code):
+                if action == "missing":
                     raise RequestFailed(
-                        f"HTTP {response.status_code} for {redact_url(url)}", response.status_code
+                        f"HTTP {status} for {redact_url(url)}: object is missing",
+                        status,
+                        missing=True,
                     )
-            time.sleep(self._get_retry_delay(attempt + 1, response))
+                if action == "fail":
+                    raise RequestFailed(
+                        f"HTTP {status} for {redact_url(url)} matched a fail response rule", status
+                    )
+                retryable = action == "retry" or (action is None and self._should_retry(status))
+                if attempt == budget or not retryable:
+                    reason = " (response rule: retry)" if action == "retry" else ""
+                    raise RequestFailed(
+                        f"HTTP {status} for {redact_url(url)}{reason}",
+                        status,
+                        # Without a rule, 404/410 still mean the object is gone.
+                        missing=action is None and status in DEFAULT_MISSING_STATUSES,
+                    )
+            delay = self._get_retry_delay(attempt + 1, response)
+            max_wait = getattr(self, "retry_max_wait", None)
+            if max_wait is not None and delay > max_wait:
+                raise RequestFailed(
+                    f"HTTP {response.status_code} for {redact_url(url)} asks to wait {delay} s, "
+                    f"more than request.retry.max_wait ({max_wait} s)",
+                    response.status_code,
+                )
+            time.sleep(delay)
         raise RuntimeError("Request retry budget exhausted")
+
+    def _count_rule(self, action: str) -> None:
+        lock = getattr(self, "_rule_lock", None)
+        if lock is None:
+            return
+        with lock:
+            self._rule_counts[action] = self._rule_counts.get(action, 0) + 1
 
     @staticmethod
     def create(name: str) -> None:
@@ -1426,7 +1466,6 @@ class ProjectBuilder:
             raise ValueError(f"Unsupported files.file_storage_type: {self.file_storage_type}")
 
         from .export import process_record
-        from .follow import MISSING_STATUSES
         from .http_client import RequestFailed
 
         uniq_ids: set = set()
@@ -1578,7 +1617,7 @@ class ProjectBuilder:
                         response = self._request(url, headers=headers, http_mode="GET")
                     except RequestFailed as error:
                         # A removed attachment must not stop the other downloads.
-                        if error.status_code not in MISSING_STATUSES:
+                        if not error.missing:
                             raise
                         skipped.writerow(
                             {
@@ -1615,10 +1654,7 @@ class ProjectBuilder:
                 except (IOError, OSError):
                     pass
         if missing_files:
-            print(
-                f"Warning: {missing_files} files were not found (HTTP 404/410); "
-                f"see {files_skipped}"
-            )
+            print(f"Warning: {missing_files} files are missing upstream; " f"see {files_skipped}")
 
     def estimate(self, mode: str) -> None:  # noqa: ARG002
         """Measures time, size and count of records"""
@@ -2050,6 +2086,14 @@ class ProjectBuilder:
                         errors.append("page_size_limit must be greater than 0")
                 except (ValueError, configparser.NoOptionError, configparser.NoSectionError):
                     errors.append("page_size_limit must be an integer")
+
+        # Validate response rules (YAML request.response_rules)
+        if hasattr(self.config, "_data"):
+            from .response_rules import validate_rules
+
+            request_data = self.config._data.get("request") or {}
+            if isinstance(request_data, dict):
+                errors.extend(validate_rules(request_data.get("response_rules")))
 
         # Validate cursor-style pagination
         iterate_by = (

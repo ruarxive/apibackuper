@@ -183,6 +183,9 @@ one process rather than across all account consumers.
 | `retry.initial_delay` | integer ≥ 0; `project.retry_delay` | Delay base in seconds |
 | `retry.max_delay` | integer ≥ 0; `max(retry_delay,retry_delay*4)` | Cap on configured backoff, not server Retry-After |
 | `retry.retry_on_status` | integer array, HTTP 100–599 | Explicit retry statuses; fallback described below |
+| `retry.wait_headers` | string array; `[Retry-After]` | Headers read in order for the server-requested wait (seconds, HTTP date or Unix time) |
+| `retry.max_wait` | number ≥ 0; omitted | Fail instead of waiting longer than this many seconds |
+| `response_rules` | array of rules; omitted | Ordered `status`/`body_key`/`body_value`/`content_type` conditions with `retry`, `fail`, `missing` or `accept` |
 
 Flat compatibility keys `retry_max_retries`, `retry_backoff_strategy`,
 `retry_initial_delay`, `retry_max_delay`, `retry_on_status` override the

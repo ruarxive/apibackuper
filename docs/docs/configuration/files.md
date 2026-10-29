@@ -123,8 +123,8 @@ This is independent of `data.item_key` and record identity.
 `https://a.example/report.pdf` and `https://b.example/report.pdf`, or two signed
 URLs differing only in their query, can map to the same destination filename.
 An already saved filename is skipped; it is not compared with remote content.
-A download answered with HTTP 404 or 410 is recorded in `files_skipped.list`
-with reason `HTTP 404`/`HTTP 410`, and the remaining files are downloaded; the
+A download answered with HTTP 404 or 410, or matching a `missing` response rule,
+is recorded in `files_skipped.list` with its status as the reason, and the remaining files are downloaded; the
 next `getfiles` run tries it again. Other failures stop the command.
 Choose references and storage mode that give unique names for your dataset.
 

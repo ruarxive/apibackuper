@@ -31,9 +31,6 @@ from .config_loader import load_json_file
 from .export import process_record
 from .http_client import RequestFailed
 
-# Statuses that mean a followed object no longer exists upstream.
-MISSING_STATUSES = (404, 410)
-
 
 def extract_keys_from_pages(
     source_zip: ZipFile,
@@ -232,7 +229,7 @@ def follow_project(project, mode="full"):
                         except RequestFailed as error:
                             # A deleted object must not block the rest of the
                             # follow run; record it and move to the next key.
-                            if error.status_code not in MISSING_STATUSES:
+                            if not error.missing:
                                 raise
                             missing.append({"key": key, "page": page, "status": error.status_code})
                             break
@@ -276,8 +273,7 @@ def _write_missing(path, missing):
     with open(temporary, "w", encoding="utf8") as handle:
         json.dump(missing, handle, ensure_ascii=False, indent=2, default=str)
     os.replace(temporary, path)
-    statuses = "/".join(str(code) for code in MISSING_STATUSES)
-    message = f"{len(missing)} followed objects were not found (HTTP {statuses}); see {path}"
+    message = f"{len(missing)} followed objects are missing upstream; see {path}"
     logging.warning(message)
     print(f"Warning: {message}")
 
