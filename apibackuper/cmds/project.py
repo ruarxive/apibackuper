@@ -1091,7 +1091,15 @@ class ProjectBuilder:
 
             # Merge auth headers (the auth handler is the source of truth
             # for whatever the upstream service expects).
+            used_token = None
             if self.auth_handler:
+                # OAuth2: fetch or renew the token before it is needed.
+                self.auth_handler.ensure_token(
+                    self.http,
+                    verify=self.verify_ssl,
+                    timeout=(self.connect_timeout, self.read_timeout),
+                )
+                used_token = self.auth_handler.auth_data.get("token")
                 auth_headers = self.auth_handler.get_headers()
                 if headers:
                     headers.update(auth_headers)
@@ -1133,6 +1141,7 @@ class ProjectBuilder:
                     self.http,
                     verify=self.verify_ssl,
                     timeout=(self.connect_timeout, self.read_timeout),
+                    failed_token=used_token,
                 ):
                     # Retry request with new token. The build_retry_kwargs
                     # helper produces a kwargs dict that is safe to spread
@@ -2078,6 +2087,21 @@ class ProjectBuilder:
             elif auth_type == "apikey":
                 if not self.config.has_option("auth", "api_key"):
                     errors.append("auth.api_key is required for apikey authentication")
+            elif auth_type == "oauth2" and (
+                self.config.get("auth", "grant_type", fallback="refresh_token")
+                == "client_credentials"
+            ):
+                for option in ("auth_url", "client_id"):
+                    if not self.config.has_option("auth", option):
+                        errors.append(f"auth.{option} is required for client_credentials")
+                if not (
+                    self.config.has_option("auth", "client_secret")
+                    or self.config.has_option("auth", "client_secret_file")
+                ):
+                    errors.append(
+                        "auth.client_secret or auth.client_secret_file is required "
+                        "for client_credentials"
+                    )
             elif auth_type == "oauth2":
                 has_token = self.config.has_option("auth", "token") or self.config.has_option(
                     "auth", "token_file"

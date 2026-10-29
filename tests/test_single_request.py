@@ -241,7 +241,7 @@ def test_flat_request_preserves_query_and_fragment_without_logging_secrets(caplo
 def test_oauth_flat_refresh_reuses_identical_encoded_url():
     builder = _make_builder()
     builder.flat_params = True
-    builder.auth_handler = MagicMock(auth_type="oauth2")
+    builder.auth_handler = MagicMock(auth_type="oauth2", auth_data={"token": "old-token"})
     builder.auth_handler.get_headers.side_effect = [
         {"Authorization": "Bearer old-token"},
         {"Authorization": "Bearer refreshed-token"},
@@ -267,7 +267,7 @@ def test_oauth_flat_refresh_reuses_identical_encoded_url():
     assert "params" not in calls[1].kwargs
     assert calls[1].kwargs["headers"]["Authorization"] == "Bearer refreshed-token"
     builder.auth_handler.refresh_token_if_needed.assert_called_once_with(
-        builder.http, verify=True, timeout=(30, 120)
+        builder.http, verify=True, timeout=(30, 120), failed_token="old-token"
     )
 
 
