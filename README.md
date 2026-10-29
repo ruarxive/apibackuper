@@ -8,7 +8,7 @@ This README describes version 2.0.0. See the
 [changelog](CHANGELOG.md#200---2026-10-17) for release details and migration notes.
 
 **apibackuper** downloads paginated REST APIs into local storage and exports
-the archive as JSON Lines, gzip, zstd, or Parquet. It is designed for
+the archive as JSON Lines, gzip, zstd, Parquet or WARC. It is designed for
 repeatable, long-running backups rather than one-off HTTP requests.
 
 ## Features
@@ -56,7 +56,7 @@ pipx install apibackuper
 uv tool install apibackuper
 ```
 
-Parquet export and aria2 downloads:
+Parquet export, WARC export and aria2 downloads:
 
 ```bash
 pip install "apibackuper[recommended]"

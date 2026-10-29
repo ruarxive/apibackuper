@@ -126,6 +126,8 @@ while short/empty pages can end it earlier. See [extraction and updates](/config
 | `compression_level` | integer 0–9; optional | Reserved, not applied to CLI writes |
 | `max_file_size` | integer ≥ 0; optional | Reserved bytes value; no splitting/size cap |
 | `split_files` | boolean; optional | Reserved; no automatic archive splitting |
+| `capture.metadata` | boolean; `true` | Write `exchange_N.json` provenance beside each page |
+| `capture.raw_body` | `auto`, `always`, `never`; `auto` | Write the original body as `raw_N.<ext>`; `auto` only for non-JSON responses |
 
 Relative paths resolve from the project. Full backups stage at a sibling
 `.partial` path; ZIP can also have a `.journal` directory. Changing the backend
@@ -181,6 +183,9 @@ one process rather than across all account consumers.
 | `retry.initial_delay` | integer ≥ 0; `project.retry_delay` | Delay base in seconds |
 | `retry.max_delay` | integer ≥ 0; `max(retry_delay,retry_delay*4)` | Cap on configured backoff, not server Retry-After |
 | `retry.retry_on_status` | integer array, HTTP 100–599 | Explicit retry statuses; fallback described below |
+| `retry.wait_headers` | string array; `[Retry-After]` | Headers read in order for the server-requested wait (seconds, HTTP date or Unix time) |
+| `retry.max_wait` | number ≥ 0; omitted | Fail instead of waiting longer than this many seconds |
+| `response_rules` | array of rules; omitted | Ordered `status`/`body_key`/`body_value`/`content_type` conditions with `retry`, `fail`, `missing` or `accept` |
 
 Flat compatibility keys `retry_max_retries`, `retry_backoff_strategy`,
 `retry_initial_delay`, `retry_max_delay`, `retry_on_status` override the
@@ -245,6 +250,7 @@ records independently; they do not chain their output. Only unnamed
 | `storage_mode` | `filepath` or `id`; `filepath` | URL-path name or extracted-value name |
 | `file_storage_type` | `zip` or `filesystem`; `zip` | Downloaded-byte output; main source must still be ZIP |
 | `use_aria2` | boolean or compatibility string; false | Queue transfers through fixed local aria2 RPC endpoint |
+| `max_file_size` | integer ≥ 1; omitted | Skip downloads larger than this many bytes |
 
 The discovery cache is reused until removed; existing output filenames are
 skipped. `default_ext` does not convert content and `filepath` does not include

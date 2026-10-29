@@ -25,6 +25,8 @@ from .utils import redact_params
 
 MANIFEST_NAME = "manifest-sha256.txt"
 RUN_RECORD_NAME = "run.json"
+# Downloaded files: one BagIt-style line per stored file, beside file storage.
+FILES_MANIFEST_NAME = "files-manifest-sha256.txt"
 
 
 def generation_prefix(name: str) -> str:
@@ -38,6 +40,78 @@ def generation_pages(names: Iterable[str], prefix: str) -> List[str]:
 
 def digest(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
+
+
+def stream_digest(handle, chunk_size: int = 1024 * 1024) -> str:
+    """SHA-256 of a readable binary stream, read in chunks and closed."""
+    value = hashlib.sha256()
+    with handle:
+        for block in iter(lambda: handle.read(chunk_size), b""):
+            value.update(block)
+    return value.hexdigest()
+
+
+def files_manifest_path(project) -> str:
+    return os.path.join(project.storagedir, FILES_MANIFEST_NAME)
+
+
+def open_files_storage(project, mode: str):
+    """Open the configured file storage, or return None when it does not exist."""
+    from ..storage import FilesystemStorageBackend, ZipStorageBackend
+
+    if project.file_storage_type == "zip":
+        path = os.path.join(project.storagedir, "files.zip")
+        if mode == "r" and not os.path.exists(path):
+            return None
+        return ZipStorageBackend(path, mode=mode)
+    root = os.path.join(project.storagedir, "files")
+    if mode == "r" and not os.path.isdir(root):
+        return None
+    return FilesystemStorageBackend(root, mode="read" if mode == "r" else "a")
+
+
+def append_manifest_line(path: str, name: str, value: str) -> None:
+    """Durably append one ``<sha256>  <member>`` line."""
+    with open(path, "a", encoding="utf8") as handle:
+        handle.write(f"{value}  {name}\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def verify_files(project) -> Dict[str, Any]:
+    """Check downloaded files against ``files-manifest-sha256.txt``."""
+    entry: Dict[str, Any] = {
+        "generation": "(files)",
+        "manifest": False,
+        "verified": 0,
+        "changed": [],
+        "missing": [],
+        "unlisted": [],
+    }
+    backend = open_files_storage(project, "r")
+    if backend is None:
+        return entry
+    try:
+        stored = set(backend.list_objects("object"))
+        path = files_manifest_path(project)
+        if not os.path.exists(path):
+            entry["unlisted"] = sorted(stored)
+            return entry
+        entry["manifest"] = True
+        with open(path, "rb") as handle:
+            listed = parse_manifest(handle.read())
+        for name, expected in sorted(listed.items()):
+            stream = backend.open_object(name)
+            if stream is None:
+                entry["missing"].append(name)
+            elif stream_digest(stream) != expected:
+                entry["changed"].append(name)
+            else:
+                entry["verified"] += 1
+        entry["unlisted"] = sorted(stored - set(listed))
+    finally:
+        backend.close()
+    return entry
 
 
 def render_manifest(digests: Dict[str, str]) -> bytes:
@@ -119,6 +193,10 @@ def verify_storage(project, strict: bool = False) -> Dict[str, Any]:
             generations.append(entry)
     finally:
         backend.close()
+    if project.config.has_section("files"):
+        files = verify_files(project)
+        if files["manifest"] or files["unlisted"]:
+            generations.append(files)
     damaged = any(entry["changed"] or entry["missing"] for entry in generations)
     incomplete = any(entry["unlisted"] or not entry["manifest"] for entry in generations)
     return {
@@ -130,6 +208,7 @@ def verify_storage(project, strict: bool = False) -> Dict[str, Any]:
 
 
 __all__ = [
+    "FILES_MANIFEST_NAME",
     "MANIFEST_NAME",
     "RUN_RECORD_NAME",
     "config_digest",

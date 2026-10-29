@@ -17,6 +17,7 @@ built-in file downloads.
 | Existing access token | `bearer` | `token` or `token_file` | `Authorization: Bearer …` |
 | Key in a named header | `apikey` | `api_key`; optionally `api_key_header` | `X-API-Key: …` by default |
 | Access token with supported refresh endpoint | `oauth2` | Existing token; `auth_url` and `refresh_token` for refresh | Bearer header, refresh on 401 |
+| Machine-to-machine OAuth2 client | `oauth2` with `grant_type: client_credentials` | `auth_url`, `client_id`, `client_secret` or `client_secret_file` | Bearer header from the token endpoint, renewed before expiry |
 
 Choose the API's documented scheme. A Bearer token does not imply that the
 service supports the OAuth2 refresh flow implemented here. API keys in query
@@ -141,9 +142,44 @@ The refresh sequence is:
    retry the original API request with its original body/query and new header.
 
 Refresh uses configured connection/read timeouts and SSL verification. It is
-triggered by a 401, not proactively by expiry time; a 403 does not trigger it.
-Refresh failures are logged and the unsuccessful request is handled by the
-normal [HTTP error policy](/configuration/rate-limiting-and-requests).
+triggered by a 401, and also before a request when the last token response gave
+an `expires_in` that ends within 60 seconds; a 403 does not trigger it. Without
+an initial `token`, the first token is requested before the first API request.
+When `client_id` is set, the refresh request authenticates the client as
+described below. Refresh failures are logged and the unsuccessful request is
+handled by the normal [HTTP error policy](/configuration/rate-limiting-and-requests).
+
+## OAuth2 client credentials
+
+For machine-to-machine APIs, let apibackuper request tokens itself:
+
+```yaml
+auth:
+  type: oauth2
+  grant_type: client_credentials
+  auth_url: https://auth.example.com/oauth/token
+  client_id: backup-client
+  client_secret: "${OAUTH_CLIENT_SECRET}"
+  scope: "catalog.read"
+```
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `grant_type` | `refresh_token` | `client_credentials` requests tokens with the client's own credentials |
+| `client_id` | none | Client identifier |
+| `client_secret` / `client_secret_file` | none | Client secret, inline (prefer `${VAR}`) or read from a file |
+| `scope`, `audience` | omitted | Sent with the token request when set |
+| `client_auth_method` | `client_secret_basic` | `client_secret_basic` sends HTTP Basic; `client_secret_post` sends `client_id` and `client_secret` in the form body |
+
+Before the first API request, apibackuper POSTs `grant_type=client_credentials`
+(plus `scope` and `audience`) to `auth_url` and sends the returned
+`access_token` as a Bearer header. It requests a new token when the current one
+is within 60 seconds of its `expires_in`, and after a 401, then retries the
+rejected request once. Parallel page requests share one token request.
+
+A failed token request stops the run before any API request is sent without
+credentials. A missing or empty `client_secret_file` is a configuration error.
+Logs and error messages never include the client secret or tokens.
 
 ### Restart and provider limitations
 
@@ -152,9 +188,8 @@ If the provider invalidates an old refresh token on rotation, arrange to provisi
 current credentials before restarting or resuming. Reusing the original file
 cannot recover a rotated refresh token automatically.
 
-Browser authorization, authorization-code/PKCE and client-credentials grants
-are not implemented. Refresh does not add dedicated `client_id`, `client_secret`
-or scope fields. Providers requiring those fields need external token management.
+Browser authorization and authorization-code/PKCE grants are not implemented.
+Providers that require them need external token management.
 
 ## Header precedence and scope
 

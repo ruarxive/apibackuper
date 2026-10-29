@@ -39,9 +39,13 @@ def test_full_and_update_runs_write_verifiable_manifests(make_project, storage):
     serve(builder, RECORDS)
     builder.run("full")
     listed = parse_manifest(member(builder, MANIFEST_NAME))
-    assert sorted(listed) == ["page_1.json", "page_2.json", "page_3.json"]
+    # Pages and their captured exchange records.
+    assert sorted(listed) == [
+        f"{kind}_{n}.json" for kind in ("exchange", "page") for n in (1, 2, 3)
+    ]
     for name, value in listed.items():
-        assert hashlib.sha256(member(builder, name, "page")).hexdigest() == value
+        kind = "page" if name.startswith("page_") else "object"
+        assert hashlib.sha256(member(builder, name, kind)).hexdigest() == value
     run = json.loads(member(builder, RUN_RECORD_NAME))
     assert run["mode"] == "full" and run["pages"] == 3 and run["records"] == 5
     assert run["api_total"] == 5 and len(run["config_sha256"]) == 64
@@ -52,7 +56,7 @@ def test_full_and_update_runs_write_verifiable_manifests(make_project, storage):
     assert report["ok"]
     generations = {entry["generation"]: entry for entry in report["generations"]}
     update = next(entry for name, entry in generations.items() if name.startswith("runs/"))
-    assert generations["(base)"]["verified"] == 3 and update["verified"] == 1
+    assert generations["(base)"]["verified"] == 6 and update["verified"] == 2
 
 
 def test_verify_reports_changed_missing_and_unlisted_pages(make_project):

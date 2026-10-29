@@ -21,8 +21,8 @@ apibackuper export out.jsonl --fields id,title --where "updated_at >= 2024-01-01
 
 **Key options:**
 
-- `--format` / `-f` — `jsonl`, `gzip`, `zstd`, or `parquet`. If omitted, guessed
-  from the extension (`.jsonl`, `.gz`, `.zst`, `.parquet`)
+- `--format` / `-f` — `jsonl`, `gzip`, `zstd`, `parquet` or `warc`. If omitted,
+  guessed from the extension (`.jsonl`, `.gz`, `.zst`, `.parquet`, `.warc`, `.warc.gz`)
 - `--fields` — comma-separated field list
 - `--where` — simple filter, for example `updated_at >= 2024-01-01`
 - `--projectpath` / `-p`

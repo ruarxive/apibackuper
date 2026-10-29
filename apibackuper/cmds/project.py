@@ -1,19 +1,18 @@
 # -* coding: utf-8 -*-
 import configparser
 import csv
+import hashlib
 import json
 import logging
-import math
 import os
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+import warnings
 import zipfile
 from contextlib import suppress
-from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
 from runpy import run_path
 from timeit import default_timer as timer
 from typing import Any, Dict, List, Optional, Tuple
@@ -48,7 +47,6 @@ from ..constants import (
     DEFAULT_RETRY_COUNT,
     DEFAULT_TIMEOUT,
     FIELD_SPLITTER,
-    FILE_SIZE_DOWNLOAD_LIMIT,
     RETRY_DELAY,
 )
 from ..rate_limiter import RateLimiter
@@ -70,7 +68,6 @@ from .utils import (
     _url_replacer,
     append_query,
     flat_param_value,
-    load_csv_data,
     load_file_list,
     redact_headers,
     redact_params,
@@ -159,6 +156,10 @@ def apply_detected_options(config_data: Dict[str, Any], suggestions: Dict[str, A
     for name, (section, option) in DETECTED_OPTIONS.items():
         if suggestions.get(name):
             config_data.setdefault(section, {}).setdefault(option, suggestions[name])
+
+
+# Bytes read per chunk while streaming file downloads.
+DOWNLOAD_CHUNK_SIZE = 1024 * 1024
 
 
 class RedirectSafeSession(requests.Session):
@@ -634,6 +635,11 @@ class ProjectBuilder:
                     if self.config.has_option("files", "use_aria2")
                     else "False"
                 )
+                self.files_max_file_size = (
+                    _safe_int(self.config.get("files", "max_file_size"), "files.max_file_size", 0)
+                    if self.config.has_option("files", "max_file_size")
+                    else None
+                )
 
             # Parse new config sections
             # Authentication
@@ -729,6 +735,12 @@ class ProjectBuilder:
             self.retry_initial_delay = self.retry_delay
             self.retry_max_delay = max(self.retry_delay, self.retry_delay * 4)
             self.retry_on_status = self.error_retry_codes
+            # Response rules and rate-limit header waits (YAML only).
+            self.response_rules: List[Dict[str, Any]] = []
+            self.retry_wait_headers: List[str] = ["Retry-After"]
+            self.retry_max_wait = None
+            self._rule_counts: Dict[str, int] = {}
+            self._rule_lock = threading.Lock()
 
             if self.config.has_section("request"):
                 if self.config.has_option("request", "timeout"):
@@ -776,8 +788,17 @@ class ProjectBuilder:
                     if isinstance(request_data, dict):
                         if isinstance(request_data.get("parallelism"), int):
                             self.parallelism = max(1, request_data.get("parallelism"))
+                        rules = request_data.get("response_rules")
+                        if isinstance(rules, list):
+                            self.response_rules = [rule for rule in rules if isinstance(rule, dict)]
                         retry_data = request_data.get("retry")
                         if isinstance(retry_data, dict):
+                            if isinstance(retry_data.get("wait_headers"), list):
+                                self.retry_wait_headers = [
+                                    str(name) for name in retry_data["wait_headers"]
+                                ]
+                            if retry_data.get("max_wait") is not None:
+                                self.retry_max_wait = retry_data["max_wait"]
                             self.retry_max_retries = retry_data.get(
                                 "max_retries", self.retry_max_retries
                             )
@@ -839,6 +860,24 @@ class ProjectBuilder:
                     self.max_file_size = self.config.getint("storage", "max_file_size")
                 if self.config.has_option("storage", "split_files"):
                     self.split_files = self.config.getboolean("storage", "split_files")
+
+            # Response capture: YAML ``storage.capture``; INI flat
+            # ``capture_metadata`` / ``capture_raw_body`` keys.
+            self.capture_metadata = True
+            self.capture_raw_body = "auto"
+            capture = (
+                self.config._data.get("storage", {}).get("capture")
+                if self.config_format == "yaml" and hasattr(self.config, "_data")
+                else None
+            )
+            if isinstance(capture, dict):
+                self.capture_metadata = bool(capture.get("metadata", True))
+                self.capture_raw_body = capture.get("raw_body", "auto")
+            elif self.config.has_section("storage"):
+                if self.config.has_option("storage", "capture_metadata"):
+                    self.capture_metadata = self.config.getboolean("storage", "capture_metadata")
+                if self.config.has_option("storage", "capture_raw_body"):
+                    self.capture_raw_body = self.config.get("storage", "capture_raw_body")
 
             # Initialize HTTP session with new settings
             self.http.headers.update({"User-Agent": self.user_agent})
@@ -1022,22 +1061,13 @@ class ProjectBuilder:
         return status_code in retry_codes
 
     def _get_retry_delay(self, attempt: int, response: Optional[requests.Response]) -> int:
-        if response is not None:
-            retry_after = response.headers.get("Retry-After")
-            if retry_after:
-                try:
-                    return int(retry_after)
-                except ValueError:
-                    pass
-                # RFC 9110 also allows an HTTP-date.
-                try:
-                    moment = parsedate_to_datetime(retry_after)
-                except (TypeError, ValueError):
-                    moment = None
-                if moment is not None:
-                    if moment.tzinfo is None:
-                        moment = moment.replace(tzinfo=timezone.utc)
-                    return max(0, math.ceil((moment - datetime.now(timezone.utc)).total_seconds()))
+        from .response_rules import header_wait
+
+        # Server-provided waits (``Retry-After`` by default; seconds, HTTP
+        # dates or Unix timestamps) override the configured backoff.
+        wait = header_wait(response, getattr(self, "retry_wait_headers", ["Retry-After"]))
+        if wait is not None:
+            return wait
         if self.retry_backoff_strategy == "exponential":
             delay = self.retry_initial_delay * (2 ** (attempt - 1))
         else:
@@ -1068,6 +1098,7 @@ class ProjectBuilder:
         params: Dict[str, Any],
         flatten: Optional[Dict[str, str]] = None,
         http_mode: Optional[str] = None,
+        stream: bool = False,
     ) -> requests.Response:
         """Single http/https request with authentication and rate limiting.
 
@@ -1091,7 +1122,15 @@ class ProjectBuilder:
 
             # Merge auth headers (the auth handler is the source of truth
             # for whatever the upstream service expects).
+            used_token = None
             if self.auth_handler:
+                # OAuth2: fetch or renew the token before it is needed.
+                self.auth_handler.ensure_token(
+                    self.http,
+                    verify=self.verify_ssl,
+                    timeout=(self.connect_timeout, self.read_timeout),
+                )
+                used_token = self.auth_handler.auth_data.get("token")
                 auth_headers = self.auth_handler.get_headers()
                 if headers:
                     headers.update(auth_headers)
@@ -1109,6 +1148,9 @@ class ProjectBuilder:
                 read_timeout=self.read_timeout,
                 allow_redirects=self.allow_redirects,
             )
+            if stream:
+                # File downloads read the body in chunks instead of at once.
+                request_kwargs["stream"] = True
             # The flat-params branch returns an extra actual_query_string;
             # the regular branches return None and we use ``url`` directly.
             logging.info("url: %s", log_safe_url)
@@ -1133,6 +1175,7 @@ class ProjectBuilder:
                     self.http,
                     verify=self.verify_ssl,
                     timeout=(self.connect_timeout, self.read_timeout),
+                    failed_token=used_token,
                 ):
                     # Retry request with new token. The build_retry_kwargs
                     # helper produces a kwargs dict that is safe to spread
@@ -1166,7 +1209,7 @@ class ProjectBuilder:
             )
             raise wrapped from None
 
-    def _request(self, url, headers=None, params=None, flatten=None, http_mode=None):
+    def _request(self, url, headers=None, params=None, flatten=None, http_mode=None, stream=False):
         """Execute every command's requests with bounded retries and status checks."""
         from .http_client import RequestFailed
         from .utils import redact_text, redact_url
@@ -1175,27 +1218,68 @@ class ProjectBuilder:
         if auth_handler and auth_handler.error:
             # Never fall back to unauthenticated requests.
             raise ValueError(auth_handler.error)
+        from .response_rules import DEFAULT_MISSING_STATUSES, action_for
+
+        rules = getattr(self, "response_rules", None) or []
         response = None
         budget = max(0, self.retry_max_retries)
         for attempt in range(budget + 1):
             try:
                 response = self._single_request(
-                    url, headers, params or {}, flatten, http_mode=http_mode
+                    url, headers, params or {}, flatten, http_mode=http_mode, stream=stream
                 )
             except RuntimeError as exc:
                 if attempt == budget:
                     raise RuntimeError(redact_text(exc)) from None
             else:
-                if 200 <= response.status_code < 300:
+                status = response.status_code
+                action = (
+                    action_for(rules, response, self.field_splitter, stream=stream)
+                    if rules
+                    else None
+                )
+                if action is not None:
+                    self._count_rule(action)
+                if action == "accept" or (action is None and 200 <= status < 300):
                     if self.default_delay:
                         time.sleep(self.default_delay)
                     return response
-                if attempt == budget or not self._should_retry(response.status_code):
+                if action == "missing":
                     raise RequestFailed(
-                        f"HTTP {response.status_code} for {redact_url(url)}", response.status_code
+                        f"HTTP {status} for {redact_url(url)}: object is missing",
+                        status,
+                        missing=True,
                     )
-            time.sleep(self._get_retry_delay(attempt + 1, response))
+                if action == "fail":
+                    raise RequestFailed(
+                        f"HTTP {status} for {redact_url(url)} matched a fail response rule", status
+                    )
+                retryable = action == "retry" or (action is None and self._should_retry(status))
+                if attempt == budget or not retryable:
+                    reason = " (response rule: retry)" if action == "retry" else ""
+                    raise RequestFailed(
+                        f"HTTP {status} for {redact_url(url)}{reason}",
+                        status,
+                        # Without a rule, 404/410 still mean the object is gone.
+                        missing=action is None and status in DEFAULT_MISSING_STATUSES,
+                    )
+            delay = self._get_retry_delay(attempt + 1, response)
+            max_wait = getattr(self, "retry_max_wait", None)
+            if max_wait is not None and delay > max_wait:
+                raise RequestFailed(
+                    f"HTTP {response.status_code} for {redact_url(url)} asks to wait {delay} s, "
+                    f"more than request.retry.max_wait ({max_wait} s)",
+                    response.status_code,
+                )
+            time.sleep(delay)
         raise RuntimeError("Request retry budget exhausted")
+
+    def _count_rule(self, action: str) -> None:
+        lock = getattr(self, "_rule_lock", None)
+        if lock is None:
+            return
+        with lock:
+            self._rule_counts[action] = self._rule_counts.get(action, 0) + 1
 
     @staticmethod
     def create(name: str) -> None:
@@ -1376,6 +1460,12 @@ class ProjectBuilder:
 
     def getfiles(self, be_careful: bool = False) -> None:
         """Downloads all files associated with this API data"""
+        if be_careful:
+            warnings.warn(
+                "getfiles(be_careful=...) is deprecated and ignored; set files.max_file_size",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         if self.config is None:
             self._raise_config_not_found()
             return
@@ -1399,7 +1489,6 @@ class ProjectBuilder:
             raise ValueError(f"Unsupported files.file_storage_type: {self.file_storage_type}")
 
         from .export import process_record
-        from .follow import MISSING_STATUSES
         from .http_client import RequestFailed
 
         uniq_ids: set = set()
@@ -1443,7 +1532,6 @@ class ProjectBuilder:
             logging.info("Load all filenames")
             uniq_ids = load_file_list(allfiles_name)
         # Start download
-        skipped_files_dict = {}
         files_storage_file = os.path.join(self.storagedir, "files.zip")
         files_list_storage = os.path.join(self.storagedir, "files.list")
         files_skipped = os.path.join(self.storagedir, "files_skipped.list")
@@ -1452,7 +1540,6 @@ class ProjectBuilder:
         else:
             list_file = open(files_list_storage, "w", encoding="utf8")
         if os.path.exists(files_skipped):
-            skipped_files_dict = load_csv_data(files_skipped, key="filename", encoding="utf8")
             skipped_file = open(files_skipped, "a", encoding="utf8")
             skipped = csv.DictWriter(
                 skipped_file,
@@ -1460,7 +1547,6 @@ class ProjectBuilder:
                 fieldnames=["filename", "filesize", "reason"],
             )
         else:
-            skipped_files_dict = {}
             skipped_file = open(files_skipped, "w", encoding="utf8")
             skipped = csv.DictWriter(
                 skipped_file,
@@ -1483,6 +1569,19 @@ class ProjectBuilder:
                 os.path.join(self.storagedir, "files"),
                 mode="a",
             )
+        from .fixity import append_manifest_line, files_manifest_path, parse_manifest, stream_digest
+
+        manifest_path = files_manifest_path(self)
+        listed: set = set()
+        if os.path.exists(manifest_path):
+            with open(manifest_path, "rb") as handle:
+                listed = set(parse_manifest(handle.read()))
+        stored_names = set(fstorage.list_objects("object"))
+        # Files stored by an interrupted run or an older version get their line now.
+        for name in sorted(stored_names - listed):
+            stream = fstorage.open_object(name)
+            if stream is not None:
+                append_manifest_line(manifest_path, name, stream_digest(stream))
 
         n = 0
         missing_files = 0
@@ -1499,59 +1598,29 @@ class ProjectBuilder:
                 n += 1
                 if n % 50 == 0:
                     logging.info("Downloaded %d files", n)
-                if be_careful:
-                    r = self._request(url, http_mode="HEAD")
-                    if (
-                        "content-disposition" in r.headers.keys()
-                        and self.storage_mode == "filepath"
-                    ):
-                        filename = (
-                            r.headers["content-disposition"].rsplit("filename=", 1)[-1].strip('"')
-                        )
-                    elif self.default_ext is not None:
-                        filename = str(uniq_id) + "." + self.default_ext
-                    else:
-                        filename = str(uniq_id)
-                    if (
-                        "content-length" in r.headers.keys()
-                        and int(r.headers["content-length"]) > FILE_SIZE_DOWNLOAD_LIMIT
-                        and self.file_storage_type == "zip"
-                    ):
-                        logging.info(
-                            "File skipped with size %d and name %s"
-                            % (int(r.headers["content-length"]), redact_url(url))
-                        )
-                        record = {
-                            "filename": filename,
-                            "filesize": str(r.headers["content-length"]),
-                            "reason": "File too large. More than %d bytes"
-                            % (FILE_SIZE_DOWNLOAD_LIMIT),
-                        }
-                        skipped_files_dict[uniq_id] = record
-                        skipped.writerow(record)
-                        continue
+                if self.default_ext is not None:
+                    filename = str(uniq_id) + "." + self.default_ext
                 else:
-                    if self.default_ext is not None:
-                        filename = str(uniq_id) + "." + self.default_ext
-                    else:
-                        filename = str(uniq_id)
+                    filename = str(uniq_id)
                 if self.storage_mode == "filepath":
                     filename = urlparse(url).path
                 logging.info("Processing %s as %s", redact_url(url), filename)
                 from ..storage import safe_member_name
 
                 filename = safe_member_name(filename)
-                if filename in fstorage.list_objects("object"):
+                if filename in stored_names:
                     logging.info("File %s already stored", filename)
                     if download_progress:
                         download_progress.update(1)
                     continue
                 if not use_aria2:
                     try:
-                        response = self._request(url, headers=headers, http_mode="GET")
+                        outcome, size, detail = self._download_file(
+                            url, headers, fstorage, filename
+                        )
                     except RequestFailed as error:
                         # A removed attachment must not stop the other downloads.
-                        if error.status_code not in MISSING_STATUSES:
+                        if not error.missing:
                             raise
                         skipped.writerow(
                             {
@@ -1564,8 +1633,17 @@ class ProjectBuilder:
                         if download_progress:
                             download_progress.update(1)
                         continue
-                    fstorage.save_object(filename, response.content)
-                    list_file.write(url + "\n")
+                    if outcome == "skipped":
+                        logging.info("File %s skipped: %s", filename, detail)
+                        skipped.writerow(
+                            {"filename": filename, "filesize": str(size), "reason": detail}
+                        )
+                    else:
+                        # The member is durable before its manifest line is written.
+                        fstorage.flush()
+                        append_manifest_line(manifest_path, filename, detail)
+                        stored_names.add(filename)
+                        list_file.write(url + "\n")
                 else:
                     aria2.add_uris(
                         uris=[
@@ -1588,10 +1666,47 @@ class ProjectBuilder:
                 except (IOError, OSError):
                     pass
         if missing_files:
-            print(
-                f"Warning: {missing_files} files were not found (HTTP 404/410); "
-                f"see {files_skipped}"
-            )
+            print(f"Warning: {missing_files} files are missing upstream; " f"see {files_skipped}")
+
+    def _download_file(self, url, headers, fstorage, filename) -> Tuple[str, int, str]:
+        """Stream one file into ``fstorage``.
+
+        Returns ``("stored", size, sha256)``, or ``("skipped", size, reason)``
+        when it exceeds ``files.max_file_size``. The body is written in chunks
+        to a temporary file beside the storage, so memory use does not grow with
+        the file, and a failed or interrupted download leaves no stored member.
+        """
+        limit = getattr(self, "files_max_file_size", None)
+        response = self._request(url, headers=headers, http_mode="GET", stream=True)
+        temporary = None
+        try:
+            declared = response.headers.get("Content-Length")
+            if limit and declared and declared.isdigit() and int(declared) > limit:
+                return "skipped", int(declared), self._too_large(limit)
+            digest = hashlib.sha256()
+            size = 0
+            fd, temporary = tempfile.mkstemp(dir=self.storagedir, prefix=".download-")
+            with os.fdopen(fd, "wb") as handle:
+                for chunk in response.iter_content(DOWNLOAD_CHUNK_SIZE):
+                    if not chunk:
+                        continue
+                    size += len(chunk)
+                    if limit and size > limit:
+                        return "skipped", size, self._too_large(limit)
+                    digest.update(chunk)
+                    handle.write(chunk)
+                handle.flush()
+                os.fsync(handle.fileno())
+            fstorage.save_object_from_path(filename, temporary)
+            return "stored", size, digest.hexdigest()
+        finally:
+            response.close()
+            if temporary and os.path.exists(temporary):
+                os.unlink(temporary)
+
+    @staticmethod
+    def _too_large(limit: int) -> str:
+        return f"File larger than files.max_file_size ({limit} bytes)"
 
     def estimate(self, mode: str) -> None:  # noqa: ARG002
         """Measures time, size and count of records"""
@@ -1838,11 +1953,20 @@ class ProjectBuilder:
                                         total_records += 1
                             except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
                                 logging.debug("Error counting records in %s: %s", fname, e)
+                        captured = sum(
+                            1
+                            for name in storage_backend.list_objects("object")
+                            if name.rsplit("/", 1)[-1].startswith("exchange_")
+                        )
                     finally:
                         storage_backend.close()
                     stats_data["storage"] = {
                         "file_exists": True,
                         "total_files": len(file_list),
+                        "captured_exchanges": captured,
+                        "generation_archives": len(
+                            getattr(storage_backend, "generation_archives", list)()
+                        ),
                         "total_size_bytes": total_size,
                         "total_size_mb": round(total_size / (1024 * 1024), 2),
                         "total_size_gb": round(total_size / (1024 * 1024 * 1024), 3),
@@ -2015,6 +2139,14 @@ class ProjectBuilder:
                 except (ValueError, configparser.NoOptionError, configparser.NoSectionError):
                     errors.append("page_size_limit must be an integer")
 
+        # Validate response rules (YAML request.response_rules)
+        if hasattr(self.config, "_data"):
+            from .response_rules import validate_rules
+
+            request_data = self.config._data.get("request") or {}
+            if isinstance(request_data, dict):
+                errors.extend(validate_rules(request_data.get("response_rules")))
+
         # Validate cursor-style pagination
         iterate_by = (
             self.config.get("project", "iterate_by")
@@ -2078,6 +2210,21 @@ class ProjectBuilder:
             elif auth_type == "apikey":
                 if not self.config.has_option("auth", "api_key"):
                     errors.append("auth.api_key is required for apikey authentication")
+            elif auth_type == "oauth2" and (
+                self.config.get("auth", "grant_type", fallback="refresh_token")
+                == "client_credentials"
+            ):
+                for option in ("auth_url", "client_id"):
+                    if not self.config.has_option("auth", option):
+                        errors.append(f"auth.{option} is required for client_credentials")
+                if not (
+                    self.config.has_option("auth", "client_secret")
+                    or self.config.has_option("auth", "client_secret_file")
+                ):
+                    errors.append(
+                        "auth.client_secret or auth.client_secret_file is required "
+                        "for client_credentials"
+                    )
             elif auth_type == "oauth2":
                 has_token = self.config.has_option("auth", "token") or self.config.has_option(
                     "auth", "token_file"

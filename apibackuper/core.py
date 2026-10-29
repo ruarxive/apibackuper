@@ -814,7 +814,7 @@ def export(
         "--format",
         "-f",
         help=(
-            "Export format (jsonl, gzip, zstd, or parquet). "
+            "Export format (jsonl, gzip, zstd, parquet, or warc). "
             "If not specified, will be guessed from file extension"
         ),
     ),
@@ -829,7 +829,7 @@ def export(
         False, "--verbose", "-v", help="Verbose output. Print additional info"
     ),
 ):
-    """Exports data as jsonl, gzip, zstd, or parquet file"""
+    """Exports data as jsonl, gzip, zstd, parquet, or WARC file"""
     try:
         acmd = ProjectBuilder(projectpath)
         if verbose:
@@ -838,7 +838,9 @@ def export(
         # Auto-detect format from filename extension if not specified
         if format is None:
             filename_lower = filename.lower()
-            if filename_lower.endswith(".parquet"):
+            if filename_lower.endswith((".warc", ".warc.gz")):
+                format = "warc"
+            elif filename_lower.endswith(".parquet"):
                 format = "parquet"
             elif filename_lower.endswith(".zst"):
                 format = "zstd"

@@ -5,6 +5,8 @@ Authentication handling for apibackuper
 import base64
 import logging
 import os
+import threading
+import time
 from typing import Any, Dict, Optional
 
 from .cmds.utils import redact_text
@@ -16,10 +18,16 @@ except ImportError:
 
 
 _DEFAULT_TIMEOUT = 30  # seconds; OAuth refresh must never hang forever (§5.4)
+# Renew an OAuth2 token this many seconds before ``expires_in`` runs out.
+_EXPIRY_MARGIN = 60
 
 
 class AuthHandler:
     """Handles various authentication methods"""
+
+    # Class-level defaults for handlers built without ``__init__``.
+    error: Optional[str] = None
+    _token_lock = threading.Lock()
 
     def __init__(self, config):
         """Initialize auth handler from config"""
@@ -29,6 +37,8 @@ class AuthHandler:
         # Set when a configured credential file is missing or empty, so
         # requests fail instead of being sent without credentials.
         self.error: Optional[str] = None
+        # Serializes OAuth2 token requests across parallel page fetches.
+        self._token_lock = threading.Lock()
         self._load_auth_config()
 
     def _read_secret(self, option: str) -> Optional[str]:
@@ -105,8 +115,30 @@ class AuthHandler:
                 refresh_token = self.config.get("auth", "refresh_token")
             else:
                 refresh_token = None
+            client_secret = None
+            if self.config.has_option("auth", "client_secret"):
+                client_secret = self.config.get("auth", "client_secret")
+            elif self.config.has_option("auth", "client_secret_file"):
+                client_secret = self._read_secret("client_secret_file")
 
-            self.auth_data = {"token": token, "auth_url": auth_url, "refresh_token": refresh_token}
+            def option(name, default=None):
+                if self.config.has_option("auth", name):
+                    return self.config.get("auth", name)
+                return default
+
+            self.auth_data = {
+                "token": token,
+                "auth_url": auth_url,
+                "refresh_token": refresh_token,
+                "grant_type": option("grant_type", "refresh_token"),
+                "client_id": option("client_id"),
+                "client_secret": client_secret,
+                "scope": option("scope"),
+                "audience": option("audience"),
+                "client_auth_method": option("client_auth_method", "client_secret_basic"),
+                # time.monotonic() deadline from ``expires_in``; None if unknown.
+                "expires_at": None,
+            }
 
     def get_headers(self) -> Dict[str, str]:
         """Get authentication headers.
@@ -142,13 +174,48 @@ class AuthHandler:
 
         return headers
 
+    def ensure_token(
+        self,
+        session,
+        timeout: Optional[float] = None,
+        verify: Optional[bool] = None,
+    ) -> None:
+        """Obtain an OAuth2 token before a request when none is valid.
+
+        Fetches a token when there is none or it expires within
+        ``_EXPIRY_MARGIN`` seconds, using client credentials or the refresh
+        token. Raises ``RuntimeError`` if a client-credentials token cannot be
+        obtained, so requests are never sent without credentials.
+        """
+        if self.auth_type != "oauth2" or not self.auth_data.get("auth_url"):
+            return
+        client_credentials = self.auth_data.get("grant_type") == "client_credentials"
+        if not client_credentials and not self.auth_data.get("refresh_token"):
+            return
+        if self.auth_data.get("token") and not self._token_expiring():
+            return
+        renewed = self.refresh_token_if_needed(
+            session, timeout=timeout, verify=verify, if_invalid=True
+        )
+        if not renewed and client_credentials and not self.auth_data.get("token"):
+            raise RuntimeError(
+                f"OAuth2 token request to {redact_text(self.auth_data['auth_url'])} failed; "
+                "see the log for the response status"
+            )
+
+    def _token_expiring(self) -> bool:
+        expires_at = self.auth_data.get("expires_at")
+        return expires_at is not None and time.monotonic() >= expires_at - _EXPIRY_MARGIN
+
     def refresh_token_if_needed(
         self,
         session,
         timeout: Optional[float] = None,
         verify: Optional[bool] = None,
+        failed_token: Optional[str] = None,
+        if_invalid: bool = False,
     ) -> bool:
-        """Refresh OAuth2 token if needed.
+        """Obtain a new OAuth2 token with the configured grant.
 
         P2.24: hardens the previous implementation:
 
@@ -160,33 +227,63 @@ class AuthHandler:
           ``False`` (§5.4).
         - Captures a rotated ``refresh_token`` from the response if the IdP
           returns one (RFC 6749 §6).
+
+        Token requests are serialized. No new request is sent when another
+        thread already replaced ``failed_token`` (the token a 401 rejected), or,
+        with ``if_invalid``, when a valid token is already present.
         """
+        client_credentials = self.auth_data.get("grant_type") == "client_credentials"
         if not (
             self.auth_type == "oauth2"
             and self.auth_data.get("auth_url")
-            and self.auth_data.get("refresh_token")
+            and (
+                self.auth_data.get("client_id")
+                if client_credentials
+                else self.auth_data.get("refresh_token")
+            )
         ):
             return False
+        with self._token_lock:
+            current = self.auth_data.get("token")
+            if failed_token is not None and current and current != failed_token:
+                return True
+            if if_invalid and current and not self._token_expiring():
+                return True
+            if client_credentials:
+                form = {"grant_type": "client_credentials"}
+                for name in ("scope", "audience"):
+                    if self.auth_data.get(name):
+                        form[name] = self.auth_data[name]
+            else:
+                form = {
+                    "grant_type": "refresh_token",
+                    "refresh_token": self.auth_data["refresh_token"],
+                }
+            return self._request_token(session, form, timeout, verify)
 
+    def _safe_diagnostic(self, value) -> str:
+        text = redact_text(value)
+        for name in ("token", "refresh_token", "client_secret"):
+            secret = self.auth_data.get(name)
+            if isinstance(secret, str) and secret:
+                text = text.replace(secret, "***REDACTED***")
+        return text
+
+    def _request_token(self, session, form, timeout, verify) -> bool:
+        """POST ``form`` to the token endpoint and store the returned token."""
         effective_timeout = timeout if timeout is not None else _DEFAULT_TIMEOUT
-
-        def safe_diagnostic(value):
-            text = redact_text(value)
-            for name in ("token", "refresh_token"):
-                secret = self.auth_data.get(name)
-                if isinstance(secret, str) and secret:
-                    text = text.replace(secret, "***REDACTED***")
-            return text
-
-        kwargs: Dict[str, Any] = {
-            "data": {
-                "grant_type": "refresh_token",
-                "refresh_token": self.auth_data["refresh_token"],
-            },
-            "timeout": effective_timeout,
-        }
+        kwargs: Dict[str, Any] = {"data": form, "timeout": effective_timeout}
         if verify is not None:
             kwargs["verify"] = verify
+        client_id = self.auth_data.get("client_id")
+        if client_id:
+            secret = self.auth_data.get("client_secret") or ""
+            if self.auth_data.get("client_auth_method") == "client_secret_post":
+                form["client_id"] = client_id
+                if secret:
+                    form["client_secret"] = secret
+            else:
+                kwargs["auth"] = (client_id, secret)
 
         try:
             response = session.post(self.auth_data["auth_url"], **kwargs)
@@ -194,7 +291,7 @@ class AuthHandler:
             logging.warning(
                 "OAuth2 token refresh raised %s: %s",
                 type(e).__name__,
-                safe_diagnostic(e),
+                self._safe_diagnostic(e),
             )
             return False
 
@@ -203,7 +300,7 @@ class AuthHandler:
             # Coerce the body to str defensively — the test suite uses Mock
             # objects whose ``text`` attribute is itself a Mock.
             try:
-                body_preview = safe_diagnostic(response.text)[:200]
+                body_preview = self._safe_diagnostic(response.text)[:200]
             except Exception:
                 body_preview = "<unprintable body>"
             logging.warning(
@@ -228,5 +325,10 @@ class AuthHandler:
         new_refresh = data.get("refresh_token")
         if new_refresh:
             self.auth_data["refresh_token"] = new_refresh
+        try:
+            lifetime = float(data["expires_in"])
+        except (KeyError, TypeError, ValueError):
+            lifetime = None
+        self.auth_data["expires_at"] = time.monotonic() + lifetime if lifetime else None
         logging.info("OAuth2 token refreshed successfully")
         return True
