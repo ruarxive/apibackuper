@@ -126,6 +126,8 @@ while short/empty pages can end it earlier. See [extraction and updates](/config
 | `compression_level` | integer 0–9; optional | Reserved, not applied to CLI writes |
 | `max_file_size` | integer ≥ 0; optional | Reserved bytes value; no splitting/size cap |
 | `split_files` | boolean; optional | Reserved; no automatic archive splitting |
+| `capture.metadata` | boolean; `true` | Write `exchange_N.json` provenance beside each page |
+| `capture.raw_body` | `auto`, `always`, `never`; `auto` | Write the original body as `raw_N.<ext>`; `auto` only for non-JSON responses |
 
 Relative paths resolve from the project. Full backups stage at a sibling
 `.partial` path; ZIP can also have a `.journal` directory. Changing the backend

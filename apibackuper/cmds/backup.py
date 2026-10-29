@@ -17,6 +17,7 @@ from tqdm import tqdm
 from .. import __version__
 from ..common import get_dict_value, update_dict_values
 from ..storage.session import BackupSession
+from .capture import is_capture_member, save_capture
 from .config_loader import load_json_file
 from .export import process_record
 from .fetch import CURSOR_MODES, build_page_request
@@ -25,6 +26,7 @@ from .fixity import (
     config_digest,
     digest,
     generation_pages,
+    generation_prefix,
     write_generation_record,
 )
 from .runner import PageOutcome, fetch_all_pages, parse_total_pages
@@ -103,6 +105,9 @@ def _summary(project, session, baseline):
                 value = get_dict_value(item, project.change_key, splitter=project.field_splitter)
                 if value is not None and (change is None or value > change):
                     change = value
+    for name in session.backend.list_objects("object"):
+        if is_capture_member(name) and generation_prefix(name) == session.prefix:
+            digests[name] = digest(session.backend.get_object(name, "object"))
     summary = {
         "pages_processed": pages,
         "records_processed": records,
@@ -133,7 +138,12 @@ def _finish_publication(project, session, checkpoint):
     if session.backend.get_object(session.prefix + MANIFEST_NAME, "object") is None:
         # Intents saved before manifests existed: hash the staged generation.
         names = generation_pages(session.backend.list_objects("page"), session.prefix)
-        digests = {name: digest(session.backend.get_object(name)) for name in names}
+        names += [
+            name
+            for name in session.backend.list_objects("object")
+            if is_capture_member(name) and generation_prefix(name) == session.prefix
+        ]
+        digests = {name: digest(session.backend.get_object(name, "object")) for name in names}
         state = checkpoint["pending_state"]
         record = _run_record(project, session, checkpoint.get("mode"), state)
         write_generation_record(session.backend, session.prefix, digests, record)
@@ -320,6 +330,7 @@ def run_backup(project, mode, resume=False):
         save(current)
         first_page = int(current["next_page"])
         response = request(first_page, current["cursor"])
+        first_fetched = datetime.now(timezone.utc).isoformat()
         first_data = _decode(project, response.content, process)
         if project.detect_enabled and project.resp_type == "json":
             project._apply_detection(project._detect_suggestions(first_data, response.headers))
@@ -352,7 +363,9 @@ def run_backup(project, mode, resume=False):
         bar = tqdm(total=len(pages) if bounded else None, desc="Downloading pages", unit="page")
 
         # Cursor modes: the next position comes from the stored page's response.
+        # Capture: the exchange record is built from that response as well.
         position = {"next": current["cursor"]}
+        capturing = project.capture_metadata or project.capture_raw_body != "never"
         responses = {}
         seen = set()
         if current["cursor"] is not None:
@@ -360,9 +373,13 @@ def run_backup(project, mode, resume=False):
 
         def fetch(page):
             try:
-                result = response if page == first_page else request(page, position["next"])
-                if cursor_mode:
-                    responses[page] = result
+                if page == first_page:
+                    result, fetched_at = response, first_fetched
+                else:
+                    result = request(page, position["next"])
+                    fetched_at = datetime.now(timezone.utc).isoformat()
+                if cursor_mode or capturing:
+                    responses[page] = (result, fetched_at)
                 return {"page": page, "status": result.status_code, "content": result.content}
             except (RuntimeError, ValueError, OSError) as exc:
                 return {
@@ -382,6 +399,7 @@ def run_backup(project, mode, resume=False):
 
         def store(page, content):
             nonlocal hook_records, previous_digest
+            exchange, fetched_at = responses.pop(page, (None, None))
             data = _decode(project, content, process)
             items = _records(project, data)
             if not items:
@@ -399,7 +417,7 @@ def run_backup(project, mode, resume=False):
                 previous_digest = digest
             following = None
             if cursor_mode:
-                following = _next_position(project, responses.pop(page, None), data)
+                following = _next_position(project, exchange, data)
                 if following is not None:
                     marker = json.dumps(following, sort_keys=True, default=str)
                     if marker in seen:
@@ -413,6 +431,9 @@ def run_backup(project, mode, resume=False):
                 if project.resp_type == "json"
                 else json.dumps(data, ensure_ascii=False).encode("utf8")
             )
+            if capturing and exchange is not None:
+                # Saved first, so a page never exists without its exchange.
+                save_capture(project, session, page, exchange, fetched_at)
             session.backend.save_page(session.name(page), serialized)
             hook_records += len(items)
             project._run_hook(

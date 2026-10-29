@@ -149,6 +149,32 @@ Choose the command matching the interrupted operation; the examples are
 alternatives. See [run](/commands/run) for checkpoint compatibility and
 [update](/commands/update) for retained generation recovery.
 
+## Response capture
+
+By default every saved page gets a provenance record in the same generation:
+
+| Member | Content |
+|--------|---------|
+| `exchange_N.json` | Request method, URL, headers and body; response status, reason, final URL, headers, content type, SHA-256 and length; fetch time (UTC), elapsed time, apibackuper version and run ID |
+| `raw_N.<ext>` | The response body exactly as received, when the saved page differs from it (XML or HTML responses) |
+
+Credentials are redacted in exchange records: `Authorization`, API-key and other
+credential-like headers, sensitive query and body values, and `Set-Cookie`. The
+record's `redacted` field is `true` when anything was replaced.
+
+```yaml
+storage:
+  storage_type: zip
+  capture:
+    metadata: true    # write exchange_N.json (default)
+    raw_body: auto    # auto (non-JSON responses), always, or never
+```
+
+Neither member starts with `page_`, so export, follow, resume and record counts
+ignore them; the fixity manifest lists them with the pages, and
+`export --format warc` builds WARC records from them. With `metadata: false`,
+only pages are written (plus `raw_N` when `raw_body` asks for it).
+
 ## Compression and reserved settings
 
 | Field | Accepted value | Current CLI behavior |

@@ -195,8 +195,11 @@ selected = [json.loads(line) for line in Path("selected.jsonl").read_text().spli
 assert sorted(row["id"] for row in selected) == [3, 4, 5]
 assert all(set(row) == {"id", "title"} for row in selected)
 with ZipFile("storage/storage.zip") as archive:
-    # Three pages plus the fixity manifest and run record of the backup.
+    # Three pages, their exchange records, and the fixity manifest and run record.
     assert sorted(archive.namelist()) == [
+        "exchange_1.json",
+        "exchange_2.json",
+        "exchange_3.json",
         "manifest-sha256.txt",
         "page_1.json",
         "page_2.json",

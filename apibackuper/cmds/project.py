@@ -840,6 +840,24 @@ class ProjectBuilder:
                 if self.config.has_option("storage", "split_files"):
                     self.split_files = self.config.getboolean("storage", "split_files")
 
+            # Response capture: YAML ``storage.capture``; INI flat
+            # ``capture_metadata`` / ``capture_raw_body`` keys.
+            self.capture_metadata = True
+            self.capture_raw_body = "auto"
+            capture = (
+                self.config._data.get("storage", {}).get("capture")
+                if self.config_format == "yaml" and hasattr(self.config, "_data")
+                else None
+            )
+            if isinstance(capture, dict):
+                self.capture_metadata = bool(capture.get("metadata", True))
+                self.capture_raw_body = capture.get("raw_body", "auto")
+            elif self.config.has_section("storage"):
+                if self.config.has_option("storage", "capture_metadata"):
+                    self.capture_metadata = self.config.getboolean("storage", "capture_metadata")
+                if self.config.has_option("storage", "capture_raw_body"):
+                    self.capture_raw_body = self.config.get("storage", "capture_raw_body")
+
             # Initialize HTTP session with new settings
             self.http.headers.update({"User-Agent": self.user_agent})
             self.http.verify = self.verify_ssl  # Set verify at session level for all requests
@@ -1847,11 +1865,17 @@ class ProjectBuilder:
                                         total_records += 1
                             except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
                                 logging.debug("Error counting records in %s: %s", fname, e)
+                        captured = sum(
+                            1
+                            for name in storage_backend.list_objects("object")
+                            if name.rsplit("/", 1)[-1].startswith("exchange_")
+                        )
                     finally:
                         storage_backend.close()
                     stats_data["storage"] = {
                         "file_exists": True,
                         "total_files": len(file_list),
+                        "captured_exchanges": captured,
                         "total_size_bytes": total_size,
                         "total_size_mb": round(total_size / (1024 * 1024), 2),
                         "total_size_gb": round(total_size / (1024 * 1024 * 1024), 3),

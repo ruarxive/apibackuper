@@ -11,11 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reproducible localhost API quick start with five known records; CI executes the documented CLI/Python snippets and verifies archive/export contents.
 - Guides for HTTP request JSON files, pagination/completeness boundaries, export filter grammar, Python integration and storage access; expanded configuration, hook and OAuth2 contracts.
 - Documentation builds on pull requests and validation of Markdown YAML/JSON examples and shipped JSON files.
+- Response capture: every saved page gets `exchange_N.json` (request, status, headers, final URL, fetch time, SHA-256, version, run ID; credentials redacted), and non-JSON responses keep their original bytes as `raw_N.<ext>` (`storage.capture.metadata`, `storage.capture.raw_body`). `export --format warc` writes WARC/1.1 request and response records from them; `info --stats` counts captured exchanges.
 - OAuth2 client-credentials grant (`auth.grant_type: client_credentials`) with `client_id`, `client_secret`/`client_secret_file`, `scope`, `audience` and Basic or form-body client authentication; tokens are requested before the first API request, renewed 60 seconds before `expires_in` and after a 401, and shared by parallel requests. Refresh-token requests authenticate the client when `client_id` is set.
 - Fixity manifests: every successful run writes `manifest-sha256.txt` (BagIt form) and `run.json` (version, run ID, times, counts, redacted configuration hash) into the generation it publishes; `apibackuper verify [--strict] [--json]` checks stored pages against them and records the result for `info`.
 - Cursor, next-URL and RFC 8288 Link-header pagination (`iterate_by: cursor`, `next_url`, `link_header`) with loop detection, cursor-aware resume and `detect` suggestions for common next-link fields.
 
 ### Changed
+- Archives now hold an `exchange_N.json` record beside each page by default; set `storage.capture.metadata: false` to write pages only.
 - Retry HTTP 429 and 504, along with 500, 502 and 503, when no retry status list is configured.
 - Default `settings.checkpoint_interval_pages` to 1, so an interrupted backup resumes after its last saved page. Set 0 to keep only lifecycle checkpoints.
 

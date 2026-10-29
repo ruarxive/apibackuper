@@ -245,6 +245,24 @@
         "split_files": {
           "type": "boolean",
           "description": "Split files when size limit reached"
+        },
+        "capture": {
+          "type": "object",
+          "description": "Provenance captured beside every saved page",
+          "properties": {
+            "metadata": {
+              "type": "boolean",
+              "description": "Store exchange_N.json with request, status, headers and fetch time",
+              "default": true
+            },
+            "raw_body": {
+              "type": "string",
+              "enum": ["auto", "always", "never"],
+              "description": "Store the original body as raw_N.<ext>: auto for non-JSON responses",
+              "default": "auto"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

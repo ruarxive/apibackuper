@@ -21,7 +21,7 @@ publishes. The base pages use the archive root; each update uses `runs/<id>/`.
 
 | Member | Content |
 |--------|---------|
-| `manifest-sha256.txt` | `<sha256>  <member>` per page, sorted by member name (the BagIt manifest form) |
+| `manifest-sha256.txt` | `<sha256>  <member>` per page and captured `exchange_N`/`raw_N` member, sorted by member name (the BagIt manifest form) |
 | `run.json` | apibackuper version, run ID, mode, start and end time (UTC), page and record counts, the API total when known, and `config_sha256` |
 
 `config_sha256` hashes the resolved configuration with credential values
