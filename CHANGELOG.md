@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-29
+
+Upgrading from 2.x: read the [3.0 migration notes](README.md#upgrading-to-30).
+
 ### Added
 - Reproducible localhost API quick start with five known records; CI executes the documented CLI/Python snippets and verifies archive/export contents.
 - Guides for HTTP request JSON files, pagination/completeness boundaries, export filter grammar, Python integration and storage access; expanded configuration, hook and OAuth2 contracts.
@@ -339,7 +343,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Fixed** for any bug fixes
 - **Security** for vulnerability fixes
 
-[Unreleased]: https://github.com/ruarxive/apibackuper/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/ruarxive/apibackuper/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/ruarxive/apibackuper/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/ruarxive/apibackuper/compare/3ba501f5e7400866aea858986ce3adcc6064a539...v2.0.0
 [1.0.15]: https://github.com/datacoon/apibackuper/compare/v1.0.14...3ba501f5e7400866aea858986ce3adcc6064a539
 [1.0.14]: https://github.com/datacoon/apibackuper/compare/v1.0.13...v1.0.14
