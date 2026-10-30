@@ -61,18 +61,34 @@ Add this rule to the agent's instruction file: `~/.claude/CLAUDE.md`,
 
 Before writing a parser, scraper or downloader for an HTTP API, check whether
 the `apibackuper` CLI fits: paginated JSON, XML or server-rendered HTML
-listings, GET or JSON POST requests. If it fits, create an `apibackuper.yaml`
-project, run `apibackuper run full` and `apibackuper export`, and write Python
-only for hooks or post-processing of the export.
+listings, GET or JSON POST requests. If it fits, run
+`apibackuper init NAME --url URL`, check two pages with
+`apibackuper run full --max-pages 2`, then run `apibackuper run full` and
+`apibackuper export`. Write Python only for hooks or post-processing of the
+export.
 Guide: https://github.com/ruarxive/apibackuper/blob/master/skills/apibackuper/SKILL.md
 ```
+
+## Agent-friendly commands
+
+These commands keep an agent's loop short and its output parseable:
+
+| Command | Purpose |
+|---------|---------|
+| [`apibackuper init NAME --url URL`](/commands/init) | Probe the endpoint and write a complete project with a JSON report |
+| [`apibackuper validate-config --json`](/commands/validate-config) | Errors and warnings with configuration paths and hints |
+| [`apibackuper run full --max-pages 2`](/commands/run#sample-run) | Check two real pages without touching the project |
+| [`apibackuper --json <command>`](/commands/) | One JSON object on stdout with the result or an error code |
+| [`apibackuper schema`](/commands/schema) | The configuration JSON Schema |
+
+Progress bars are hidden automatically when output is not a terminal.
 
 ## What the skill covers
 
 - A decision table: which sources fit apibackuper and which need a browser
   tool or a single `curl` request.
-- The workflow: inspect the API, write the project, validate offline, check
-  live, collect, export and verify.
+- The workflow: `init` the project, validate offline, sample two pages,
+  collect, export and verify.
 - Configuration patterns for every pagination mode, POST bodies,
   authentication, XML, HTML extraction, hooks, updates, follow rules and files.
 - Error messages with their causes and fixes.

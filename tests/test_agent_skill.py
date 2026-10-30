@@ -63,7 +63,12 @@ def test_skill_cites_only_existing_commands_and_options(path):
     for line in cited_commands(text):
         args = shlex.split(line)[1:]
         assert args, f"{path.name}: bare command {line!r}"
-        command = None if args[0].startswith("-") else args.pop(0)
+        while args and args[0].startswith("-"):
+            name = args.pop(0)
+            assert name in options[None], f"{path.name}: unknown global option {name} in {line!r}"
+        if not args or args[0].startswith("<"):
+            continue
+        command = args.pop(0)
         assert command in options, f"{path.name}: unknown command in {line!r}"
         for arg in args:
             if arg.startswith("-"):

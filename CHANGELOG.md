@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Agent Skill `skills/apibackuper` (workflow, configuration patterns, troubleshooting) so coding agents configure apibackuper instead of writing custom API scrapers; the repository is a Claude Code plugin marketplace (`/plugin marketplace add ruarxive/apibackuper`), and the AI coding agents guide lists skill locations for Codex, Cursor and Kimi Code plus an `AGENTS.md` rule.
 - Tests that keep the skill in sync with the CLI: cited commands and options must exist, YAML examples must validate, plugin manifests must match the package version.
 - `evals/` prompts that measure whether agents choose apibackuper, with and without the skill.
+- `apibackuper init PATH --url URL` creates a complete project from one endpoint: it probes the records path, count field and pagination parameters, moves GET query parameters into `params.json`, writes `--header`, `--body` and `--auth bearer|apikey|basic` settings (secrets as `${VAR}` placeholders), and prints a JSON report with the detected settings, record fields, a sample record, warnings and next steps.
+- `apibackuper run full --max-pages N` sample run: fetches at most N pages into a temporary archive and prints page and record counts, fields and the first records, leaving the project's archive, state and checkpoint unchanged.
+- Global `--json` option: every command writes one JSON object to stdout (`ok`, `command`, `result`, or `error` with `code`, `type`, `message`, `hints` and `exit_code`) and everything else to stderr; global `--no-progress`.
+- `apibackuper schema` prints the configuration JSON Schema; `validate-config --json` reports each error and warning with its configuration path and a hint.
+- `detect` probes the page, offset and page-size parameters with a few extra requests, suggests `page_size_limit`, lists record fields and a sample record, and removes detected pagination parameters from a `--url` query string.
+- `validate-config` warns when the selected `iterate_by` mode has no pagination parameter, because such a run saves only the first page; `run --dry-run` plans list configuration warnings.
+
+### Changed
+- Progress bars are drawn only when stderr is a terminal.
+- `estimate` returns its figures to Python callers.
+- Commands on a directory without a configuration now fail with "Configuration file not found" instead of a generic invalid-configuration error.
 
 ### Fixed
 - Documentation no longer describes cursor, next-URL and `Link` header pagination as unsupported.

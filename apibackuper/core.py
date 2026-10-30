@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf8 -*-
 """Core CLI module for apibackuper"""
+import contextlib
 import functools
 import json
 import logging
 import os
-import re
 import sys
 import tempfile
 import warnings
@@ -14,9 +14,12 @@ from urllib.parse import urlparse
 
 import typer
 import urllib3
+from typer.core import TyperGroup
 
 from .cmds.fetch import CURSOR_MODES
 from .cmds.project import LOG_HANDLER_MARK, ProjectBuilder, apply_detected_options
+from .cmds.utils import remove_query_keys, set_progress
+from .cmds.utils import slugify_name as _slugify_project_name
 
 try:
     import yaml
@@ -87,15 +90,6 @@ def enable_verbose() -> None:
     root_logger.setLevel(logging.DEBUG)
 
 
-# Create main Typer app
-app = typer.Typer()
-
-
-def _slugify_project_name(value: str) -> str:
-    cleaned = re.sub(r"[^a-zA-Z0-9_-]+", "-", value).strip("-")
-    return cleaned or "apibackuper-project"
-
-
 def _build_detect_config(url: str) -> Dict[str, Any]:
     parsed = urlparse(url)
     name_seed = parsed.netloc or parsed.path.strip("/").split("/")[0] or "apibackuper-project"
@@ -110,7 +104,143 @@ def _build_detect_config(url: str) -> Dict[str, Any]:
 
 
 def _apply_detect_suggestions(config_data: Dict[str, Any], suggestions: Dict[str, Any]) -> None:
+    """Apply suggestions to a config generated from a URL, including the probed page size."""
+    if suggestions.get("page_size_limit"):
+        config_data["params"].pop("page_size_limit", None)
     apply_detected_options(config_data, suggestions)
+    config_data["params"].setdefault("page_size_limit", 100)
+    # Pagination values are added on each page; drop stale ones from the URL.
+    names = [
+        suggestions[name]
+        for name in ("page_number_param", "count_skip_param", "page_size_param")
+        if suggestions.get(name)
+    ]
+    config_data["project"]["url"] = remove_query_keys(config_data["project"]["url"], names)
+
+
+# Global ``--json`` mode: human output goes to stderr and exactly one JSON
+# object with the result or the error goes to the original stdout.
+_JSON: Dict[str, Any] = {"enabled": False, "stdout": None, "emitted": False}
+
+
+def _json_mode() -> bool:
+    return bool(_JSON["enabled"])
+
+
+def _emit_json(payload: Dict[str, Any]) -> None:
+    """Write the single JSON object of a ``--json`` invocation."""
+    stream = _JSON["stdout"] or sys.stdout
+    stream.write(json.dumps(payload, indent=2, ensure_ascii=False, default=str) + "\n")
+    stream.flush()
+    _JSON["emitted"] = True
+
+
+def _error_code(exc: BaseException) -> str:
+    """Return a stable machine-readable code for a command failure."""
+    from .cmds.config_loader import UnresolvedEnvVarError
+
+    message = str(exc)
+    if isinstance(exc, UnresolvedEnvVarError):
+        return "unset_env_var"
+    if isinstance(exc, KeyboardInterrupt):
+        return "cancelled"
+    if isinstance(exc, FileExistsError):
+        return "already_exists"
+    if isinstance(exc, FileNotFoundError):
+        return "config_not_found" if "onfiguration file" in message else "not_found"
+    if isinstance(exc, PermissionError):
+        return "permission_denied"
+    if "Invalid project configuration" in message:
+        return "invalid_config"
+    if "ignore the pagination parameter" in message:
+        return "pagination_ignored"
+    if "Backup is incomplete" in message:
+        return "backup_incomplete"
+    if isinstance(exc, ValueError):
+        return "invalid_value"
+    if isinstance(exc, OSError):
+        return "io_error"
+    return "operation_failed"
+
+
+def _hints(error_msg: str) -> List[str]:
+    """Return the suggestion lines of a human error message."""
+    _, _, suggestions = error_msg.partition("Suggestions:")
+    return [line.strip()[2:] for line in suggestions.splitlines() if line.strip().startswith("- ")]
+
+
+def _fail(error_msg: str, exc: BaseException, exit_code: int = 1) -> None:
+    """Report a failed command as text, or as JSON in ``--json`` mode, and exit."""
+    if _json_mode():
+        _emit_json(
+            {
+                "ok": False,
+                "error": {
+                    "code": _error_code(exc),
+                    "type": type(exc).__name__,
+                    "message": str(exc),
+                    "hints": _hints(error_msg),
+                },
+                "exit_code": exit_code,
+            }
+        )
+    else:
+        print(f"Error: {error_msg}")
+    sys.exit(exit_code)
+
+
+class _CliGroup(TyperGroup):
+    """Command group whose ``--json`` option yields exactly one JSON object on stdout."""
+
+    def invoke(self, ctx: Any) -> Any:
+        if not ctx.params.get("json_output"):
+            return super().invoke(ctx)
+        _JSON.update(enabled=True, stdout=sys.stdout, emitted=False)
+
+        def finish(payload: Dict[str, Any]) -> None:
+            if not _JSON["emitted"]:
+                _emit_json(dict(payload, command=ctx.invoked_subcommand))
+
+        try:
+            with contextlib.redirect_stdout(sys.stderr):
+                result = super().invoke(ctx)
+            finish({"ok": True, "result": result})
+            return result
+        except SystemExit as exc:
+            code = exc.code if isinstance(exc.code, int) else int(exc.code is not None)
+            finish({"ok": code == 0, "exit_code": code})
+            raise
+        except typer.Exit as exc:
+            finish({"ok": exc.exit_code == 0, "exit_code": exc.exit_code})
+            raise
+        except Exception as exc:
+            # Click usage errors (bundled with Typer or not) carry these attributes.
+            if hasattr(exc, "format_message") and hasattr(exc, "exit_code"):
+                error = {"code": "usage_error", "message": exc.format_message()}
+                finish({"ok": False, "error": error, "exit_code": exc.exit_code})
+            else:
+                error = {"code": _error_code(exc), "type": type(exc).__name__, "message": str(exc)}
+                finish({"ok": False, "error": error, "exit_code": 1})
+            raise
+        finally:
+            _JSON.update(enabled=False, stdout=None)
+
+
+# Create main Typer app
+app = typer.Typer(cls=_CliGroup)
+
+
+@app.callback()
+def main(
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Write one JSON object with the result or error to stdout; other output goes to stderr.",
+    ),
+    no_progress: bool = typer.Option(False, "--no-progress", help="Do not draw progress bars."),
+) -> None:
+    """Archive paginated APIs into local storage and export their records."""
+    set_progress(not (no_progress or json_output))
 
 
 def _handle_cli_errors(func):
@@ -134,8 +264,7 @@ def _handle_cli_errors(func):
                 f"    - Use --projectpath to specify the correct project location"
             )
             logging.error("File not found: %s", e)
-            print(f"Error: {error_msg}")
-            sys.exit(1)
+            _fail(error_msg, e)
         except PermissionError as e:
             error_msg = (
                 f"Permission denied\n"
@@ -146,8 +275,7 @@ def _handle_cli_errors(func):
                 f"    - Try running with appropriate permissions"
             )
             logging.error("Permission denied: %s", e)
-            print(f"Error: {error_msg}")
-            sys.exit(1)
+            _fail(error_msg, e)
         except (ValueError, RuntimeError, IOError) as e:
             error_msg = (
                 f"Operation failed\n"
@@ -160,8 +288,7 @@ def _handle_cli_errors(func):
                 f"    - Check network connectivity if making API requests"
             )
             logging.error("Error: %s", e)
-            print(f"Error: {error_msg}")
-            sys.exit(1)
+            _fail(error_msg, e)
         except KeyError as e:
             # UnresolvedEnvVarError is a KeyError subclass — give it a
             # dedicated, user-actionable message ("you forgot to export X")
@@ -169,8 +296,8 @@ def _handle_cli_errors(func):
             from .cmds.config_loader import UnresolvedEnvVarError
 
             if isinstance(e, UnresolvedEnvVarError):
-                print(
-                    f"Error: configuration references unset environment variable\n"
+                error_msg = (
+                    f"configuration references unset environment variable\n"
                     f"  Variable: {e.name}\n"
                     f"  Source: {e.source or '<unknown>'}\n"
                     f"  Suggestions:\n"
@@ -178,7 +305,7 @@ def _handle_cli_errors(func):
                     f"    - Or set it in your shell profile / .env file\n"
                     rf"    - Or use ${{{e.name}:-default}} to provide an inline default"
                 )
-                sys.exit(2)
+                _fail(error_msg, e, exit_code=2)
             raise
 
     return wrapper
@@ -189,8 +316,8 @@ def _emit_dry_run_plan(
     *,
     command: str,
     extra: Optional[Dict[str, Any]] = None,
-) -> None:
-    """Print a JSON dry-run plan and exit. Shared by ``--profile`` /
+) -> Dict[str, Any]:
+    """Print a JSON dry-run plan and return it. Shared by ``--profile`` /
     ``--dry-run`` on the run / update / follow commands.
 
     The helper is kwargs-only and side-effectful (prints + exits).
@@ -209,9 +336,12 @@ def _emit_dry_run_plan(
     """
     from .cmds.profile import compute_profile_estimate
 
-    validation = acmd.validate_config()
-    if isinstance(validation, tuple) and not validation[0]:
-        raise ValueError("Invalid project configuration; run validate-config for details")
+    report = acmd.validation_report()
+    warnings_found: List[str] = []
+    if isinstance(report, dict):
+        if not report["valid"]:
+            raise ValueError("Invalid project configuration; run validate-config for details")
+        warnings_found = [issue["message"] for issue in report["warnings"]]
 
     plan: Dict[str, Any] = {
         "command": command,
@@ -239,6 +369,7 @@ def _emit_dry_run_plan(
         },
         "config_format": acmd.config_format,
         "config_filename": os.path.basename(acmd.config_filename),
+        "warnings": warnings_found,
     }
     if getattr(acmd, "iterate_by", None) in CURSOR_MODES:
         plan["iteration"].update(
@@ -258,7 +389,9 @@ def _emit_dry_run_plan(
         default_delay=getattr(acmd, "default_delay", None),
         state=state_payload,
     )
-    print(json.dumps(plan, indent=2, default=str))
+    if not _json_mode():
+        print(json.dumps(plan, indent=2, default=str))
+    return plan
 
 
 def _print_project_info_text(report: Dict[str, Any]) -> None:
@@ -610,6 +743,7 @@ def create(
         else:
             print(f"Project '{name}' created successfully.")
             print("Edit the config file to configure API settings.")
+        return {"project_path": os.path.abspath(name)}
 
     except KeyboardInterrupt:
         print("\nOperation cancelled by user")
@@ -624,8 +758,7 @@ def create(
             f"    - Choose a different location for the project"
         )
         logging.error("Permission denied creating project '%s': %s", name, e)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
+        _fail(error_msg, e)
     except OSError as e:
         error_msg = (
             f"Failed to create project '{name}'\n"
@@ -637,8 +770,7 @@ def create(
             f"    - Check filesystem permissions"
         )
         logging.error("OS error creating project '%s': %s", name, e)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
+        _fail(error_msg, e)
     except (ValueError, RuntimeError) as e:
         error_msg = (
             f"Failed to create project '{name}'\n"
@@ -650,8 +782,7 @@ def create(
             f"    - Verify you have necessary permissions"
         )
         logging.error("Error creating project '%s': %s", name, e, exc_info=verbose)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
+        _fail(error_msg, e)
 
 
 @app.command()
@@ -673,6 +804,15 @@ def run(
         "--dry-run",
         help="Alias for --profile. Exits without making any HTTP requests.",
     ),
+    max_pages: Optional[int] = typer.Option(
+        None,
+        "--max-pages",
+        min=1,
+        help=(
+            "Sample run: fetch at most this many pages into a temporary archive, print "
+            "the first records and leave the project's archive and state unchanged."
+        ),
+    ),
 ):
     """Executes project, collects data from API.
 
@@ -684,20 +824,27 @@ def run(
     acmd = ProjectBuilder(projectpath)
     if verbose:
         enable_verbose()
-    if acmd.config_format == "ini":
+    if acmd.config is not None and acmd.config_format == "ini":
         print("Warning: INI configuration is deprecated; use YAML instead.")
     # ``--dry-run`` is an alias for ``--profile`` — the implementation
     # is identical (no HTTP requests + print the plan).
     if dry_run and not profile:
         profile = True
     if profile:
-        _emit_dry_run_plan(
+        return _emit_dry_run_plan(
             acmd,
             command="run",
             extra={"resume": resume, "mode": mode},
         )
-        return
+    if max_pages is not None:
+        if mode != "full" or resume:
+            raise ValueError("--max-pages works only with 'run full' without --resume")
+        sample = acmd.sample(max_pages)
+        if not _json_mode():
+            print(json.dumps(sample, indent=2, ensure_ascii=False, default=str))
+        return sample
     acmd.run(mode, resume=resume)
+    return {"mode": mode, "state": acmd._load_state()}
 
 
 @app.command()
@@ -718,16 +865,16 @@ def update(
     acmd = ProjectBuilder(projectpath)
     if verbose:
         enable_verbose()
-    if acmd.config_format == "ini":
+    if acmd.config is not None and acmd.config_format == "ini":
         print("Warning: INI configuration is deprecated; use YAML instead.")
     if dry_run:
-        _emit_dry_run_plan(
+        return _emit_dry_run_plan(
             acmd,
             command="update",
             extra={"resume": resume},
         )
-        return
     acmd.update(resume=resume)
+    return {"state": acmd._load_state()}
 
 
 @app.command()
@@ -767,13 +914,16 @@ def detect(
                 with open(target_path, "w", encoding="utf8") as fobj:
                     yaml.safe_dump(config_data, fobj, sort_keys=False, allow_unicode=True)
                 typer.echo(f"Config written to {target_path}")
-            else:
+            elif not _json_mode():
                 typer.echo(yaml.safe_dump(config_data, sort_keys=False, allow_unicode=True))
+            return {"config": config_data, "suggestions": suggestions}
         else:
             acmd = ProjectBuilder(projectpath)
             if verbose:
                 enable_verbose()
             suggestions = acmd.detect(write_config=write_config)
+            if _json_mode():
+                return suggestions
             if suggestions:
                 typer.echo(json.dumps(suggestions, indent=2, sort_keys=True))
             else:
@@ -791,8 +941,7 @@ def detect(
             f"    - Verify configuration and network connectivity"
         )
         logging.error("Error detecting configuration: %s", e, exc_info=verbose)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
+        _fail(error_msg, e)
 
 
 @app.command()
@@ -803,7 +952,7 @@ def estimate(
 ):
     """Estimate data size, records number and execution time"""
     acmd = ProjectBuilder(projectpath)
-    acmd.estimate(mode)
+    return acmd.estimate(mode)
 
 
 @app.command()
@@ -859,6 +1008,7 @@ def export(
 
         fields_list = [f.strip() for f in fields.split(",")] if fields else None
         acmd.export(format, filename, fields=fields_list, where=where)
+        return {"output": os.path.abspath(filename), "format": format}
     except KeyboardInterrupt:
         print("\nOperation cancelled by user")
         sys.exit(1)
@@ -872,8 +1022,7 @@ def export(
             f"    - Use --projectpath to specify the correct project location"
         )
         logging.error("File not found: %s", e)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
+        _fail(error_msg, e)
     except PermissionError as e:
         error_msg = (
             f"Permission denied writing to file\n"
@@ -884,8 +1033,7 @@ def export(
             f"    - Choose a different output location"
         )
         logging.error("Permission denied: %s", e)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
+        _fail(error_msg, e)
     except ValueError as e:
         error_msg = (
             f"Invalid value or format\n"
@@ -896,8 +1044,7 @@ def export(
             f"    - For parquet format, ensure pandas and pyarrow are installed"
         )
         logging.error("Invalid value: %s", e)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
+        _fail(error_msg, e)
     except (RuntimeError, IOError) as e:
         error_msg = (
             f"Failed to export data\n"
@@ -910,8 +1057,7 @@ def export(
             f"    - Check if you have sufficient disk space"
         )
         logging.error("Error exporting data: %s", e, exc_info=verbose)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
+        _fail(error_msg, e)
 
 
 @app.command()
@@ -927,6 +1073,8 @@ def info(
             print("No project information available")
             return
 
+        if _json_mode():
+            return report
         if as_json:
             typer.echo(json.dumps(report, indent=2, sort_keys=True))
         else:
@@ -944,8 +1092,7 @@ def info(
             f"    - Use --projectpath to specify the correct project location"
         )
         logging.error("File not found: %s", e)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
+        _fail(error_msg, e)
     except (ValueError, RuntimeError, IOError) as e:
         error_msg = (
             f"Failed to get project information\n"
@@ -957,8 +1104,7 @@ def info(
             f"    - Check if project directory is accessible"
         )
         logging.error("Error getting project info: %s", e, exc_info=True)
-        print(f"Error: {error_msg}")
-        sys.exit(1)
+        _fail(error_msg, e)
 
 
 @app.command()
@@ -975,7 +1121,7 @@ def follow(
     """Follow already extracted data to collect details. Use one of modes: full or continue"""
     acmd = ProjectBuilder(projectpath)
     if dry_run:
-        _emit_dry_run_plan(
+        return _emit_dry_run_plan(
             acmd,
             command="follow",
             extra={
@@ -984,7 +1130,6 @@ def follow(
                 "follow_mode_arg": mode,
             },
         )
-        return
     acmd.follow(mode)
 
 
@@ -1010,7 +1155,9 @@ def verify(
     """Check archive members against their fixity manifests"""
     acmd = ProjectBuilder(projectpath)
     report = acmd.verify(strict=strict)
-    if as_json:
+    if _json_mode():
+        _emit_json({"ok": report["ok"], "command": "verify", "result": report})
+    elif as_json:
         typer.echo(json.dumps(report, indent=2, ensure_ascii=False))
     else:
         for entry in report["generations"]:
@@ -1039,6 +1186,11 @@ def validate_config(
         "--strict",
         help="Treat warnings as errors (exit 1 if any warnings, not just errors).",
     ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Print errors and warnings as JSON, each with its configuration path and hint.",
+    ),
 ):
     """Validate project configuration against the JSON schema and project-specific rules.
 
@@ -1048,6 +1200,14 @@ def validate_config(
         2 - configuration could not be loaded (missing config file)
     """
     acmd = ProjectBuilder(projectpath)
+    if as_json or _json_mode():
+        report = acmd.validation_report(verbose=verbose)
+        failed = not report["valid"] or bool(strict and report["warnings"])
+        if _json_mode():
+            _emit_json({"ok": not failed, "command": "validate-config", "result": report})
+        else:
+            typer.echo(json.dumps(report, indent=2, ensure_ascii=False))
+        sys.exit(1 if failed else 0)
     result, error_count, warning_count = acmd.validate_config(verbose=verbose)
     if error_count > 0:
         print("Configuration validation failed")
@@ -1060,6 +1220,86 @@ def validate_config(
         sys.exit(0)
     print("Configuration has warnings (use --strict to fail)")
     sys.exit(0)
+
+
+@app.command()
+@_handle_cli_errors
+def init(
+    path: str = typer.Argument(..., help="Project directory to create"),
+    url: str = typer.Option(..., "--url", "-u", help="List or search endpoint of the API"),
+    method: str = typer.Option("GET", "--method", "-m", help="HTTP method: GET or POST"),
+    header: Optional[List[str]] = typer.Option(
+        None, "--header", "-H", help="Request header as 'Name: value'; repeatable"
+    ),
+    body: Optional[str] = typer.Option(
+        None, "--body", help="JSON object sent as the POST body (saved to params.json)"
+    ),
+    auth: Optional[str] = typer.Option(
+        None, "--auth", help="Authentication: bearer, apikey or basic"
+    ),
+    auth_env: Optional[str] = typer.Option(
+        None,
+        "--auth-env",
+        help="Environment variable with the secret (default API_TOKEN, API_KEY or API_PASSWORD)",
+    ),
+    api_key_header: Optional[str] = typer.Option(
+        None, "--api-key-header", help="Header carrying the API key (default X-API-Key)"
+    ),
+    username: Optional[str] = typer.Option(None, "--username", help="User name for --auth basic"),
+    data_key: Optional[str] = typer.Option(
+        None, "--data-key", help="Path to the record list, if detection picks the wrong one"
+    ),
+    probe: bool = typer.Option(
+        True, "--probe/--no-probe", help="Send requests to detect records and pagination"
+    ),
+    force: bool = typer.Option(False, "--force", help="Replace an existing configuration"),
+):
+    """Create a project from an endpoint: probe it and write apibackuper.yaml.
+
+    Prints a JSON report with the detected settings, record fields, a sample
+    record, warnings and the next commands to run. Secrets are written as
+    ${VAR} placeholders.
+    """
+    from .cmds.initialize import init_project, parse_headers
+
+    payload = None
+    if body:
+        try:
+            payload = json.loads(body)
+        except ValueError as exc:
+            raise ValueError(f"--body is not valid JSON: {exc}") from None
+        if not isinstance(payload, dict):
+            raise ValueError("--body must be a JSON object")
+    report = init_project(
+        path,
+        url,
+        method=method,
+        headers=parse_headers(header),
+        body=payload,
+        auth=auth,
+        auth_env=auth_env,
+        api_key_header=api_key_header,
+        username=username,
+        data_key=data_key,
+        probe=probe,
+        force=force,
+    )
+    if not _json_mode():
+        typer.echo(json.dumps(report, indent=2, ensure_ascii=False, default=str))
+    return report
+
+
+@app.command()
+def schema():
+    """Print the configuration JSON Schema used by validate-config."""
+    from .cmds.config_loader import load_schema
+
+    document = load_schema()
+    if document is None:
+        raise RuntimeError("The bundled configuration schema is missing")
+    if not _json_mode():
+        typer.echo(json.dumps(document, indent=2, ensure_ascii=False))
+    return document
 
 
 def cli() -> None:

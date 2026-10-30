@@ -124,6 +124,7 @@ For other agents, and for an `AGENTS.md` rule without skill support, see the
 ## Commands
 
 ```bash
+apibackuper init <dir> --url URL [--method POST --body JSON] [-H "Name: value"] [--auth bearer]
 apibackuper create <name>
 apibackuper detect [--url URL] [--write-config]
 apibackuper estimate full
@@ -135,8 +136,15 @@ apibackuper getfiles
 apibackuper export output.jsonl
 apibackuper info [--json]
 apibackuper verify [--strict] [--json]
-apibackuper validate-config
+apibackuper validate-config [--strict] [--json]
+apibackuper schema
+apibackuper --json <command>
 ```
+
+`init` probes an endpoint and writes a complete project; `run full --max-pages 2`
+checks two real pages in a temporary archive without touching the project.
+`--json` before any command prints one JSON object with the result or an error
+code; progress bars are hidden when output is not a terminal.
 
 `run full --dry-run` (alias `--profile`), `update --dry-run`, and
 `follow full --dry-run` print a JSON plan without making HTTP requests.

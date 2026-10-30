@@ -47,6 +47,7 @@ const sidebars = {
       label: 'CLI Reference',
       items: [
         'commands/index',
+        'commands/init',
         'commands/create',
         'commands/detect',
         'commands/estimate',
@@ -58,6 +59,7 @@ const sidebars = {
         'commands/info',
         'commands/verify',
         'commands/validate-config',
+        'commands/schema',
       ],
     },
     {

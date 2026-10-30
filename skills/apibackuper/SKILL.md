@@ -36,63 +36,77 @@ Parquet and WARC export.
 
 ## Workflow
 
-1. **Inspect the API by hand.** Request page 1 and page 2 with `curl`. Note
-   the path to the record list, the total count field, the pagination
-   parameter names, and the real page size (APIs often cap `limit`).
-2. **Create the project.** For a public GET endpoint, generate a starting point:
+Put `--json` before any command to get exactly one JSON object on stdout
+(`{"ok": true, "result": ...}` or `{"ok": false, "error": {"code", "message",
+"hints"}}`); other output goes to stderr and progress bars are off.
+
+1. **Create the project from the endpoint.**
 
    ```bash
-   mkdir myproject && cd myproject
-   apibackuper detect --url "https://api.example.com/items" --write-config
+   apibackuper --json init myproject --url "https://api.example.com/items"
    ```
 
-   `detect` fills `data_key` and the count field but writes **no pagination
-   parameter names** and a default `page_size_limit: 100`. Always add
-   `iterate_by`, the parameter names and the real page size yourself. Without
-   them the run saves only the first page.
+   `init` sends one request plus a few probes (`page=2`, `per_page=100`, ...)
+   and writes a complete `apibackuper.yaml`. Its report lists the detected
+   settings, the record `fields`, a `sample_record`, `warnings` and
+   `next_steps`. Options: `--method POST --body '{"q": "*"}'`,
+   `-H "Accept: application/json"` (repeatable), `--auth bearer|apikey|basic`
+   with `--auth-env VAR` (secrets stay `${VAR}` placeholders; export the
+   variable first so the endpoint can be probed), `--data-key` to override the
+   records path. Query parameters in the URL move into `params.json`.
 
-   Otherwise write `apibackuper.yaml` yourself from the minimal example below or
-   from [references/config-patterns.md](references/config-patterns.md). Do not
-   rely on `apibackuper create`: it writes a legacy INI file and ignores its
-   `--url`, `--datakey` and `--pagekey` options.
-3. **Validate offline.**
+   Read the `warnings`. If pagination was not detected, open the API docs or
+   request page 2 with `curl`, then set the names by hand from
+   [references/config-patterns.md](references/config-patterns.md). Do not use
+   `apibackuper create`: it writes a legacy INI file and ignores its `--url`
+   and `--datakey` options.
+2. **Validate offline.**
 
    ```bash
-   apibackuper validate-config --strict
-   apibackuper run full --dry-run
+   cd myproject
+   apibackuper validate-config --strict --json
    ```
 
-   `--dry-run` prints a JSON plan and makes no HTTP requests.
-4. **Check against the live API.** `apibackuper estimate full` makes one live
-   request and reports the total, requests and expected size (it needs
-   `data.total_number_key`). There is no partial sample run yet; a full run
-   stops early with a clear error when pagination is wrong.
-5. **Collect.**
+   Each error and warning has a `path`, `message` and `hint`. A warning about a
+   missing pagination parameter means a run would save only the first page.
+   `apibackuper schema` prints every allowed field.
+3. **Check two pages of real data.**
 
    ```bash
-   apibackuper run full
+   apibackuper --json run full --max-pages 2
+   ```
+
+   This sample run uses a temporary archive and leaves the project untouched.
+   Check `records`, `total_reported`, `more_pages`, `fields` and `preview`.
+   It fails with error code `pagination_ignored` when page 2 repeats page 1 and
+   with `backup_incomplete` when the API caps the page size below
+   `page_size_limit`. Fix the YAML and repeat until it passes.
+4. **Collect.**
+
+   ```bash
+   apibackuper --json run full
    ```
 
    A nonzero exit means the backup is incomplete and the previous archive is
    kept. Fix the cause, then continue with `apibackuper run full --resume`.
-   Exit status 0 with `Warning: collected N of M records reported by the API`
-   is also a failure for your task: pagination is not configured.
-6. **Export and check.**
+5. **Export and check.**
 
    ```bash
    apibackuper export items.jsonl
-   apibackuper info --json
-   apibackuper verify --json
+   apibackuper --json info
+   apibackuper --json verify
    ```
 
-   Compare `statistics.storage.total_records` from `info --json` with the API
+   Compare `result.statistics.storage.total_records` from `info` with the API
    total. Use `--fields id,title` and `--where "id >= 3"` on `export` to select
    data, and `.jsonl.gz`, `.jsonl.zst` or `.parquet` file names for other formats.
-7. **Hand over.** Give the user the project directory, the commands to rerun
+6. **Hand over.** Give the user the project directory, the commands to rerun
    (`apibackuper update` for new or changed records, see the patterns file), and
    the export path.
 
 Run commands inside the project directory, or pass `-p PATH` to each command.
+`apibackuper detect --url URL` prints the same detection as YAML without
+creating a directory.
 
 ## Minimal project
 
@@ -151,12 +165,13 @@ Errors and fixes: [references/troubleshooting.md](references/troubleshooting.md)
 ## Pitfalls
 
 - `params.page_size_limit` must equal the number of records the API really
-  returns on a full page. A larger value makes the run fail with "returned N
-  records ... before page M".
+  returns on a full page. `init` and `detect` probe it; when you set it by
+  hand, a larger value makes the run fail with "returned N records ... before
+  page M".
 - The `params` section holds parameter **names**; values go into `params.json`.
 - `total_number_key` is a record count; `pages_number_key` is a page count.
 - Unknown keys in a section fail validation. Check field names with
-  `apibackuper validate-config --strict` rather than guessing.
+  `apibackuper schema` rather than guessing.
 - Export output directories must exist and lie outside the storage directory.
 - Export keeps history: after several `update` runs a record can appear more
   than once. Deduplicate downstream by `item_key` if the user needs a snapshot.

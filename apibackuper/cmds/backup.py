@@ -30,7 +30,7 @@ from .fixity import (
     write_generation_record,
 )
 from .runner import PageOutcome, fetch_all_pages, parse_total_pages
-from .utils import flat_param_value, redact_text
+from .utils import flat_param_value, progress_disable, redact_text
 
 
 def _decode(project, content, process):
@@ -171,7 +171,11 @@ def _finish_publication(project, session, checkpoint):
 
 
 def run_backup(project, mode, resume=False):
-    """Run a durable backup, raising on every incomplete outcome."""
+    """Run a durable backup, raising on every incomplete outcome.
+
+    Returns the run summary with the API's reported ``total`` and, for a
+    sample run (``project.sample_max_pages``), whether ``more_pages`` remain.
+    """
     if project.config is None:
         project._raise_config_not_found()
     if mode == "incremental":
@@ -374,7 +378,21 @@ def run_backup(project, mode, resume=False):
         num_pages = max(1, num_pages)
         last_expected = project.start_page + num_pages - 1
         pages = range(first_page, last_expected + 1) if bounded else itertools.count(first_page)
-        bar = tqdm(total=len(pages) if bounded else None, desc="Downloading pages", unit="page")
+        # A sample run stops after this many pages; the expected end stays
+        # the API's, so a short page before it still fails the run.
+        limit = getattr(project, "sample_max_pages", None)
+        if limit:
+            pages = (
+                range(first_page, min(last_expected, first_page + limit - 1) + 1)
+                if bounded
+                else itertools.islice(pages, limit)
+            )
+        bar = tqdm(
+            total=len(pages) if bounded else None,
+            desc="Downloading pages",
+            unit="page",
+            disable=progress_disable(),
+        )
 
         # Cursor modes: the next position comes from the stored page's response.
         # Capture: the exchange record is built from that response as well.
@@ -526,7 +544,7 @@ def run_backup(project, mode, resume=False):
                 f"backup; if its count is not exact, remove the count key from the data section."
             )
         summary, digests = _summary(project, session, baseline)
-        if total is not None and summary["records_processed"] < total:
+        if total is not None and summary["records_processed"] < total and not limit:
             print(
                 f"Warning: collected {summary['records_processed']} of {total} records "
                 "reported by the API"
@@ -551,7 +569,8 @@ def run_backup(project, mode, resume=False):
         )
         project._save_checkpoint(publication, strict=True)
         _finish_publication(project, session, publication)
-        project._run_hook("after_run", dict(mode=mode, **summary, errors={}))
+        if not limit:
+            project._run_hook("after_run", dict(mode=mode, **summary, errors={}))
         print("Run summary:")
         print(f"  Pages processed: {summary['pages_processed']}")
         print(f"  Total records: {summary['records_processed']}")
@@ -561,6 +580,13 @@ def run_backup(project, mode, resume=False):
         if counts:
             listed = ", ".join(f"{action}={count}" for action, count in sorted(counts.items()))
             print(f"  Response rules applied: {listed}")
+        more_pages = bool(limit) and (
+            last_expected > first_page + limit - 1
+            if bounded
+            else summary["pages_processed"] >= limit
+            and (not cursor_mode or current["cursor"] is not None)
+        )
+        return dict(summary, total=total, more_pages=more_pages)
     finally:
         if bar is not None:
             bar.close()

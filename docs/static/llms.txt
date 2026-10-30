@@ -29,6 +29,7 @@ apibackuper commands grouped the same way as the documentation sidebar.
 ## Commands
 
 - [Command index](https://ruarxive.org/apibackuper/commands/)
+- [init](https://ruarxive.org/apibackuper/commands/init)
 - [create](https://ruarxive.org/apibackuper/commands/create)
 - [detect](https://ruarxive.org/apibackuper/commands/detect)
 - [estimate](https://ruarxive.org/apibackuper/commands/estimate)
@@ -39,6 +40,7 @@ apibackuper commands grouped the same way as the documentation sidebar.
 - [export](https://ruarxive.org/apibackuper/commands/export)
 - [info](https://ruarxive.org/apibackuper/commands/info)
 - [validate-config](https://ruarxive.org/apibackuper/commands/validate-config)
+- [schema](https://ruarxive.org/apibackuper/commands/schema)
 
 ## Configuration
 
