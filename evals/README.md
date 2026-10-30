@@ -57,25 +57,29 @@ client in written code, and hand over rerun commands.
 
 ## Results
 
-### 2026-10-30 — Claude Code 2.1.314, default model, 1 run per arm, $3.41
+### 2026-10-30, run 2 — end to end ($3.59)
 
-`apibackuper` was not reachable inside the sandbox in this run (installed under
-`~/.local/bin`), so no agent could execute it. The run still measures whether
-the skill changes the agent's choice of tool.
+Claude Code 2.1.314, default model, 1 run per arm, `apibackuper` from this
+branch installed in `/opt/homebrew/bin` so the sandboxed agent can run it.
 
-| Case | With skill | Without | Δ | With skill, the agent… |
-|------|-----------:|--------:|--:|------------------------|
-| `rickandmorty-page` | 0.00 | 0.00 | 0 | planned apibackuper, fell back to a stdlib script |
-| `pokeapi-next-url` | 0.00 | 0.00 | 0 | planned apibackuper, fell back to a stdlib script |
-| `github-link-header` | 0.00 | 0.00 | 0 | planned apibackuper, fell back to a stdlib script |
-| `bluesky-cursor` | 0.00 | 0.00 | 0 | planned apibackuper, fell back to a stdlib script |
-| `etrust-post-ru` | 0.75 | 0.00 | +0.75 | wrote an apibackuper project (API unreachable) |
-| `github-auth-ru` | 0.83 | 0.17 | +0.67 | wrote an apibackuper project with `${GITHUB_TOKEN}` |
-| `single-request-negative` | 1.00 | 1.00 | 0 | answered with one request |
-| `websocket-negative` | 1.00 | 1.00 | 0 | used a WebSocket client |
+| Case | With skill | Without | Δ | Notes |
+|------|-----------:|--------:|--:|-------|
+| `rickandmorty-page` | 1.00 | 0.00 | +1.00 | |
+| `bluesky-cursor` | 1.00 | 0.00 | +1.00 | |
+| `github-link-header` | 0.75 | 0.00 | +0.75 | Collected all 98 repos; judge wanted rerun commands, not a wrapper script (criterion since relaxed) |
+| `pokeapi-next-url` | 0.75 | 0.00 | +0.75 | Agent added a follow rule for 1,351 detail pages and hit the 900 s timeout |
+| `etrust-post-ru` | 0.75 | 0.00 | +0.75 | Valid project; API unreachable from outside Russia; a debugging `urllib.request` call tripped `no-http-loop` |
+| `github-auth-ru` | 0.83 | 1.00 | −0.17 | With the skill the agent did not run without a token; the baseline found the installed `apibackuper` on `PATH` |
+| `single-request-negative` | 1.00 | 1.00 | 0 | |
+| `websocket-negative` | 1.00 | 1.00 | 0 | |
 
-- With the skill, all 6 positive runs chose apibackuper; without it, none
-  mentioned it. Neither negative case misused it.
-- When the tool could not be run, 4 of 6 agents completed the task with their
-  own script. The scores above therefore understate the skill's effect;
-  rerun with `apibackuper` reachable in the sandbox for an end-to-end result.
+- Mean over positive cases: 0.85 with the skill, 0.17 without.
+- `apibackuper` ran in 5 of 6 positive cases with the skill and in 1 of 6
+  without; the skill loaded in all 6. Neither negative case misused it.
+- Without the skill, agents wrote their own scraper in 5 of 6 cases.
+
+### 2026-10-30, run 1 — tool choice only ($3.41)
+
+`apibackuper` was installed under `~/.local/bin`, which the sandbox cannot read.
+With the skill all 6 positive runs chose apibackuper (2 wrote a project, 4 fell
+back to a script after failing to run it); without it none mentioned it.
