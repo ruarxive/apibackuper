@@ -149,3 +149,6 @@ apibackuper_state.json
 apibackuper_checkpoint.json
 *.sqlite
 *.parquet
+
+# Agent evaluation results
+evals/results/

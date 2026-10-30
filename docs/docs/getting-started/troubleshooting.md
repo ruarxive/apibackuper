@@ -149,8 +149,9 @@ Inspect a successful response and two successive requests:
 `total_number_key` means records and `pages_number_key` means pages. Setting
 one to the other can produce an incorrect boundary. A page shorter than
 `page_size_limit` ends collection, so a requested size of 100 with an actual
-cap of 50 can stop early. Skip mode computes offsets; native zero-based pages,
-cursors and next-link traversal are not automatically supported.
+cap of 50 can stop early. Skip mode computes offsets; native zero-based pages
+are not supported. Cursors and next links need `iterate_by: cursor`, `next_url`
+or `link_header`.
 
 `detect` can suggest selected keys but cannot prove the contract. See
 [pagination](/configuration/pagination) and

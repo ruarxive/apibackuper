@@ -201,7 +201,7 @@ paginate each detail endpoint. See [paginated follow rules](/configuration/follo
 | Collection stops after the first 50 records | Server page-size cap differs from `page_size_limit` |
 | Unexpected page count | Record total confused with page total, or metadata path does not exist |
 | Repeated/missing IDs | Unstable sorting, changing source, or inclusive range bounds |
-| Cursor/next-link API cannot be expressed | Cursor tokens and next-link traversal are not implemented |
+| Cursor or next-link run stops after one page | Wrong `data.next_cursor_key` / `data.next_url_key` path, or `cursor_param` missing |
 
 `detect` can suggest field names, but verify request values and stopping behavior
 with a sample collection. Read [backup completeness](/getting-started/data-integrity)

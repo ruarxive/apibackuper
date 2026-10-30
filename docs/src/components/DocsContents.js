@@ -17,6 +17,7 @@ const sections = [
       {label: 'Troubleshooting', to: '/getting-started/troubleshooting'},
       {label: 'Best practices', to: '/getting-started/best-practices'},
       {label: 'Backup completeness', to: '/getting-started/data-integrity'},
+      {label: 'AI coding agents', to: '/getting-started/ai-agents'},
     ],
   },
   {

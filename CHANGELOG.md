@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Agent Skill `skills/apibackuper` (workflow, configuration patterns, troubleshooting) so coding agents configure apibackuper instead of writing custom API scrapers; the repository is a Claude Code plugin marketplace (`/plugin marketplace add ruarxive/apibackuper`), and the AI coding agents guide lists skill locations for Codex, Cursor and Kimi Code plus an `AGENTS.md` rule.
+- Tests that keep the skill in sync with the CLI: cited commands and options must exist, YAML examples must validate, plugin manifests must match the package version.
+- `evals/` prompts that measure whether agents choose apibackuper, with and without the skill.
+
+### Fixed
+- Documentation no longer describes cursor, next-URL and `Link` header pagination as unsupported.
+
 ## [3.0.0] - 2026-10-29
 
 Upgrading from 2.x: read the [3.0 migration notes](README.md#upgrading-to-30).

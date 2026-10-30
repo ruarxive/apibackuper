@@ -11,6 +11,13 @@ apibackuper commands grouped the same way as the documentation sidebar.
 - [Troubleshooting](https://ruarxive.org/apibackuper/getting-started/troubleshooting)
 - [Best practices](https://ruarxive.org/apibackuper/getting-started/best-practices)
 - [Backup completeness](https://ruarxive.org/apibackuper/getting-started/data-integrity)
+- [AI coding agents](https://ruarxive.org/apibackuper/getting-started/ai-agents)
+
+## Agent skill
+
+- [SKILL.md: when and how to use apibackuper instead of a custom scraper](https://raw.githubusercontent.com/ruarxive/apibackuper/master/skills/apibackuper/SKILL.md)
+- [Configuration patterns](https://raw.githubusercontent.com/ruarxive/apibackuper/master/skills/apibackuper/references/config-patterns.md)
+- [Troubleshooting](https://raw.githubusercontent.com/ruarxive/apibackuper/master/skills/apibackuper/references/troubleshooting.md)
 
 ## Backup workflows
 

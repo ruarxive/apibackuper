@@ -27,6 +27,7 @@ const sidebars = {
         'getting-started/troubleshooting',
         'getting-started/best-practices',
         'getting-started/data-integrity',
+        'getting-started/ai-agents',
       ],
     },
     {

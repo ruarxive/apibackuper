@@ -18,7 +18,7 @@ with five known records.
 | Question | Supported starting point | When to investigate further |
 |----------|--------------------------|-----------------------------|
 | How are requests made? | HTTP GET or read/query POST with JSON body | Another protocol, streaming, or write operations requiring transactions |
-| How does pagination work? | Positive page numbers, numeric offsets, or numeric from/to ranges | Cursor tokens, next-link traversal, native zero-based page numbers |
+| How does pagination work? | Positive page numbers, numeric offsets, numeric from/to ranges, cursor tokens, next-page URLs or `Link` headers | Native zero-based page numbers, date-window iteration |
 | What is returned? | JSON records, or XML parsed into a dictionary | HTML needs trusted extraction code; arbitrary binary responses are not record pages |
 | How is access supplied? | Basic, Bearer, header API key, or compatible OAuth refresh | Browser login, interactive challenges, or another token-management contract |
 | Can the source stay stable? | Fixed snapshot/version or stable ordering with reconciliation | Inserts/deletes continuously shift offset/page positions |

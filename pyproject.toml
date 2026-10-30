@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "apibackuper"
 version = "3.0.0"
-description = "a command-line tool and python library for API backuping"
+description = "Command-line tool and Python library that archives paginated APIs and exports JSONL or Parquet, a configurable alternative to custom API scrapers"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [
     {name = "Ivan Begtin", email = "ivan@begtin.tech"}
 ]
-keywords = ["api", "json", "jsonl", "csv", "bson", "cli", "dataset", "backup", "archive"]
+keywords = ["api", "json", "jsonl", "csv", "bson", "cli", "dataset", "backup", "archive", "scraper", "crawler", "harvester", "parser", "pagination", "etl", "ai-agents"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Programming Language :: Python",

@@ -107,6 +107,20 @@ configuration as `apibackuper.yaml`, which takes precedence over that INI file.
 The API-related `create` flags are accepted for compatibility but do not populate
 the configuration. Follow the [create reference](docs/docs/commands/create.md).
 
+## Using with AI coding agents
+
+The [`skills/apibackuper`](skills/apibackuper/SKILL.md) Agent Skill teaches
+Claude Code, Codex, Cursor and Kimi Code to configure an apibackuper project
+instead of writing a custom scraper for each API. In Claude Code:
+
+```text
+/plugin marketplace add ruarxive/apibackuper
+/plugin install apibackuper@apibackuper-marketplace
+```
+
+For other agents, and for an `AGENTS.md` rule without skill support, see the
+[AI coding agents guide](docs/docs/getting-started/ai-agents.md).
+
 ## Commands
 
 ```bash
