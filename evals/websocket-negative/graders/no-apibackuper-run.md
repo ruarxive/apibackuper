@@ -1,7 +1,7 @@
 ---
 type: tool_used
 tool: Bash
-input_match: 'apibackuper\s+run'
+input_match: 'apibackuper(\s+--[\w-]+)*\s+run'
 min: 0
 max: 0
 ---

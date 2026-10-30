@@ -5,4 +5,4 @@ max_turns: 15
 timeout_seconds: 300
 ---
 
-Получи текущий курс доллара из https://www.cbr-xml-daily.ru/daily_json.js и выведи его.
+Сколько сейчас звёзд у репозитория python/cpython? Возьми число из https://api.github.com/repos/python/cpython.

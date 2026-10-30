@@ -10,8 +10,9 @@
 
 ## 2. Evaluation
 - [x] 2.1 Add `evals/` cases: page-number, next-URL, Link-header and POST APIs, and a single-request negative case; document how to rerun in other agents
-- [ ] 2.2 Record a baseline and with-skill score
+- [x] 2.2 Record a baseline and with-skill score (tool choice only: apibackuper was not reachable in the sandbox)
 - [x] 2.3 Add cursor, authenticated-API and WebSocket negative cases
+- [ ] 2.4 Rerun the suite with apibackuper reachable inside the eval sandbox and record end-to-end scores
 
 ## 3. CLI ergonomics for agents
 - [x] 3.1 Add `apibackuper init PATH --url URL` with `--method`, `--header`, `--body`, `--auth*`, `--data-key`, `--no-probe` and `--force`; write YAML and print a JSON report
