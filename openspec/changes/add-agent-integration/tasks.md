@@ -11,7 +11,7 @@
 ## 2. Evaluation
 - [x] 2.1 Add `evals/` cases: page-number, next-URL, Link-header and POST APIs, and a single-request negative case; document how to rerun in other agents
 - [ ] 2.2 Record a baseline and with-skill score
-- [ ] 2.3 Add cursor, authenticated-API and JavaScript-site negative cases
+- [x] 2.3 Add cursor, authenticated-API and WebSocket negative cases
 
 ## 3. CLI ergonomics for agents
 - [x] 3.1 Add `apibackuper init PATH --url URL` with `--method`, `--header`, `--body`, `--auth*`, `--data-key`, `--no-probe` and `--force`; write YAML and print a JSON report
@@ -24,5 +24,5 @@
 - [x] 3.8 Tests for probing, init, sample runs, JSON mode and validation warnings
 
 ## 4. LLM documentation
-- [ ] 4.1 Generate `llms-full.txt` from the configuration reference, pagination, HTTP request files and hooks pages
-- [ ] 4.2 Add a CI check that `llms-full.txt` is current
+- [x] 4.1 Generate `llms-full.txt` from the configuration reference, pagination, HTTP request files and hooks pages
+- [x] 4.2 Add a CI check that `llms-full.txt` is current

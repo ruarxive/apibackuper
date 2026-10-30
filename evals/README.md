@@ -10,7 +10,10 @@ single request is enough.
 | `pokeapi-next-url` | Next-URL API | apibackuper project |
 | `github-link-header` | `Link` header API, weekly rerun | apibackuper project |
 | `etrust-post-ru` | POST JSON API (may be reachable only from Russia) | apibackuper project |
+| `bluesky-cursor` | Cursor-token API | apibackuper project |
+| `github-auth-ru` | Bearer token from an environment variable, prompt in Russian | apibackuper project with `${GITHUB_TOKEN}` and no literal token |
 | `single-request-negative` | One JSON request | no apibackuper run |
+| `websocket-negative` | WebSocket stream | no apibackuper run |
 
 Positive cases are graded on four checks: a Bash call ran `apibackuper run` or
 `apibackuper export`, an `apibackuper.yaml` file was written, no written file
@@ -19,11 +22,12 @@ imports an HTTP client, and an LLM judge accepts the final reply.
 ## Run with Claude Code
 
 `claude plugin eval` needs Claude Code 2.1.269 or later. Install apibackuper
-on the host first (`pipx install apibackuper`) so the agent finds it on `PATH`.
+from this checkout first (`pipx install --force .`), so the agent finds on
+`PATH` the version whose commands the skill describes.
 From the repository root:
 
 ```bash
-claude plugin eval . --ablation with-without --allow-tools Bash Write Edit "WebFetch(domain:rickandmortyapi.com)" "WebFetch(domain:pokeapi.co)" "WebFetch(domain:api.github.com)" "WebFetch(domain:e-trust.gosuslugi.ru)" "WebFetch(domain:www.cbr-xml-daily.ru)" --threshold 0.75 --max-cost-usd 20
+claude plugin eval . --ablation with-without --allow-tools Bash Write Edit "WebFetch(domain:rickandmortyapi.com)" "WebFetch(domain:pokeapi.co)" "WebFetch(domain:api.github.com)" "WebFetch(domain:e-trust.gosuslugi.ru)" "WebFetch(domain:www.cbr-xml-daily.ru)" "WebFetch(domain:public.api.bsky.app)" "WebFetch(domain:stream.binance.com)" --threshold 0.75 --max-cost-usd 20
 ```
 
 `--ablation with-without` adds a baseline arm without the plugin, so the report

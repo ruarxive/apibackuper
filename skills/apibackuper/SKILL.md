@@ -31,7 +31,9 @@ post-processing step over the exported JSONL.
 | Form-encoded POST bodies | No: POST bodies are JSON only |
 
 Install if `apibackuper --help` fails: `pipx install apibackuper` or
-`pip install apibackuper` (Python 3.10+). Add `apibackuper[recommended]` for
+`pip install apibackuper` (Python 3.10+). If `apibackuper init --help` fails,
+the installed version predates this workflow: `pipx upgrade apibackuper` or
+`pip install --upgrade apibackuper`. Add `apibackuper[recommended]` for
 Parquet and WARC export.
 
 ## Workflow

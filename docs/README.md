@@ -105,6 +105,9 @@ When adding or updating documentation:
 4. Update the root `README.md` and `CHANGELOG.md` when user-facing behavior changes;
    keep unreleased work under `Unreleased` without changing release metadata.
 5. Validate examples from the repository root with `python -m scripts.validate_examples`.
+   If you edited a page listed in `scripts/build_llms_full.py`, regenerate
+   `static/llms-full.txt` with `python -m scripts.build_llms_full`;
+   `tests/test_llms_full.py` fails while it is stale.
 6. Run `python -m pytest --no-cov tests/test_docs_examples.py` from the repository
    root. It executes the marked Quick Start, completeness, GET/POST use-case,
    export and Python API snippets against a local server, checks the resulting

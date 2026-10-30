@@ -154,6 +154,7 @@ NEXT_CURSOR_KEYS = (
     ("cursor.next", "cursor"),
     ("response_metadata.next_cursor", "cursor"),
     ("meta.next_cursor", "cursor"),
+    ("cursor", "cursor"),
     ("next_page_token", "page_token"),
     ("nextPageToken", "pageToken"),
 )
@@ -1450,7 +1451,9 @@ class ProjectBuilder:
                 return {"iterate_by": "next_url", "next_url_key": key}
         for path, param in NEXT_CURSOR_KEYS:
             key = splitter.join(path.split("."))
-            if get_dict_value(data, key, splitter=splitter) not in (None, ""):
+            # Only a scalar token counts; ``cursor`` may also name a wrapper object.
+            value = get_dict_value(data, key, splitter=splitter)
+            if isinstance(value, (str, int)) and not isinstance(value, bool) and value != "":
                 return {"iterate_by": "cursor", "next_cursor_key": key, "cursor_param": param}
         return {}
 

@@ -13,6 +13,10 @@ apibackuper commands grouped the same way as the documentation sidebar.
 - [Backup completeness](https://ruarxive.org/apibackuper/getting-started/data-integrity)
 - [AI coding agents](https://ruarxive.org/apibackuper/getting-started/ai-agents)
 
+## Full text
+
+- [llms-full.txt: commands, configuration reference and troubleshooting in one file](https://ruarxive.org/apibackuper/llms-full.txt)
+
 ## Agent skill
 
 - [SKILL.md: when and how to use apibackuper instead of a custom scraper](https://raw.githubusercontent.com/ruarxive/apibackuper/master/skills/apibackuper/SKILL.md)

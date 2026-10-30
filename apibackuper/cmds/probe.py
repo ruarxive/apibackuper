@@ -8,14 +8,29 @@ OFFSET_PARAMS = ("offset", "skip", "start", "from")
 SIZE_PARAMS = ("per_page", "limit", "page_size", "pageSize", "size", "perPage", "count", "rows")
 # Page size requested to find out whether the API caps it.
 LARGE_PAGE = 100
+# Fields that identify a record, so that changing counters or timestamps in a
+# live feed do not make the same page look like another one.
+ID_KEYS = ("id", "uuid", "uri", "url", "key", "slug", "code", "name")
 
 # ``fetch(extra)`` repeats the first request with ``extra`` parameters added
 # and returns the records it got, or ``None`` when the request failed.
 Fetch = Callable[[Dict[str, Any]], Optional[List[Any]]]
 
 
+def _identity(record: Any) -> str:
+    """Return an ID field of the record or of a nested object, else the whole record."""
+    if isinstance(record, dict):
+        scopes = [record] + [value for value in record.values() if isinstance(value, dict)]
+        for scope in scopes:
+            for key in ID_KEYS:
+                value = scope.get(key)
+                if isinstance(value, (str, int)) and not isinstance(value, bool):
+                    return f"{key}={value}"
+    return json.dumps(record, sort_keys=True, ensure_ascii=False, default=str)
+
+
 def _fingerprint(records: Any) -> str:
-    return json.dumps(records, sort_keys=True, ensure_ascii=False, default=str)
+    return json.dumps([_identity(record) for record in records or []])
 
 
 def _ordered(candidates: Sequence[str], preferred: Iterable[str]) -> List[str]:
@@ -44,8 +59,9 @@ def probe_pagination(
 
     A page parameter is accepted when page 2 returns other records than the
     first request and page 1 returns the same ones; an offset parameter when
-    an offset equal to the first page's size returns other records. A size
-    parameter is accepted when the API returns exactly the requested number.
+    an offset equal to the first page's size returns other records and offset
+    0 the same ones. Records are compared by their ID fields. A size parameter
+    is accepted when the API returns exactly the requested number.
     """
     preferred = list(preferred)
     result: Dict[str, Any] = {"warnings": []}
@@ -74,9 +90,10 @@ def probe_pagination(
         for name in _ordered(OFFSET_PARAMS, preferred):
             second = fetch({name: size})
             if second and _fingerprint(second) != original:
-                result.update(iterate_by="skip", count_skip_param=name)
-                position = {name: 0}
-                break
+                if _fingerprint(fetch({name: 0})) == original:
+                    result.update(iterate_by="skip", count_skip_param=name)
+                    position = {name: 0}
+                    break
     if not position:
         result["page_size_limit"] = size
         result["warnings"].append(

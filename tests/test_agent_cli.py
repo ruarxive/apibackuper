@@ -73,6 +73,32 @@ def test_probe_without_working_parameter_warns():
     assert "iterate_by" not in failing
 
 
+def test_probe_ignores_changing_counters_of_the_same_records():
+    calls = {"count": 0}
+
+    def live_feed(extra):
+        # Ignores every parameter; like counts change on each request.
+        calls["count"] += 1
+        return [{"post": {"uri": f"at://{n}", "likes": calls["count"]}} for n in range(2)]
+
+    result = probe_pagination(live_feed, live_feed({}), total=7)
+    assert "iterate_by" not in result
+    assert "set params.page_number_param" in result["warnings"][0]
+
+
+def test_detect_suggests_a_top_level_cursor(tmp_path):
+    write_config(tmp_path, "https://api.example.com/items")
+    builder = ProjectBuilder(str(tmp_path))
+    try:
+        suggestions = builder._detect_suggestions({"feed": [{"id": 1}], "cursor": "abc"})
+        wrapper = builder._detect_suggestions({"feed": [{"id": 1}], "cursor": {"next": None}})
+    finally:
+        builder.http.close()
+    assert suggestions["iterate_by"] == "cursor"
+    assert (suggestions["next_cursor_key"], suggestions["cursor_param"]) == ("cursor", "cursor")
+    assert "iterate_by" not in wrapper
+
+
 def test_probe_skips_single_page_datasets():
     fetch = fake_api()
     result = probe_pagination(fetch, RECORDS[:2], total=2)

@@ -15,7 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `apibackuper run full --max-pages N` sample run: fetches at most N pages into a temporary archive and prints page and record counts, fields and the first records, leaving the project's archive, state and checkpoint unchanged.
 - Global `--json` option: every command writes one JSON object to stdout (`ok`, `command`, `result`, or `error` with `code`, `type`, `message`, `hints` and `exit_code`) and everything else to stderr; global `--no-progress`.
 - `apibackuper schema` prints the configuration JSON Schema; `validate-config --json` reports each error and warning with its configuration path and a hint.
-- `detect` probes the page, offset and page-size parameters with a few extra requests, suggests `page_size_limit`, lists record fields and a sample record, and removes detected pagination parameters from a `--url` query string.
+- `detect` probes the page, offset and page-size parameters with a few extra requests (comparing records by ID fields, so live counters do not fake a new page), suggests `page_size_limit`, lists record fields and a sample record, and removes detected pagination parameters from a `--url` query string.
+- `docs/static/llms-full.txt`: commands, configuration reference and troubleshooting as one Markdown file for LLMs, built by `python -m scripts.build_llms_full`; a test fails when it is stale.
+- `detect` suggests `iterate_by: cursor` for a top-level `cursor` token, as in AT Protocol (Bluesky) APIs.
 - `validate-config` warns when the selected `iterate_by` mode has no pagination parameter, because such a run saves only the first page; `run --dry-run` plans list configuration warnings.
 
 ### Changed

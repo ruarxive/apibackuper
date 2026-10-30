@@ -25,7 +25,10 @@ Unless the project already sets the parameter for its pagination mode, detect
 also probes the endpoint with a few extra requests and suggests
 `page_number_param` or `count_skip_param`, `page_size_param` and
 `page_size_limit`. A parameter is accepted only when page 2 (or the next
-offset) returns other records and the requested size is honoured. The output
+offset) returns other records, page 1 (or offset 0) returns the same ones, and
+the requested size is honoured. Records are compared by ID fields such as `id`,
+`uri` or `url`, so live counters that change between requests do not make the
+same page look new. A top-level `cursor` token selects `iterate_by: cursor`. The output
 also lists `fields`, a `sample_record` and `warnings`. With `--url`, detected
 pagination parameters are removed from the URL's query string.
 
