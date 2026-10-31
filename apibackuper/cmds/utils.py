@@ -33,6 +33,19 @@ _SENSITIVE_KEY_NAMES = frozenset(
 
 _REDACTED = "***REDACTED***"
 
+# ``None`` lets tqdm draw progress bars only on a terminal; ``True`` hides them.
+_PROGRESS: Dict[str, Optional[bool]] = {"disable": None}
+
+
+def set_progress(enabled: bool) -> None:
+    """Allow progress bars on terminals (``True``) or hide them everywhere."""
+    _PROGRESS["disable"] = None if enabled else True
+
+
+def progress_disable(hidden: bool = False) -> Optional[bool]:
+    """Return tqdm's ``disable`` value: bars only on terminals, unless hidden."""
+    return True if hidden or _PROGRESS["disable"] else None
+
 
 def _is_sensitive_key(key: Any) -> bool:
     """True when ``key`` looks like it carries credentials."""
@@ -123,6 +136,22 @@ def append_query(url: str, params: Any) -> str:
     pairs = parse_qsl(parsed.query, keep_blank_values=True)
     pairs.extend(parse_qsl(extra, keep_blank_values=True))
     return urlunsplit(parsed._replace(query=urlencode(pairs, doseq=True)))
+
+
+def slugify_name(value: str) -> str:
+    """Turn ``value`` into a project name of letters, digits, ``-`` and ``_``."""
+    cleaned = re.sub(r"[^a-zA-Z0-9_-]+", "-", value).strip("-")
+    return cleaned or "apibackuper-project"
+
+
+def remove_query_keys(url: str, keys: Any) -> str:
+    """Return ``url`` without the named query parameters; unchanged if none is present."""
+    parts = urlsplit(url)
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    kept = [(key, value) for key, value in query if key not in keys]
+    if len(kept) == len(query):
+        return url
+    return urlunsplit(parts._replace(query=urlencode(kept)))
 
 
 def flat_param_value(value: Any) -> str:

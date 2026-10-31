@@ -12,6 +12,7 @@ apibackuper run full -p budgettofk
 apibackuper run full --resume
 apibackuper run continue
 apibackuper run full --dry-run
+apibackuper run full --max-pages 2
 ```
 
 **Arguments:**
@@ -22,7 +23,8 @@ apibackuper run full --dry-run
 **Key options:**
 
 - `--resume` — resume the selected mode using its existing pages and checkpoint
-- `--dry-run` / `--profile` — print a JSON plan and local estimate without HTTP requests
+- `--dry-run` / `--profile` — print a JSON plan, local estimate and configuration warnings without HTTP requests
+- `--max-pages N` — [sample run](#sample-run) of at most N pages
 - `--projectpath` / `-p`
 - `--verbose` / `-v`
 
@@ -36,6 +38,29 @@ already complete.
 
 The dry-run estimate uses saved state and configured limits. For an estimate
 based on a live sample response, use [`estimate`](/commands/estimate).
+
+## Sample run
+
+`run full --max-pages N` fetches at most N pages with the project's
+configuration into a temporary archive, prints a JSON summary and deletes the
+archive. The project's storage, state and checkpoint stay unchanged, and the
+`after_run` hook does not run.
+
+```json
+{
+  "pages": 2,
+  "records": 4,
+  "total_reported": 5,
+  "more_pages": true,
+  "fields": ["id", "title", "updated_at"],
+  "preview": [{"id": 1, "title": "Item 1", "updated_at": "2026-01-01"}],
+  "warnings": []
+}
+```
+
+The same checks as a full run apply, so two pages are enough to catch an API
+that ignores the pagination parameter or caps the page size below
+`page_size_limit`. `--max-pages` works only with `run full` without `--resume`.
 
 ## Full backups and failures
 

@@ -57,6 +57,7 @@ def main():
             root / ".github/workflows/README.md",
             *root.joinpath("docs/docs").rglob("*.md"),
             *root.joinpath("examples").rglob("*.md"),
+            *root.joinpath("skills").rglob("*.md"),
         }
     )
     blocks = 0

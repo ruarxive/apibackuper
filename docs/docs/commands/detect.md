@@ -17,8 +17,27 @@ apibackuper detect --url https://api.example.com/v1/items --write-config
 ```
 
 `--write-config` writes suggestions into `apibackuper.yaml`. It will not
-overwrite an existing file when used with `--url`.
+overwrite an existing file when used with `--url`, and it never replaces an
+option the project already sets.
 
-Typical suggestions include `data_key`, `total_number_key`, and `iterate_by`.
+Typical suggestions include `data_key`, `total_number_key`, `pages_number_key`
+and `iterate_by`. Detect looks for common names at the top of the response and
+one object deeper, so it finds paths such as `info.count`, `response.docs` or
+`hits.total.value`. A count equal to the number of records on the first page is
+dropped when a second page exists, because it counts the page, not the
+collection.
+Unless the project already sets the parameter for its pagination mode, detect
+also probes the endpoint with a few extra requests and suggests
+`page_number_param` or `count_skip_param`, `page_size_param` and
+`page_size_limit`. A parameter is accepted only when page 2 (or the next
+offset) returns other records, page 1 (or offset 0) returns the same ones, and
+the requested size is honoured. Records are compared by ID fields such as `id`,
+`uri` or `url`, so live counters that change between requests do not make the
+same page look new. A top-level `cursor` token selects `iterate_by: cursor`. The output
+also lists `fields`, a `sample_record` and `warnings`. With `--url`, detected
+pagination parameters are removed from the URL's query string.
+
+To create a project directory with request files and authentication in one
+step, use [`init`](/commands/init).
 
 Example: `examples/features/detect/`.

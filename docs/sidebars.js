@@ -27,6 +27,7 @@ const sidebars = {
         'getting-started/troubleshooting',
         'getting-started/best-practices',
         'getting-started/data-integrity',
+        'getting-started/ai-agents',
       ],
     },
     {
@@ -46,6 +47,7 @@ const sidebars = {
       label: 'CLI Reference',
       items: [
         'commands/index',
+        'commands/init',
         'commands/create',
         'commands/detect',
         'commands/estimate',
@@ -57,6 +59,7 @@ const sidebars = {
         'commands/info',
         'commands/verify',
         'commands/validate-config',
+        'commands/schema',
       ],
     },
     {

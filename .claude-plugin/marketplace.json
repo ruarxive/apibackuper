@@ -1,0 +1,15 @@
+{
+  "name": "apibackuper-marketplace",
+  "description": "Claude Code plugin for the apibackuper API archiving CLI",
+  "owner": {
+    "name": "Ivan Begtin"
+  },
+  "plugins": [
+    {
+      "name": "apibackuper",
+      "source": "./",
+      "description": "Skill that teaches coding agents to collect paginated API data with the apibackuper CLI instead of writing custom scrapers",
+      "version": "3.1.0"
+    }
+  ]
+}

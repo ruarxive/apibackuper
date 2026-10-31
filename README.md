@@ -2,10 +2,11 @@
 
 > A command-line tool to archive and backup REST APIs
 
-**Version:** 3.0.0
+**Version:** 3.1.0
 
-This README describes version 3.0.0. See the
-[changelog](CHANGELOG.md#300---2026-10-29) for release details and the
+This README describes version 3.1.0. See the
+[changelog](CHANGELOG.md#310---2026-10-31) for release details, the
+[3.1 upgrade notes](#upgrading-to-31) before upgrading from 3.0, and the
 [3.0 migration notes](#upgrading-to-30) before upgrading from 2.x.
 
 **apibackuper** downloads paginated REST APIs into local storage and exports
@@ -28,6 +29,11 @@ repeatable, long-running backups rather than one-off HTTP requests.
   rules for error bodies, concurrency, and SSL controls
 - Follow-up requests for related objects and streamed downloads of associated files
 - Optional Python hooks for custom pipeline steps
+- Built for AI coding agents: `init` probes an endpoint and writes a complete
+  project, `run full --max-pages N` checks real pages without touching the
+  archive, `--json` gives one machine-readable result per command, and a
+  bundled [Agent Skill](skills/apibackuper/SKILL.md) tells agents to configure
+  apibackuper instead of writing a scraper
 
 ## Documentation
 
@@ -107,9 +113,24 @@ configuration as `apibackuper.yaml`, which takes precedence over that INI file.
 The API-related `create` flags are accepted for compatibility but do not populate
 the configuration. Follow the [create reference](docs/docs/commands/create.md).
 
+## Using with AI coding agents
+
+The [`skills/apibackuper`](skills/apibackuper/SKILL.md) Agent Skill teaches
+Claude Code, Codex, Cursor and Kimi Code to configure an apibackuper project
+instead of writing a custom scraper for each API. In Claude Code:
+
+```text
+/plugin marketplace add ruarxive/apibackuper
+/plugin install apibackuper@apibackuper-marketplace
+```
+
+For other agents, and for an `AGENTS.md` rule without skill support, see the
+[AI coding agents guide](docs/docs/getting-started/ai-agents.md).
+
 ## Commands
 
 ```bash
+apibackuper init <dir> --url URL [--method POST --body JSON] [-H "Name: value"] [--auth bearer]
 apibackuper create <name>
 apibackuper detect [--url URL] [--write-config]
 apibackuper estimate full
@@ -121,8 +142,15 @@ apibackuper getfiles
 apibackuper export output.jsonl
 apibackuper info [--json]
 apibackuper verify [--strict] [--json]
-apibackuper validate-config
+apibackuper validate-config [--strict] [--json]
+apibackuper schema
+apibackuper --json <command>
 ```
+
+`init` probes an endpoint and writes a complete project; `run full --max-pages 2`
+checks two real pages in a temporary archive without touching the project.
+`--json` before any command prints one JSON object with the result or an error
+code; progress bars are hidden when output is not a terminal.
 
 `run full --dry-run` (alias `--profile`), `update --dry-run`, and
 `follow full --dry-run` print a JSON plan without making HTTP requests.
@@ -187,6 +215,34 @@ Before scheduling backups, read [backup completeness](docs/docs/getting-started/
 for source consistency, deletion handling, verification and rotation.
 
 ## Migration notes
+
+### Upgrading to 3.1
+
+Version 3.1 adds commands and options for agent workflows (`init`, `schema`,
+`run full --max-pages`, global `--json` and `--no-progress`). Archives and
+configurations from 3.0 work unchanged. Check these points in scripts and
+scheduled jobs:
+
+- **New validation warning.** `validate-config` warns when the `iterate_by`
+  mode has no pagination parameter (`params.page_number_param` for `page`,
+  `params.count_skip_param` for `skip`, `count_from_param`/`count_to_param` for
+  `range`), because such a run saves only the first page. With `--strict` the
+  warning fails the check. Set the parameter, or drop `--strict` for an
+  endpoint that really returns everything in one response. The old warning
+  "Neither data_key nor total_number_key specified" is gone.
+- **Missing configuration.** Commands run in a directory without a
+  configuration now fail with "Configuration file not found" instead of
+  "Invalid project configuration". The exit status is still 1.
+- **Progress bars.** They are drawn only when stderr is a terminal, so cron
+  and CI logs no longer contain them. `--no-progress` hides them everywhere.
+- **Dry-run plans** (`run`, `update`, `follow` with `--dry-run`) have a new
+  `warnings` list with the configuration warnings, instead of printing them
+  before the JSON.
+- **`detect` sends more requests.** Unless the project already sets its
+  pagination parameter, it probes page, offset and page-size parameters with a
+  few extra requests. In Python, `ProjectBuilder.detect(probe=False)` keeps the
+  single request; its result now also has `fields`, `sample_record`,
+  `records_on_first_page` and `warnings`.
 
 ### Upgrading to 3.0
 

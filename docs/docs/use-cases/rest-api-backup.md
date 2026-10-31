@@ -185,8 +185,9 @@ This sends offsets 0, 100, 200 and so on. Set the page size to the size the
 server actually returns: requesting 100 while the service caps responses at
 50 can trigger an early stop. Without a usable total, a short/empty page ends
 collection, subject to the fallback page boundary. Native zero-based page
-numbers, cursor tokens and next-link traversal require a different collection
-approach. See [pagination](/configuration/pagination).
+numbers require a different collection approach; cursor tokens and next-link
+traversal use `iterate_by: cursor`, `next_url` or `link_header`. See
+[pagination](/configuration/pagination).
 
 ## Recover and repeat
 

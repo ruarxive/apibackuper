@@ -240,3 +240,14 @@ class TestValidateConfigNegativeCases:
             _pytest.fail(
                 f"validate_config crashed on empty YAML: {type(e).__name__}: {e}"
             )
+
+
+def test_root_list_api_without_data_key_has_no_warnings(tmp_path):
+    """A bare list of records is a supported response shape (GitHub, for example)."""
+    _write_minimal_yaml(tmp_path, **{"project.iterate_by": "link_header"})
+    builder = ProjectBuilder(str(tmp_path))
+    try:
+        report = builder.validation_report()
+    finally:
+        builder.http.close()
+    assert report == {"valid": True, "errors": [], "warnings": []}

@@ -11,6 +11,17 @@ apibackuper commands grouped the same way as the documentation sidebar.
 - [Troubleshooting](https://ruarxive.org/apibackuper/getting-started/troubleshooting)
 - [Best practices](https://ruarxive.org/apibackuper/getting-started/best-practices)
 - [Backup completeness](https://ruarxive.org/apibackuper/getting-started/data-integrity)
+- [AI coding agents](https://ruarxive.org/apibackuper/getting-started/ai-agents)
+
+## Full text
+
+- [llms-full.txt: commands, configuration reference and troubleshooting in one file](https://ruarxive.org/apibackuper/llms-full.txt)
+
+## Agent skill
+
+- [SKILL.md: when and how to use apibackuper instead of a custom scraper](https://raw.githubusercontent.com/ruarxive/apibackuper/master/skills/apibackuper/SKILL.md)
+- [Configuration patterns](https://raw.githubusercontent.com/ruarxive/apibackuper/master/skills/apibackuper/references/config-patterns.md)
+- [Troubleshooting](https://raw.githubusercontent.com/ruarxive/apibackuper/master/skills/apibackuper/references/troubleshooting.md)
 
 ## Backup workflows
 
@@ -22,6 +33,7 @@ apibackuper commands grouped the same way as the documentation sidebar.
 ## Commands
 
 - [Command index](https://ruarxive.org/apibackuper/commands/)
+- [init](https://ruarxive.org/apibackuper/commands/init)
 - [create](https://ruarxive.org/apibackuper/commands/create)
 - [detect](https://ruarxive.org/apibackuper/commands/detect)
 - [estimate](https://ruarxive.org/apibackuper/commands/estimate)
@@ -32,6 +44,7 @@ apibackuper commands grouped the same way as the documentation sidebar.
 - [export](https://ruarxive.org/apibackuper/commands/export)
 - [info](https://ruarxive.org/apibackuper/commands/info)
 - [validate-config](https://ruarxive.org/apibackuper/commands/validate-config)
+- [schema](https://ruarxive.org/apibackuper/commands/schema)
 
 ## Configuration
 

@@ -48,14 +48,16 @@ in `finally`; run/export workflows manage their own storage handles.
 |--------|---------------------|
 | `ProjectBuilder.create(name)` | Static scaffold operation; writes minimal legacy INI |
 | `validate_config(verbose=False)` | `(valid, error_count, warning_count)`; can print diagnostics |
+| `validation_report(verbose=False)` | `{"valid", "errors", "warnings"}` with `path`, `message` and `hint` per issue; prints nothing |
 | `run(mode, resume=False)` | Full or continue/incremental backup; returns `None` |
+| `sample(max_pages)` | Collect at most `max_pages` pages into a temporary archive; returns counts, fields and a preview |
 | `update(resume=False)` | Retained update generation; returns `None` |
 | `follow(mode="full")` | Follow full/continue; returns `None` |
 | `getfiles()` | Download associated files from ZIP sources |
 | `export(format, filename, fields=None, where=None)` | Write an export; `fields` is a list, not a comma-separated string |
 | `info(stats=False)` | Dictionary report; `stats=True` includes storage statistics |
-| `detect(write_config=False)` | Dictionary of suggestions; contacts the API |
-| `estimate(mode)` | Print a live estimate; returns `None` |
+| `detect(write_config=False, probe=True)` | Dictionary of suggestions, record fields and a sample record; contacts the API, and probes pagination with extra requests unless `probe=False` |
+| `estimate(mode)` | Print a live estimate and return its figures as a dictionary |
 
 Use `run("full", resume=True)` or `update(resume=True)` to recover. The same
 [backup completeness](/getting-started/data-integrity) and history rules apply

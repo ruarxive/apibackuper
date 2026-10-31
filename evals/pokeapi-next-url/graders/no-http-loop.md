@@ -1,0 +1,6 @@
+---
+type: regex
+target: trace
+pattern: 'import requests|from requests|import httpx|from httpx|urllib\.request|import aiohttp'
+match: not_contains
+---

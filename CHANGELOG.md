@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-31
+
+Upgrading from 3.0: read the [3.1 upgrade notes](README.md#upgrading-to-31).
+
+### Added
+- Agent Skill `skills/apibackuper` (workflow, configuration patterns, troubleshooting) so coding agents configure apibackuper instead of writing custom API scrapers; the repository is a Claude Code plugin marketplace (`/plugin marketplace add ruarxive/apibackuper`), and the AI coding agents guide lists skill locations for Codex, Cursor and Kimi Code plus an `AGENTS.md` rule.
+- Tests that keep the skill in sync with the CLI: cited commands and options must exist, YAML examples must validate, plugin manifests must match the package version.
+- `evals/` prompts that measure whether agents choose apibackuper, with and without the skill.
+- `apibackuper init PATH --url URL` creates a complete project from one endpoint: it probes the records path, count field and pagination parameters, moves GET query parameters into `params.json`, writes `--header`, `--body` and `--auth bearer|apikey|basic` settings (secrets as `${VAR}` placeholders), and prints a JSON report with the detected settings, record fields, a sample record, warnings and next steps.
+- `apibackuper run full --max-pages N` sample run: fetches at most N pages into a temporary archive and prints page and record counts, fields and the first records, leaving the project's archive, state and checkpoint unchanged.
+- Global `--json` option: every command writes one JSON object to stdout (`ok`, `command`, `result`, or `error` with `code`, `type`, `message`, `hints` and `exit_code`) and everything else to stderr; global `--no-progress`.
+- `apibackuper schema` prints the configuration JSON Schema; `validate-config --json` reports each error and warning with its configuration path and a hint.
+- `detect` probes the page, offset and page-size parameters with a few extra requests (comparing records by ID fields, so live counters do not fake a new page), suggests `page_size_limit`, lists record fields and a sample record, and removes detected pagination parameters from a `--url` query string.
+- `docs/static/llms-full.txt`: commands, configuration reference and troubleshooting as one Markdown file for LLMs, built by `python -m scripts.build_llms_full`; a test fails when it is stale.
+- `detect` suggests `iterate_by: cursor` for a top-level `cursor` token, as in AT Protocol (Bluesky) APIs.
+- `detect` finds record lists and counts one object deep (`info.count`, `response.docs`, `hits.total.value`), knows more count names (`found`, `totalElements`, `numFound`, ...), suggests `pages_number_key`, and drops a count that equals the first page's length when a second page exists.
+- JSON errors for failed HTTP requests use code `http_error` and include the response `status`.
+- `validate-config` warns when the selected `iterate_by` mode has no pagination parameter, because such a run saves only the first page; `run --dry-run` plans list configuration warnings.
+
+### Changed
+- Progress bars are drawn only when stderr is a terminal.
+- `estimate` returns its figures to Python callers.
+- Commands on a directory without a configuration now fail with "Configuration file not found" instead of a generic invalid-configuration error.
+
+### Fixed
+- Documentation no longer describes cursor, next-URL and `Link` header pagination as unsupported.
+- `validate-config` no longer warns "Neither data_key nor total_number_key specified" for APIs that return a bare list of records, such as GitHub; such configurations now pass `--strict`.
+
 ## [3.0.0] - 2026-10-29
 
 Upgrading from 2.x: read the [3.0 migration notes](README.md#upgrading-to-30).
@@ -343,7 +371,8 @@ Upgrading from 2.x: read the [3.0 migration notes](README.md#upgrading-to-30).
 - **Fixed** for any bug fixes
 - **Security** for vulnerability fixes
 
-[Unreleased]: https://github.com/ruarxive/apibackuper/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/ruarxive/apibackuper/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/ruarxive/apibackuper/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/ruarxive/apibackuper/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/ruarxive/apibackuper/compare/3ba501f5e7400866aea858986ce3adcc6064a539...v2.0.0
 [1.0.15]: https://github.com/datacoon/apibackuper/compare/v1.0.14...3ba501f5e7400866aea858986ce3adcc6064a539

@@ -48,6 +48,7 @@ pytest --cov=apibackuper --cov-report=html
 python -m pip install tox
 tox                 # multiple installed Python versions
 python -m scripts.validate_examples
+python -m scripts.build_llms_full   # after editing a page it bundles
 python -m pytest --no-cov tests/test_docs_examples.py tests/test_documented_cli.py
 ```
 

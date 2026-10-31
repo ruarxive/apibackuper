@@ -16,7 +16,7 @@ from contextlib import suppress
 from runpy import run_path
 from timeit import default_timer as timer
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse, urlsplit
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import requests
@@ -69,10 +69,12 @@ from .utils import (
     append_query,
     flat_param_value,
     load_file_list,
+    progress_disable,
     redact_headers,
     redact_params,
     redact_text,
     redact_url,
+    remove_query_keys,
 )
 from .where_filter import match_where
 
@@ -94,6 +96,22 @@ def _safe_int(value: Any, option: str, default: int = 0) -> int:
             default,
         )
         return default
+
+
+# Request parameters each pagination mode needs; without them only page 1 is fetched.
+PAGINATION_PARAMS = {
+    "page": ("page_number_param",),
+    "skip": ("count_skip_param",),
+    "range": ("count_from_param", "count_to_param"),
+}
+
+
+def _issue(path: Optional[str], message: str, hint: Optional[str] = None) -> Dict[str, Any]:
+    """Build one validation error or warning entry."""
+    entry: Dict[str, Any] = {"path": path, "message": message}
+    if hint:
+        entry["hint"] = hint
+    return entry
 
 
 def _atomic_write_json(path: str, payload: Dict[str, Any]) -> None:
@@ -136,6 +154,7 @@ NEXT_CURSOR_KEYS = (
     ("cursor.next", "cursor"),
     ("response_metadata.next_cursor", "cursor"),
     ("meta.next_cursor", "cursor"),
+    ("cursor", "cursor"),
     ("next_page_token", "page_token"),
     ("nextPageToken", "pageToken"),
 )
@@ -144,10 +163,15 @@ NEXT_CURSOR_KEYS = (
 DETECTED_OPTIONS = {
     "data_key": ("data", "data_key"),
     "total_number_key": ("data", "total_number_key"),
+    "pages_number_key": ("data", "pages_number_key"),
     "next_url_key": ("data", "next_url_key"),
     "next_cursor_key": ("data", "next_cursor_key"),
     "cursor_param": ("params", "cursor_param"),
     "iterate_by": ("project", "iterate_by"),
+    "page_number_param": ("params", "page_number_param"),
+    "count_skip_param": ("params", "count_skip_param"),
+    "page_size_param": ("params", "page_size_param"),
+    "page_size_limit": ("params", "page_size_limit"),
 }
 
 
@@ -896,28 +920,13 @@ class ProjectBuilder:
                 self.update_mode = "by_change_key" if self.change_key else "by_timestamp"
 
     def _raise_config_not_found(self) -> None:
+        """Raise a consistent error when the config file is missing or unreadable."""
         if getattr(self, "_config_error", None) is not None:
             raise self._config_error
-        """Raise a consistent error when config file is missing."""
-        config_files = [
-            os.path.join(self.project_path, "apibackuper.yaml"),
-            os.path.join(self.project_path, "apibackuper.yml"),
-            os.path.join(self.project_path, "apibackuper.cfg"),
-        ]
-        found_files = [f for f in config_files if os.path.exists(f)]
-        error_msg = (
-            f"Configuration file not found in: {self.project_path}\n"
-            f"  Expected files: apibackuper.yaml, apibackuper.yml, or apibackuper.cfg\n"
+        raise FileNotFoundError(
+            f"Configuration file not found in: {self.project_path} "
+            "(expected apibackuper.yaml, apibackuper.yml or apibackuper.cfg)"
         )
-        if found_files:
-            error_msg += f"  Found files: {', '.join(os.path.basename(f) for f in found_files)}\n"
-        error_msg += (
-            "  Suggestions:\n"
-            "    - Run 'apibackuper create <name>' to create a new project\n"
-            "    - Navigate to the project directory first\n"
-            "    - Use --projectpath option to specify project location"
-        )
-        print(f"Error: {error_msg}")
 
     def _resolve_storage_file(self) -> str:
         storage_path = self.storage_path if hasattr(self, "storage_path") else "storage"
@@ -1345,6 +1354,59 @@ class ProjectBuilder:
 
         run_backup(self, mode, resume=resume)
 
+    def sample(self, max_pages: int, preview: int = 3) -> Dict[str, Any]:
+        """Collect at most ``max_pages`` pages into a temporary archive and preview them.
+
+        The project's archive, state and checkpoint stay untouched, and the
+        ``after_run`` hook does not run. Returns page and record counts, the
+        record fields, the first records and the configuration warnings.
+        """
+        from .backup import run_backup
+        from .probe import record_fields
+
+        if max_pages < 1:
+            raise ValueError("--max-pages must be at least 1")
+        names = (
+            "storage_path",
+            "storagedir",
+            "storage_file",
+            "details_storage_file",
+            "state_file",
+            "checkpoint_file",
+        )
+        saved = {name: getattr(self, name, None) for name in names}
+        with tempfile.TemporaryDirectory(prefix="apibackuper-sample-") as tmp:
+            self.storagedir = os.path.join(tmp, "storage")
+            self.storage_path = (
+                os.path.join(tmp, "storage.db")
+                if self.storage_type == "sqlite"
+                else self.storagedir
+            )
+            self.storage_file = self._resolve_storage_file()
+            self.details_storage_file = os.path.join(tmp, "details.zip")
+            self.state_file = os.path.join(tmp, "state.json")
+            self.checkpoint_file = os.path.join(tmp, "checkpoint.json")
+            self.sample_max_pages = max_pages
+            try:
+                summary = run_backup(self, "full")
+                exported = os.path.join(tmp, "sample.jsonl")
+                self.export("jsonl", exported)
+                with open(exported, "r", encoding="utf8") as fobj:
+                    records = [json.loads(line) for line in fobj if line.strip()]
+            finally:
+                for name, value in saved.items():
+                    setattr(self, name, value)
+                self.sample_max_pages = None
+        return {
+            "pages": summary["pages_processed"],
+            "records": len(records),
+            "total_reported": summary["total"],
+            "more_pages": summary["more_pages"],
+            "fields": record_fields(records),
+            "preview": records[:preview],
+            "warnings": [issue["message"] for issue in self.validation_report()["warnings"]],
+        }
+
     def update(self, resume: bool = False) -> None:
         """Run update mode with state tracking."""
         self.run("update", resume=resume)
@@ -1358,19 +1420,16 @@ class ProjectBuilder:
         ):
             suggestions["iterate_by"] = "link_header"
         if isinstance(data, dict):
-            for key in ["results", "items", "data"]:
-                if isinstance(data.get(key), list):
-                    suggestions["data_key"] = key
-                    break
-            if "data_key" not in suggestions:
-                for key, value in data.items():
-                    if isinstance(value, list):
-                        suggestions["data_key"] = key
-                        break
-            for key in ["total", "count", "total_count"]:
-                if key in data:
-                    suggestions["total_number_key"] = key
-                    break
+            from .probe import PAGES_KEYS, TOTAL_KEYS, find_count_key, find_records_key
+
+            splitter = self.field_splitter
+            for name, key in (
+                ("data_key", find_records_key(data, splitter)),
+                ("total_number_key", find_count_key(data, TOTAL_KEYS, splitter)),
+                ("pages_number_key", find_count_key(data, PAGES_KEYS, splitter)),
+            ):
+                if key:
+                    suggestions[name] = key
             if "iterate_by" not in suggestions:
                 suggestions.update(self._detect_cursor(data))
             if "iterate_by" not in suggestions:
@@ -1390,7 +1449,9 @@ class ProjectBuilder:
                 return {"iterate_by": "next_url", "next_url_key": key}
         for path, param in NEXT_CURSOR_KEYS:
             key = splitter.join(path.split("."))
-            if get_dict_value(data, key, splitter=splitter) not in (None, ""):
+            # Only a scalar token counts; ``cursor`` may also name a wrapper object.
+            value = get_dict_value(data, key, splitter=splitter)
+            if isinstance(value, (str, int)) and not isinstance(value, bool) and value != "":
                 return {"iterate_by": "cursor", "next_cursor_key": key, "cursor_param": param}
         return {}
 
@@ -1401,8 +1462,12 @@ class ProjectBuilder:
             if suggestions.get(name) and not self.config.has_option(section, option):
                 setattr(self, name, suggestions[name])
 
-    def detect(self, write_config: bool = False) -> Dict[str, Any]:
-        """Detect pagination and data keys from a sample request."""
+    def detect(self, write_config: bool = False, probe: bool = True) -> Dict[str, Any]:
+        """Detect pagination and data keys from a sample request.
+
+        With ``probe``, also report the record fields and a sample record, and
+        send a few more requests to find the page, offset and size parameters.
+        """
         headers = load_json_file(os.path.join(self.project_path, "headers.json"), default={})
         params = load_json_file(os.path.join(self.project_path, "params.json"), default={})
         url_params = load_json_file(
@@ -1424,6 +1489,8 @@ class ProjectBuilder:
             print("Detection failed: response is not valid JSON.")
             return {}
         suggestions = self._detect_suggestions(data, response.headers)
+        if probe:
+            suggestions.update(self._probe(url, headers, params, data, suggestions))
         if write_config and self.config_format == "yaml" and hasattr(self.config, "_data"):
             yaml_data = self.config._data
             apply_detected_options(yaml_data, suggestions)
@@ -1431,6 +1498,69 @@ class ProjectBuilder:
                 with open(self.config_filename, "w", encoding="utf8") as fobj:
                     yaml.safe_dump(yaml_data, fobj, sort_keys=False, allow_unicode=True)
         return suggestions
+
+    def _probe(
+        self,
+        url: str,
+        headers: Dict[str, Any],
+        params: Dict[str, Any],
+        data: Any,
+        suggestions: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Describe the first page's records and probe for pagination parameters."""
+        from .export import process_record
+        from .probe import probe_pagination, record_fields
+
+        data_key = self.data_key or suggestions.get("data_key")
+
+        def records_of(payload: Any) -> List[Any]:
+            if data_key and get_dict_value(payload, data_key, splitter=self.field_splitter) is None:
+                return []
+            return process_record(payload, data_key=data_key, field_splitter=self.field_splitter)
+
+        records = records_of(data)
+        info: Dict[str, Any] = {"records_on_first_page": len(records)}
+        if records:
+            info["fields"] = record_fields(records)
+            info["sample_record"] = records[0]
+        configured = self.config.has_option("project", "iterate_by")
+        mode = self.iterate_by if configured else suggestions.get("iterate_by", "page")
+        if mode not in PAGINATION_PARAMS or mode == "range":
+            return info
+        if all(self.config.has_option("params", name) for name in PAGINATION_PARAMS[mode]):
+            return info
+        total = None
+        total_key = self.total_number_key or suggestions.get("total_number_key")
+        if total_key:
+            value = get_dict_value(data, total_key, splitter=self.field_splitter)
+            if isinstance(value, (int, str)) and str(value).isdigit():
+                total = int(value)
+
+        def fetch(extra: Dict[str, Any]) -> Optional[List[Any]]:
+            target = remove_query_keys(url, extra) if self.http_mode == "GET" else url
+            try:
+                response = self._request(target, headers, dict(params, **extra), None)
+                return records_of(response.json())
+            except (RuntimeError, ValueError, OSError):
+                return None
+
+        query = [key for key, _ in parse_qsl(urlsplit(url).query)]
+        probed = probe_pagination(
+            fetch,
+            records,
+            total,
+            preferred=query + list(params),
+            modes=(mode,) if configured else ("page", "skip"),
+        )
+        if probed.pop("count_is_page_length", False) and not self.total_number_key:
+            # ``None`` overrides the suggestion, and apply_detected_options skips it.
+            probed["total_number_key"] = None
+            probed["warnings"].append(
+                f"{total_key} equals the number of records on one page, not the total; "
+                "it was not used as data.total_number_key"
+            )
+        info.update(probed)
+        return info
 
     def verify(self, strict: bool = False) -> Dict[str, Any]:
         """Check archive members against their fixity manifests.
@@ -1506,7 +1636,10 @@ class ProjectBuilder:
             try:
                 names = backend.list_objects(kind)
                 for fname in tqdm(
-                    names, desc="Extracting file URLs", unit="file", disable=not names
+                    names,
+                    desc="Extracting file URLs",
+                    unit="file",
+                    disable=progress_disable(not names),
                 ):
                     data = json.loads(backend.get_object(fname, kind))
                     records = process_record(
@@ -1588,7 +1721,12 @@ class ProjectBuilder:
         total_files = len(uniq_ids)
         download_progress = None
         if total_files > 0:
-            download_progress = tqdm(total=total_files, desc="Downloading files", unit="file")
+            download_progress = tqdm(
+                total=total_files,
+                desc="Downloading files",
+                unit="file",
+                disable=progress_disable(),
+            )
         try:
             for uniq_id in uniq_ids:
                 if self.fetch_mode == "prefix":
@@ -1708,17 +1846,17 @@ class ProjectBuilder:
     def _too_large(limit: int) -> str:
         return f"File larger than files.max_file_size ({limit} bytes)"
 
-    def estimate(self, mode: str) -> None:  # noqa: ARG002
-        """Measures time, size and count of records"""
+    def estimate(self, mode: str) -> Optional[Dict[str, Any]]:  # noqa: ARG002
+        """Measures time, size and count of records and returns the figures"""
         if self.config is None:
             self._raise_config_not_found()
-            return
+            return None
         from .backup import _decode
         from .export import process_record
 
         if not self.total_number_key:
             print("Can't estimate without total_number_key field in config file")
-            return
+            return None
         if self.page_limit <= 0:
             raise ValueError("params.page_size_limit must be greater than zero")
 
@@ -1772,7 +1910,7 @@ class ProjectBuilder:
                 f"Can't estimate: total_number_key {self.total_number_key!r} is missing or "
                 "not a number in the response"
             )
-            return
+            return None
         request_time = end - start
         req_number = -(-total // self.page_limit)
         data = process_record(
@@ -1788,6 +1926,15 @@ class ProjectBuilder:
         print("Estimated size (json lines) %.2f MB" % ((avg_size * total) / 1000000))
         print("Avg request time, seconds %.4f " % (request_time))
         print("Estimated all requests time, seconds %.4f " % (request_time * req_number))
+        return {
+            "total_records": total,
+            "records_per_request": self.page_limit,
+            "total_requests": req_number,
+            "average_record_bytes": round(avg_size, 2),
+            "estimated_jsonl_bytes": int(avg_size * total),
+            "request_seconds": round(request_time, 4),
+            "estimated_seconds": round(request_time * req_number, 4),
+        }
 
     def info(self, stats: bool = False) -> Optional[Dict[str, Any]]:
         """Get project information and statistics"""
@@ -1930,7 +2077,7 @@ class ProjectBuilder:
                             desc="Counting records",
                             unit="file",
                             leave=False,
-                            disable=len(file_list) <= 100,
+                            disable=progress_disable(len(file_list) <= 100),
                         ):
                             try:
                                 content = storage_backend.get_object(fname, "page")
@@ -2056,15 +2203,50 @@ class ProjectBuilder:
         re-reading the printed output. ``is_valid`` is ``True`` iff there are
         no errors (warnings do not invalidate).
         """
+        report = self.validation_report(verbose=verbose)
+        errors, warnings = report["errors"], report["warnings"]
+
+        # Print results
+        if verbose or errors or warnings:
+            if errors:
+                print("Errors found:")
+                for error in errors:
+                    print(f"  ERROR: {error['message']}")
+            if warnings:
+                print("Warnings:")
+                for warning in warnings:
+                    print(f"  WARNING: {warning['message']}")
+
+        return report["valid"], len(errors), len(warnings)
+
+    def validation_report(self, verbose: bool = False) -> Dict[str, Any]:
+        """Return ``{"valid", "errors", "warnings"}`` without printing.
+
+        Each issue is a dictionary with the configuration ``path`` (``None``
+        for the whole file), a ``message`` and, when known, a ``hint``.
+        """
         errors: List[Dict[str, Any]] = []
         warnings: List[Dict[str, Any]] = []
 
+        def error(path: Optional[str], message: str, hint: Optional[str] = None) -> None:
+            errors.append(_issue(path, message, hint))
+
+        def warn(path: Optional[str], message: str, hint: Optional[str] = None) -> None:
+            warnings.append(_issue(path, message, hint))
+
+        def report() -> Dict[str, Any]:
+            return {"valid": not errors, "errors": errors, "warnings": warnings}
+
         if self.config is None:
-            errors.append("Configuration file not found")
-            return False, len(errors), len(warnings)
+            error(
+                None,
+                "Configuration file not found",
+                "Create apibackuper.yaml in the project directory or pass --projectpath",
+            )
+            return report()
 
         if self.config_format == "ini":
-            warnings.append("INI configuration is deprecated; use YAML instead")
+            warn(None, "INI configuration is deprecated; use YAML instead")
 
         # For YAML configs, use schema validation first
         if self.config_format == "yaml" and JSONSCHEMA_AVAILABLE:
@@ -2080,64 +2262,71 @@ class ProjectBuilder:
                                 source=self.config_filename,
                             )
                         except UnresolvedEnvVarError as e:
-                            errors.append(str(e))
-                            return False, len(errors), len(warnings)
+                            error(None, str(e), f"Export {e.name} before running the command")
+                            return report()
 
                     if yaml_data:
                         is_valid, validation_errors = validate_yaml_config(yaml_data)
                         if not is_valid:
-                            for error in validation_errors:
-                                path = error.get("path", "root")
-                                msg = error.get("message", "Unknown error")
-                                errors.append(f"Schema validation error at {path}: {msg}")
+                            for schema_error in validation_errors:
+                                path = schema_error.get("path", "root")
+                                msg = schema_error.get("message", "Unknown error")
+                                error(
+                                    path,
+                                    f"Schema validation error at {path}: {msg}",
+                                    "Run 'apibackuper schema' to see allowed fields and types",
+                                )
             except (IOError, OSError, ValueError) as e:
                 if verbose:
-                    warnings.append(f"Could not perform schema validation: {e}")
+                    warn(None, f"Could not perform schema validation: {e}")
 
         # Check required sections
         required_sections = ["settings", "project", "params", "data", "storage"]
         for section in required_sections:
             if not self.config.has_section(section):
-                errors.append(f"Missing required section: {section}")
+                error(section, f"Missing required section: {section}")
 
         # Validate settings section
         if self.config.has_section("settings"):
             if not self.config.has_option("settings", "name"):
-                errors.append("Missing required option: settings.name")
+                error("settings.name", "Missing required option: settings.name")
 
         # Validate project section
         if self.config.has_section("project"):
             if not self.config.has_option("project", "url"):
-                errors.append("Missing required option: project.url")
+                error("project.url", "Missing required option: project.url")
             else:
                 try:
                     url = self.config.get("project", "url")
                     if not url.startswith(("http://", "https://")):
-                        errors.append(f"Invalid URL format: {url}")
+                        error("project.url", f"Invalid URL format: {url}")
                 except (configparser.NoOptionError, configparser.NoSectionError):
-                    errors.append("Invalid or missing project.url")
+                    error("project.url", "Invalid or missing project.url")
 
             if not self.config.has_option("project", "http_mode"):
-                errors.append("Missing required option: project.http_mode")
+                error("project.http_mode", "Missing required option: project.http_mode")
             else:
                 try:
                     http_mode = self.config.get("project", "http_mode")
                     if http_mode not in ["GET", "POST"]:
-                        errors.append(f"Invalid http_mode: {http_mode} (must be GET or POST)")
+                        error(
+                            "project.http_mode",
+                            f"Invalid http_mode: {http_mode} (must be GET or POST)",
+                        )
                 except (configparser.NoOptionError, configparser.NoSectionError):
-                    errors.append("Invalid or missing project.http_mode")
+                    error("project.http_mode", "Invalid or missing project.http_mode")
 
         # Validate params section
         if self.config.has_section("params"):
             if not self.config.has_option("params", "page_size_limit"):
-                errors.append("Missing required option: params.page_size_limit")
+                error("params.page_size_limit", "Missing required option: params.page_size_limit")
             else:
                 try:
                     limit = self.config.getint("params", "page_size_limit")
                     if limit <= 0:
-                        errors.append("page_size_limit must be greater than 0")
+                        error("params.page_size_limit", "page_size_limit must be greater than 0")
                 except (ValueError, configparser.NoOptionError, configparser.NoSectionError):
-                    errors.append("page_size_limit must be an integer")
+                    error("params.page_size_limit", "page_size_limit must be an integer")
 
         # Validate response rules (YAML request.response_rules)
         if hasattr(self.config, "_data"):
@@ -2145,7 +2334,8 @@ class ProjectBuilder:
 
             request_data = self.config._data.get("request") or {}
             if isinstance(request_data, dict):
-                errors.extend(validate_rules(request_data.get("response_rules")))
+                for message in validate_rules(request_data.get("response_rules")):
+                    error("request.response_rules", message)
 
         # Validate cursor-style pagination
         iterate_by = (
@@ -2155,34 +2345,57 @@ class ProjectBuilder:
         )
         if iterate_by == "cursor":
             if not self.config.has_option("data", "next_cursor_key"):
-                errors.append("data.next_cursor_key is required for iterate_by: cursor")
+                error(
+                    "data.next_cursor_key",
+                    "data.next_cursor_key is required for iterate_by: cursor",
+                    "Set it to the response path of the next-page token",
+                )
             if not self.config.has_option("params", "cursor_param"):
-                errors.append("params.cursor_param is required for iterate_by: cursor")
+                error(
+                    "params.cursor_param",
+                    "params.cursor_param is required for iterate_by: cursor",
+                    "Set it to the request parameter that receives the token",
+                )
         elif iterate_by == "next_url" and not self.config.has_option("data", "next_url_key"):
-            errors.append("data.next_url_key is required for iterate_by: next_url")
+            error(
+                "data.next_url_key",
+                "data.next_url_key is required for iterate_by: next_url",
+                "Set it to the response path of the next-page URL",
+            )
         if iterate_by in CURSOR_MODES and getattr(self, "parallelism", 1) > 1:
-            errors.append(
+            error(
+                "request.parallelism",
                 f"request.parallelism must be 1 for iterate_by: {iterate_by}, "
-                "because each request depends on the previous response"
+                "because each request depends on the previous response",
             )
 
-        # Validate data section
-        if self.config.has_section("data"):
-            if not self.config.has_option("data", "data_key") and not self.config.has_option(
-                "data", "total_number_key"
-            ):
-                warnings.append(
-                    "Neither data_key nor total_number_key specified - may cause issues"
-                )
+        # Without the parameter its mode needs, a run requests only page 1.
+        missing = [
+            name
+            for name in PAGINATION_PARAMS.get(iterate_by, ())
+            if not self.config.has_option("params", name)
+        ]
+        if missing and self.config.has_section("params"):
+            names = " and ".join(f"params.{name}" for name in missing)
+            warn(
+                f"params.{missing[0]}",
+                f"{names} not set for iterate_by: {iterate_by}; "
+                "only the first page will be collected",
+                "Set it to the API's pagination parameter name, or run "
+                "'apibackuper detect' to probe it",
+            )
 
         # Validate storage section
         if self.config.has_section("storage"):
             if not self.config.has_option("storage", "storage_type"):
-                errors.append("Missing required option: storage.storage_type")
+                error("storage.storage_type", "Missing required option: storage.storage_type")
             else:
                 storage_type = self.config.get("storage", "storage_type")
                 if storage_type not in ["zip", "filesystem", "sqlite"]:
-                    warnings.append(f"Storage type '{storage_type}' may not be fully supported")
+                    warn(
+                        "storage.storage_type",
+                        f"Storage type '{storage_type}' may not be fully supported",
+                    )
 
         # Validate authentication if configured
         if self.config.has_section("auth"):
@@ -2190,40 +2403,43 @@ class ProjectBuilder:
                 self.config.get("auth", "type") if self.config.has_option("auth", "type") else None
             )
             if not auth_type:
-                errors.append("auth.type is required when auth section is present")
+                error("auth.type", "auth.type is required when auth section is present")
             elif auth_type == "basic":
                 if not self.config.has_option("auth", "username"):
-                    errors.append("auth.username is required for basic authentication")
+                    error("auth.username", "auth.username is required for basic authentication")
                 if not self.config.has_option("auth", "password") and not self.config.has_option(
                     "auth", "password_file"
                 ):
-                    errors.append(
-                        "auth.password or auth.password_file is required for basic authentication"
+                    error(
+                        "auth.password",
+                        "auth.password or auth.password_file is required for basic authentication",
                     )
             elif auth_type == "bearer":
                 if not self.config.has_option("auth", "token") and not self.config.has_option(
                     "auth", "token_file"
                 ):
-                    errors.append(
-                        "auth.token or auth.token_file is required for bearer authentication"
+                    error(
+                        "auth.token",
+                        "auth.token or auth.token_file is required for bearer authentication",
                     )
             elif auth_type == "apikey":
                 if not self.config.has_option("auth", "api_key"):
-                    errors.append("auth.api_key is required for apikey authentication")
+                    error("auth.api_key", "auth.api_key is required for apikey authentication")
             elif auth_type == "oauth2" and (
                 self.config.get("auth", "grant_type", fallback="refresh_token")
                 == "client_credentials"
             ):
                 for option in ("auth_url", "client_id"):
                     if not self.config.has_option("auth", option):
-                        errors.append(f"auth.{option} is required for client_credentials")
+                        error(f"auth.{option}", f"auth.{option} is required for client_credentials")
                 if not (
                     self.config.has_option("auth", "client_secret")
                     or self.config.has_option("auth", "client_secret_file")
                 ):
-                    errors.append(
+                    error(
+                        "auth.client_secret",
                         "auth.client_secret or auth.client_secret_file is required "
-                        "for client_credentials"
+                        "for client_credentials",
                     )
             elif auth_type == "oauth2":
                 has_token = self.config.has_option("auth", "token") or self.config.has_option(
@@ -2233,13 +2449,14 @@ class ProjectBuilder:
                     "auth", "refresh_token"
                 ) and self.config.has_option("auth", "auth_url")
                 if not (has_token or can_refresh):
-                    errors.append(
+                    error(
+                        "auth.token",
                         "auth.token, auth.token_file, or auth.refresh_token with auth.auth_url "
-                        "is required for oauth2 authentication"
+                        "is required for oauth2 authentication",
                     )
             auth_handler = getattr(self, "auth_handler", None)
             if auth_handler is not None and auth_handler.error:
-                errors.append(auth_handler.error)
+                error("auth", auth_handler.error)
 
         # Validate rate limiting if configured
         if self.config.has_section("rate_limit"):
@@ -2247,20 +2464,14 @@ class ProjectBuilder:
                 try:
                     rps = float(self.config.get("rate_limit", "requests_per_second"))
                     if rps <= 0:
-                        errors.append("rate_limit.requests_per_second must be greater than 0")
+                        error(
+                            "rate_limit.requests_per_second",
+                            "rate_limit.requests_per_second must be greater than 0",
+                        )
                 except ValueError:
-                    errors.append("rate_limit.requests_per_second must be a number")
+                    error(
+                        "rate_limit.requests_per_second",
+                        "rate_limit.requests_per_second must be a number",
+                    )
 
-        # Print results
-        if verbose or errors or warnings:
-            if errors:
-                print("Errors found:")
-                for error in errors:
-                    print(f"  ERROR: {error}")
-            if warnings:
-                print("Warnings:")
-                for warning in warnings:
-                    print(f"  WARNING: {warning}")
-
-        is_valid = len(errors) == 0
-        return is_valid, len(errors), len(warnings)
+        return report()
