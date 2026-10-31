@@ -1,6 +1,6 @@
 {
   "name": "apibackuper",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "Skill that teaches coding agents to collect paginated API data with the apibackuper CLI instead of writing custom scrapers",
   "author": {
     "name": "Ivan Begtin"

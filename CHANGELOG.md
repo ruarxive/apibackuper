@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-31
+
+Upgrading from 3.0: read the [3.1 upgrade notes](README.md#upgrading-to-31).
+
 ### Added
 - Agent Skill `skills/apibackuper` (workflow, configuration patterns, troubleshooting) so coding agents configure apibackuper instead of writing custom API scrapers; the repository is a Claude Code plugin marketplace (`/plugin marketplace add ruarxive/apibackuper`), and the AI coding agents guide lists skill locations for Codex, Cursor and Kimi Code plus an `AGENTS.md` rule.
 - Tests that keep the skill in sync with the CLI: cited commands and options must exist, YAML examples must validate, plugin manifests must match the package version.
@@ -367,7 +371,8 @@ Upgrading from 2.x: read the [3.0 migration notes](README.md#upgrading-to-30).
 - **Fixed** for any bug fixes
 - **Security** for vulnerability fixes
 
-[Unreleased]: https://github.com/ruarxive/apibackuper/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/ruarxive/apibackuper/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/ruarxive/apibackuper/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/ruarxive/apibackuper/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/ruarxive/apibackuper/compare/3ba501f5e7400866aea858986ce3adcc6064a539...v2.0.0
 [1.0.15]: https://github.com/datacoon/apibackuper/compare/v1.0.14...3ba501f5e7400866aea858986ce3adcc6064a539

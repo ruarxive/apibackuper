@@ -32,7 +32,7 @@ post-processing step over the exported JSONL.
 
 Install if `apibackuper --help` fails: `pipx install apibackuper` or
 `pip install apibackuper` (Python 3.10+). If `apibackuper init --help` fails,
-the installed version predates this workflow: `pipx upgrade apibackuper` or
+the installed version is older than 3.1: `pipx upgrade apibackuper` or
 `pip install --upgrade apibackuper`. Add `apibackuper[recommended]` for
 Parquet and WARC export.
 
