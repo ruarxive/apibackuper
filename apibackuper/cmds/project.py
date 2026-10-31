@@ -163,6 +163,7 @@ NEXT_CURSOR_KEYS = (
 DETECTED_OPTIONS = {
     "data_key": ("data", "data_key"),
     "total_number_key": ("data", "total_number_key"),
+    "pages_number_key": ("data", "pages_number_key"),
     "next_url_key": ("data", "next_url_key"),
     "next_cursor_key": ("data", "next_cursor_key"),
     "cursor_param": ("params", "cursor_param"),
@@ -1419,19 +1420,16 @@ class ProjectBuilder:
         ):
             suggestions["iterate_by"] = "link_header"
         if isinstance(data, dict):
-            for key in ["results", "items", "data"]:
-                if isinstance(data.get(key), list):
-                    suggestions["data_key"] = key
-                    break
-            if "data_key" not in suggestions:
-                for key, value in data.items():
-                    if isinstance(value, list):
-                        suggestions["data_key"] = key
-                        break
-            for key in ["total", "count", "total_count"]:
-                if key in data:
-                    suggestions["total_number_key"] = key
-                    break
+            from .probe import PAGES_KEYS, TOTAL_KEYS, find_count_key, find_records_key
+
+            splitter = self.field_splitter
+            for name, key in (
+                ("data_key", find_records_key(data, splitter)),
+                ("total_number_key", find_count_key(data, TOTAL_KEYS, splitter)),
+                ("pages_number_key", find_count_key(data, PAGES_KEYS, splitter)),
+            ):
+                if key:
+                    suggestions[name] = key
             if "iterate_by" not in suggestions:
                 suggestions.update(self._detect_cursor(data))
             if "iterate_by" not in suggestions:
@@ -1547,15 +1545,21 @@ class ProjectBuilder:
                 return None
 
         query = [key for key, _ in parse_qsl(urlsplit(url).query)]
-        info.update(
-            probe_pagination(
-                fetch,
-                records,
-                total,
-                preferred=query + list(params),
-                modes=(mode,) if configured else ("page", "skip"),
-            )
+        probed = probe_pagination(
+            fetch,
+            records,
+            total,
+            preferred=query + list(params),
+            modes=(mode,) if configured else ("page", "skip"),
         )
+        if probed.pop("count_is_page_length", False) and not self.total_number_key:
+            # ``None`` overrides the suggestion, and apply_detected_options skips it.
+            probed["total_number_key"] = None
+            probed["warnings"].append(
+                f"{total_key} equals the number of records on one page, not the total; "
+                "it was not used as data.total_number_key"
+            )
+        info.update(probed)
         return info
 
     def verify(self, strict: bool = False) -> Dict[str, Any]:

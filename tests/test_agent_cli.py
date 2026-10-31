@@ -10,7 +10,14 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from apibackuper.cmds.probe import probe_pagination, record_fields
+from apibackuper.cmds.probe import (
+    PAGES_KEYS,
+    TOTAL_KEYS,
+    find_count_key,
+    find_records_key,
+    probe_pagination,
+    record_fields,
+)
 from apibackuper.cmds.project import ProjectBuilder
 from apibackuper.cmds.utils import progress_disable, remove_query_keys, set_progress
 from apibackuper.core import app
@@ -99,11 +106,55 @@ def test_detect_suggests_a_top_level_cursor(tmp_path):
     assert "iterate_by" not in wrapper
 
 
-def test_probe_skips_single_page_datasets():
+def test_probe_skips_datasets_smaller_than_one_page():
     fetch = fake_api()
-    result = probe_pagination(fetch, RECORDS[:2], total=2)
+    result = probe_pagination(fetch, RECORDS[:2], total=1)
     assert fetch.calls == []
     assert "fit on the first page" in result["warnings"][0]
+
+
+def test_probe_checks_a_total_equal_to_the_page_length():
+    single = probe_pagination(
+        lambda extra: RECORDS[:2] if extra.get("page") != 2 else [], RECORDS[:2], total=2
+    )
+    assert "iterate_by" not in single
+    assert single["warnings"] == ["All 2 records fit on the first page"]
+
+    paged = probe_pagination(fake_api(), RECORDS[:2], total=2)
+    assert paged["page_number_param"] == "page"
+    assert paged["count_is_page_length"] is True
+
+
+@pytest.mark.parametrize(
+    "payload,records,total,pages",
+    [
+        (
+            {"results": [{"id": 1}], "info": {"count": 826, "pages": 42}},
+            "results",
+            "info.count",
+            "info.pages",
+        ),
+        ({"found": 9, "pages": 1, "items": [{"id": 1}]}, "items", "found", "pages"),
+        (
+            {"response": {"numFound": 5, "docs": [{"id": 1}]}},
+            "response.docs",
+            "response.numFound",
+            None,
+        ),
+        (
+            {"hits": {"total": {"value": 3}, "hits": [{"_id": "a"}]}},
+            "hits.hits",
+            "hits.total.value",
+            None,
+        ),
+        ({"links": ["a"], "data": {"records": [{"id": 1}]}}, "links", None, None),
+        ({"meta": {"total": True}, "rows": []}, "rows", None, None),
+    ],
+)
+def test_find_nested_records_and_counts(payload, records, total, pages):
+    assert find_records_key(payload) == records
+    assert find_count_key(payload, TOTAL_KEYS) == total
+    assert find_count_key(payload, PAGES_KEYS) == pages
 
 
 def test_probe_tries_names_from_the_request_first_and_respects_modes():
@@ -302,3 +353,10 @@ def test_init_keeps_secrets_as_placeholders(project_dir, monkeypatch):
     assert config["auth"] == {"type": "bearer", "token": "${APIBACKUPER_TEST_TOKEN}"}
     headers = json.loads((project_dir / "secure/headers.json").read_text(encoding="utf8"))
     assert headers == {"Accept": "application/json"}
+
+
+def test_http_failures_report_their_status(project_dir, demo_url):
+    result = invoke("--json", "init", "missing", "--url", demo_url.replace("/items", "/absent"))
+    assert result.exit_code == 1
+    error = json.loads(result.stdout)["error"]
+    assert (error["code"], error["status"]) == ("http_error", 404)

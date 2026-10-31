@@ -16,6 +16,7 @@ brackets below), `error.message` and `error.hints`.
 | `Backup is incomplete; resume from checkpoint. Errors: ...` | Pages failed after retries | Fix the cause (auth, rate limit, network), then `apibackuper run full --resume` |
 | `configuration references unset environment variable` (exit status 2) [`unset_env_var`] | A `${VAR}` placeholder has no value | `export VAR=...` before the command, or use `${VAR:-default}` |
 | `Configuration validation failed`, `Invalid project configuration` [`invalid_config`] | Schema or rule error | `apibackuper validate-config --json` names the `path` and a `hint`; `apibackuper schema` lists allowed keys |
+| `HTTP 403 for ...`, `HTTP 401 for ...` [`http_error`, with `status`] | Missing credentials, a required header such as a custom User-Agent, or a regional block | Add `-H "Name: value"` or `--auth` to `init` (or `headers.json` / `auth`); check the API's access rules |
 | `Configuration file not found in: ...` [`config_not_found`] | Wrong directory | `cd` into the project or pass `-p PATH` |
 | `... already exists; pass --force to replace it` [`already_exists`] | `init` target has a configuration | Choose another directory or add `--force` |
 | `HTML responses require a postfetch process function` | `resp_type: html` without `code.postfetch` | Add `code.postfetch` with an absolute path to a script defining `process(content)` |

@@ -156,6 +156,8 @@ def _error_code(exc: BaseException) -> str:
         return "pagination_ignored"
     if "Backup is incomplete" in message:
         return "backup_incomplete"
+    if isinstance(getattr(exc, "status_code", None), int):
+        return "http_error"
     if isinstance(exc, ValueError):
         return "invalid_value"
     if isinstance(exc, OSError):
@@ -169,18 +171,21 @@ def _hints(error_msg: str) -> List[str]:
     return [line.strip()[2:] for line in suggestions.splitlines() if line.strip().startswith("- ")]
 
 
+def _error(exc: BaseException) -> Dict[str, Any]:
+    """Describe an exception for a JSON error, with the HTTP status when there is one."""
+    error = {"code": _error_code(exc), "type": type(exc).__name__, "message": str(exc)}
+    if isinstance(getattr(exc, "status_code", None), int):
+        error["status"] = exc.status_code  # type: ignore[attr-defined]
+    return error
+
+
 def _fail(error_msg: str, exc: BaseException, exit_code: int = 1) -> None:
     """Report a failed command as text, or as JSON in ``--json`` mode, and exit."""
     if _json_mode():
         _emit_json(
             {
                 "ok": False,
-                "error": {
-                    "code": _error_code(exc),
-                    "type": type(exc).__name__,
-                    "message": str(exc),
-                    "hints": _hints(error_msg),
-                },
+                "error": dict(_error(exc), hints=_hints(error_msg)),
                 "exit_code": exit_code,
             }
         )
@@ -219,8 +224,7 @@ class _CliGroup(TyperGroup):
                 error = {"code": "usage_error", "message": exc.format_message()}
                 finish({"ok": False, "error": error, "exit_code": exc.exit_code})
             else:
-                error = {"code": _error_code(exc), "type": type(exc).__name__, "message": str(exc)}
-                finish({"ok": False, "error": error, "exit_code": 1})
+                finish({"ok": False, "error": _error(exc), "exit_code": 1})
             raise
         finally:
             _JSON.update(enabled=False, stdout=None)

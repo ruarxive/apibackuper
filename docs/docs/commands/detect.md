@@ -20,7 +20,12 @@ apibackuper detect --url https://api.example.com/v1/items --write-config
 overwrite an existing file when used with `--url`, and it never replaces an
 option the project already sets.
 
-Typical suggestions include `data_key`, `total_number_key`, and `iterate_by`.
+Typical suggestions include `data_key`, `total_number_key`, `pages_number_key`
+and `iterate_by`. Detect looks for common names at the top of the response and
+one object deeper, so it finds paths such as `info.count`, `response.docs` or
+`hits.total.value`. A count equal to the number of records on the first page is
+dropped when a second page exists, because it counts the page, not the
+collection.
 Unless the project already sets the parameter for its pagination mode, detect
 also probes the endpoint with a few extra requests and suggests
 `page_number_param` or `count_skip_param`, `page_size_param` and

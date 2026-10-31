@@ -12,6 +12,39 @@ LARGE_PAGE = 100
 # live feed do not make the same page look like another one.
 ID_KEYS = ("id", "uuid", "uri", "url", "key", "slug", "code", "name")
 
+# Names of record lists, record counts and page counts in common API responses,
+# looked up at the top level and then one object deeper (``info.count``).
+RECORD_KEYS = (
+    "results",
+    "items",
+    "data",
+    "records",
+    "rows",
+    "docs",
+    "hits",
+    "entries",
+    "content",
+    "elements",
+    "objects",
+    "list",
+    "values",
+)
+TOTAL_KEYS = (
+    "total",
+    "count",
+    "total_count",
+    "totalCount",
+    "total_results",
+    "totalResults",
+    "totalElements",
+    "total_items",
+    "totalItems",
+    "found",
+    "numFound",
+    "recordsTotal",
+)
+PAGES_KEYS = ("pages", "total_pages", "totalPages", "pageCount", "page_count", "num_pages")
+
 # ``fetch(extra)`` repeats the first request with ``extra`` parameters added
 # and returns the records it got, or ``None`` when the request failed.
 Fetch = Callable[[Dict[str, Any]], Optional[List[Any]]]
@@ -37,6 +70,47 @@ def _ordered(candidates: Sequence[str], preferred: Iterable[str]) -> List[str]:
     """Try names the request already uses before the common ones."""
     preferred = [name for name in preferred if name in candidates]
     return preferred + [name for name in candidates if name not in preferred]
+
+
+def _scopes(data: Dict[str, Any], splitter: str):
+    """Yield (prefix, mapping): the response itself, then each nested object."""
+    yield "", data
+    for key, value in data.items():
+        if isinstance(value, dict):
+            yield f"{key}{splitter}", value
+
+
+def find_records_key(data: Any, splitter: str = ".") -> Optional[str]:
+    """Return the path of the record list, preferring common names and lists of objects."""
+    if not isinstance(data, dict):
+        return None
+    for prefix, scope in _scopes(data, splitter):
+        lists = {key: value for key, value in scope.items() if isinstance(value, list)}
+        for key in RECORD_KEYS:
+            if key in lists:
+                return prefix + key
+        for key, value in lists.items():
+            if value and all(isinstance(item, dict) for item in value):
+                return prefix + key
+        if not prefix and lists:
+            # Top-level lists of scalars still beat nested guesses.
+            return next(iter(lists))
+    return None
+
+
+def find_count_key(data: Any, names: Sequence[str], splitter: str = ".") -> Optional[str]:
+    """Return the path of an integer field with one of ``names``, top level first."""
+    if not isinstance(data, dict):
+        return None
+    for prefix, scope in _scopes(data, splitter):
+        for key in names:
+            value = scope.get(key)
+            if isinstance(value, int) and not isinstance(value, bool):
+                return prefix + key
+            if isinstance(value, dict) and isinstance(value.get("value"), int):
+                # Elasticsearch: "hits": {"total": {"value": 42}}
+                return f"{prefix}{key}{splitter}value"
+    return None
 
 
 def record_fields(records: List[Any], limit: int = 20) -> List[str]:
@@ -69,7 +143,7 @@ def probe_pagination(
     if not size:
         result["warnings"].append("The first response has no records; pagination was not probed")
         return result
-    if total is not None and total <= size:
+    if total is not None and total < size:
         result["page_size_limit"] = size
         result["warnings"].append(
             f"All {total} records fit on the first page; pagination was not probed"
@@ -96,11 +170,19 @@ def probe_pagination(
                     break
     if not position:
         result["page_size_limit"] = size
-        result["warnings"].append(
-            "No page or offset parameter changed the records; set "
-            "params.page_number_param or params.count_skip_param by hand"
-        )
+        if total is not None and total <= size:
+            result["warnings"].append(f"All {total} records fit on the first page")
+        else:
+            result["warnings"].append(
+                "No page or offset parameter changed the records; set "
+                "params.page_number_param or params.count_skip_param by hand"
+            )
         return result
+    if total is not None and total <= size:
+        # A "total" equal to the page length that still has a page 2 counts
+        # the page, not the collection; bounding the run by it would stop early.
+        result["count_is_page_length"] = True
+        total = None
 
     trial = 3 if size == 2 else 2
     for name in _ordered(SIZE_PARAMS, preferred):

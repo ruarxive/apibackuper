@@ -29,7 +29,8 @@ apibackuper --no-progress run full
   "config_not_found", "type": "FileNotFoundError", "message": "...", "hints":
   [...]}, "exit_code": 1}`. Error codes include `config_not_found`,
   `invalid_config`, `unset_env_var`, `backup_incomplete`, `pagination_ignored`,
-  `already_exists`, `usage_error`, `invalid_value` and `operation_failed`.
+  `http_error` (with the response `status`), `already_exists`, `usage_error`,
+  `invalid_value` and `operation_failed`.
 - `--no-progress` — do not draw progress bars. Bars are also hidden whenever
   stderr is not a terminal, for example in pipes, CI logs and coding agents.
 

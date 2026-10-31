@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `detect` probes the page, offset and page-size parameters with a few extra requests (comparing records by ID fields, so live counters do not fake a new page), suggests `page_size_limit`, lists record fields and a sample record, and removes detected pagination parameters from a `--url` query string.
 - `docs/static/llms-full.txt`: commands, configuration reference and troubleshooting as one Markdown file for LLMs, built by `python -m scripts.build_llms_full`; a test fails when it is stale.
 - `detect` suggests `iterate_by: cursor` for a top-level `cursor` token, as in AT Protocol (Bluesky) APIs.
+- `detect` finds record lists and counts one object deep (`info.count`, `response.docs`, `hits.total.value`), knows more count names (`found`, `totalElements`, `numFound`, ...), suggests `pages_number_key`, and drops a count that equals the first page's length when a second page exists.
+- JSON errors for failed HTTP requests use code `http_error` and include the response `status`.
 - `validate-config` warns when the selected `iterate_by` mode has no pagination parameter, because such a run saves only the first page; `run --dry-run` plans list configuration warnings.
 
 ### Changed
