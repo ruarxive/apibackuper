@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Documentation no longer describes cursor, next-URL and `Link` header pagination as unsupported.
+- `validate-config` no longer warns "Neither data_key nor total_number_key specified" for APIs that return a bare list of records, such as GitHub; such configurations now pass `--strict`.
 
 ## [3.0.0] - 2026-10-29
 

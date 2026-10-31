@@ -2381,13 +2381,6 @@ class ProjectBuilder:
                 "'apibackuper detect' to probe it",
             )
 
-        # Validate data section
-        if self.config.has_section("data"):
-            if not self.config.has_option("data", "data_key") and not self.config.has_option(
-                "data", "total_number_key"
-            ):
-                warn("data", "Neither data_key nor total_number_key specified - may cause issues")
-
         # Validate storage section
         if self.config.has_section("storage"):
             if not self.config.has_option("storage", "storage_type"):
